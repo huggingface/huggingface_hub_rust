@@ -28,6 +28,9 @@ pub enum HfError {
     Request(#[from] reqwest::Error),
 
     #[error(transparent)]
+    Middleware(#[from] reqwest_middleware::Error),
+
+    #[error(transparent)]
     Io(#[from] std::io::Error),
 
     #[error(transparent)]

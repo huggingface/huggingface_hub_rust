@@ -1,6 +1,9 @@
 use crate::constants;
 use crate::error::{HfError, Result};
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT};
+use reqwest_middleware::ClientWithMiddleware;
+use reqwest_retry::policies::ExponentialBackoff;
+use reqwest_retry::RetryTransientMiddleware;
 use std::sync::Arc;
 
 pub struct HfApi {
@@ -16,7 +19,7 @@ impl Clone for HfApi {
 }
 
 pub(crate) struct HfApiInner {
-    pub(crate) client: reqwest::Client,
+    pub(crate) client: ClientWithMiddleware,
     pub(crate) endpoint: String,
     pub(crate) token: Option<String>,
 }
@@ -60,8 +63,9 @@ impl HfApiBuilder {
         self
     }
 
-    /// Provide a pre-configured reqwest::Client. Note: caller is responsible
-    /// for setting User-Agent and other default headers on this client.
+    /// Provide a pre-configured reqwest::Client. The retry middleware will
+    /// still be applied on top. Caller is responsible for setting User-Agent
+    /// and other default headers on this client.
     pub fn client(mut self, client: reqwest::Client) -> Self {
         self.client = Some(client);
         self
@@ -92,12 +96,17 @@ impl HfApiBuilder {
                 .map_err(|e| HfError::Other(format!("Invalid user agent: {e}")))?,
         );
 
-        let client = match self.client {
+        let raw_client = match self.client {
             Some(c) => c,
             None => reqwest::Client::builder()
                 .default_headers(default_headers)
                 .build()?,
         };
+
+        let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
+        let client = reqwest_middleware::ClientBuilder::new(raw_client)
+            .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+            .build();
 
         Ok(HfApi {
             inner: Arc::new(HfApiInner {
