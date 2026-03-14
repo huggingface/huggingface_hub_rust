@@ -1,0 +1,55 @@
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum HfError {
+    #[error("HTTP error: {status} {url}")]
+    Http {
+        status: reqwest::StatusCode,
+        url: String,
+        body: String,
+    },
+
+    #[error("Authentication required")]
+    AuthRequired,
+
+    #[error("Repository not found: {repo_id}")]
+    RepoNotFound { repo_id: String },
+
+    #[error("Revision not found: {revision} in {repo_id}")]
+    RevisionNotFound { repo_id: String, revision: String },
+
+    #[error("Entry not found: {path} in {repo_id}")]
+    EntryNotFound { path: String, repo_id: String },
+
+    #[error("Xet feature required but not enabled")]
+    XetNotEnabled,
+
+    #[error(transparent)]
+    Request(#[from] reqwest::Error),
+
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+
+    #[error(transparent)]
+    Url(#[from] url::ParseError),
+
+    #[error("{0}")]
+    Other(String),
+}
+
+pub type Result<T> = std::result::Result<T, HfError>;
+
+/// Context for mapping HTTP 404 errors to specific HfError variants.
+pub(crate) enum NotFoundContext {
+    /// 404 means the repository does not exist
+    Repo,
+    /// 404 means a file/path does not exist within the repo
+    Entry { path: String },
+    /// 404 means the revision does not exist
+    Revision { revision: String },
+    /// No special mapping — use generic Http error
+    Generic,
+}

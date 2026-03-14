@@ -1,0 +1,1 @@
+cargo:rustc-env=MIME_TYPES_GENERATED_PATH=/Users/assafvayner/hf/huggingface_hub_rust/target/debug/build/mime_guess-6926823faf3d9302/out/mime_types_generated.rs
