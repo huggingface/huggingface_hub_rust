@@ -75,7 +75,7 @@ impl HfApiBuilder {
         // Validate endpoint URL early to avoid panics later
         let _ = url::Url::parse(&endpoint)?;
 
-        let token = self.token.or_else(|| resolve_token());
+        let token = self.token.or_else(resolve_token);
 
         let mut default_headers = self.headers.unwrap_or_default();
 

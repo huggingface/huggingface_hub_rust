@@ -37,3 +37,25 @@ pub fn repo_type_api_segment(repo_type: Option<crate::types::repo::RepoType>) ->
         Some(crate::types::repo::RepoType::Space) => "spaces",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::repo::RepoType;
+
+    #[test]
+    fn test_repo_type_url_prefix() {
+        assert_eq!(repo_type_url_prefix(None), "");
+        assert_eq!(repo_type_url_prefix(Some(RepoType::Model)), "");
+        assert_eq!(repo_type_url_prefix(Some(RepoType::Dataset)), "datasets/");
+        assert_eq!(repo_type_url_prefix(Some(RepoType::Space)), "spaces/");
+    }
+
+    #[test]
+    fn test_repo_type_api_segment() {
+        assert_eq!(repo_type_api_segment(None), "models");
+        assert_eq!(repo_type_api_segment(Some(RepoType::Model)), "models");
+        assert_eq!(repo_type_api_segment(Some(RepoType::Dataset)), "datasets");
+        assert_eq!(repo_type_api_segment(Some(RepoType::Space)), "spaces");
+    }
+}

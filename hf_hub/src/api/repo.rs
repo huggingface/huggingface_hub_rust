@@ -349,3 +349,15 @@ fn split_repo_id(repo_id: &str) -> (Option<&str>, &str) {
         None => (None, repo_id),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_split_repo_id() {
+        assert_eq!(split_repo_id("user/repo"), (Some("user"), "repo"));
+        assert_eq!(split_repo_id("repo"), (None, "repo"));
+        assert_eq!(split_repo_id("org/sub/repo"), (Some("org"), "sub/repo"));
+    }
+}

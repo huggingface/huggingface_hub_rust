@@ -480,7 +480,7 @@ fn matches_any_glob(patterns: &[String], path: &str) -> bool {
     patterns.iter().any(|p| {
         Glob::new(p)
             .ok()
-            .and_then(|g| Some(g.compile_matcher().is_match(path)))
+            .map(|g| g.compile_matcher().is_match(path))
             .unwrap_or(false)
     })
 }

@@ -147,3 +147,49 @@ pub struct SpaceInfo {
 pub struct RepoUrl {
     pub url: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_repo_type_from_str() {
+        assert_eq!("model".parse::<RepoType>().unwrap(), RepoType::Model);
+        assert_eq!("dataset".parse::<RepoType>().unwrap(), RepoType::Dataset);
+        assert_eq!("space".parse::<RepoType>().unwrap(), RepoType::Space);
+        assert_eq!("MODEL".parse::<RepoType>().unwrap(), RepoType::Model);
+        assert!("invalid".parse::<RepoType>().is_err());
+    }
+
+    #[test]
+    fn test_repo_type_display() {
+        assert_eq!(RepoType::Model.to_string(), "model");
+        assert_eq!(RepoType::Dataset.to_string(), "dataset");
+        assert_eq!(RepoType::Space.to_string(), "space");
+    }
+
+    #[test]
+    fn test_repo_tree_entry_deserialize_file() {
+        let json = r#"{"type":"file","oid":"abc123","size":100,"path":"test.txt"}"#;
+        let entry: RepoTreeEntry = serde_json::from_str(json).unwrap();
+        match entry {
+            RepoTreeEntry::File { path, size, .. } => {
+                assert_eq!(path, "test.txt");
+                assert_eq!(size, 100);
+            }
+            _ => panic!("Expected File variant"),
+        }
+    }
+
+    #[test]
+    fn test_repo_tree_entry_deserialize_directory() {
+        let json = r#"{"type":"directory","oid":"def456","path":"src"}"#;
+        let entry: RepoTreeEntry = serde_json::from_str(json).unwrap();
+        match entry {
+            RepoTreeEntry::Directory { path, .. } => {
+                assert_eq!(path, "src");
+            }
+            _ => panic!("Expected Directory variant"),
+        }
+    }
+}
