@@ -143,7 +143,11 @@ impl HfApi {
             )
             .await?;
 
-        if head_response.headers().get("x-xet-hash").is_some() {
+        if head_response
+            .headers()
+            .get(constants::HEADER_X_XET_HASH)
+            .is_some()
+        {
             #[cfg(feature = "xet")]
             {
                 return crate::xet::xet_download(self, params, &head_response).await;

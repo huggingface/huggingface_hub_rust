@@ -18,6 +18,8 @@ pub const DEFAULT_HF_HOME: &str = "~/.cache/huggingface";
 /// Token filename within HF_HOME
 pub const TOKEN_FILENAME: &str = "token";
 
+pub const HEADER_X_XET_HASH: &str = "x-xet-hash";
+
 /// URL prefixes for different repo types
 /// Models have no prefix, datasets use "datasets/", spaces use "spaces/"
 pub fn repo_type_url_prefix(repo_type: Option<crate::types::repo::RepoType>) -> &'static str {
