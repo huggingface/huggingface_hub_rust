@@ -3,9 +3,8 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct User {
-    #[serde(alias = "login", alias = "user")]
+    #[serde(alias = "login", alias = "user", alias = "name")]
     pub username: String,
-    #[serde(alias = "name")]
     pub fullname: Option<String>,
     pub avatar_url: Option<String>,
     #[serde(rename = "type")]

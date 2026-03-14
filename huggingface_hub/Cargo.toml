@@ -17,6 +17,7 @@ url = "2"
 futures = "0.3"
 typed-builder = "0.20"
 globset = "0.4"
+base64 = "0.22"
 async-trait = { version = "0.1", optional = true }
 xet-data = { git = "https://github.com/huggingface/xet-core.git", rev = "6232b42", optional = true }
 xet-client = { git = "https://github.com/huggingface/xet-core.git", rev = "6232b42", optional = true }

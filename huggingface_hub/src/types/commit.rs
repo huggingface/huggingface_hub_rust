@@ -45,7 +45,7 @@ pub struct CommitInfo {
     pub commit_url: Option<String>,
     pub commit_message: Option<String>,
     pub commit_description: Option<String>,
-    pub oid: Option<String>,
+    pub commit_oid: Option<String>,
     pub pr_url: Option<String>,
     pub pr_num: Option<u64>,
 }

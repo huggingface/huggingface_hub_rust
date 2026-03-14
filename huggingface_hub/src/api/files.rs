@@ -212,7 +212,7 @@ impl HfApi {
     /// For xet-enabled repos, if the server negotiates xet transfer,
     /// the xet feature must be enabled or HfError::XetNotEnabled is returned.
     pub async fn create_commit(&self, params: &CreateCommitParams) -> Result<CommitInfo> {
-        use reqwest::multipart;
+        use base64::Engine;
 
         let revision = params
             .revision
@@ -224,22 +224,20 @@ impl HfApi {
             revision
         );
 
-        let mut form = multipart::Form::new();
+        let mut ndjson_lines: Vec<Vec<u8>> = Vec::new();
 
-        let mut header = serde_json::json!({
+        let mut header_value = serde_json::json!({
             "summary": params.commit_message,
+            "description": params.commit_description.as_deref().unwrap_or(""),
         });
-        if let Some(ref desc) = params.commit_description {
-            header["description"] = serde_json::Value::String(desc.clone());
-        }
         if let Some(ref parent) = params.parent_commit {
-            header["parentCommit"] = serde_json::Value::String(parent.clone());
+            header_value["parentCommit"] = serde_json::Value::String(parent.clone());
         }
-
-        let mut operations_json = Vec::new();
+        let header_line = serde_json::json!({"key": "header", "value": header_value});
+        ndjson_lines.push(serde_json::to_vec(&header_line)?);
 
         for op in &params.operations {
-            match op {
+            let line = match op {
                 CommitOperation::Add {
                     path_in_repo,
                     source,
@@ -248,42 +246,44 @@ impl HfApi {
                         AddSource::File(path) => tokio::fs::read(path).await?,
                         AddSource::Bytes(bytes) => bytes.clone(),
                     };
-
-                    operations_json.push(serde_json::json!({
+                    let b64 = base64::engine::general_purpose::STANDARD.encode(&content);
+                    serde_json::json!({
                         "key": "file",
-                        "path": path_in_repo,
-                    }));
-
-                    let part = multipart::Part::bytes(content).file_name(path_in_repo.clone());
-                    form = form.part(format!("file:{}", path_in_repo), part);
+                        "value": {
+                            "content": b64,
+                            "path": path_in_repo,
+                            "encoding": "base64",
+                        }
+                    })
                 }
                 CommitOperation::Delete { path_in_repo } => {
-                    operations_json.push(serde_json::json!({
+                    serde_json::json!({
                         "key": "deletedFile",
-                        "path": path_in_repo,
-                    }));
+                        "value": {"path": path_in_repo}
+                    })
                 }
-            }
+            };
+            ndjson_lines.push(serde_json::to_vec(&line)?);
         }
 
-        header["lfsFiles"] = serde_json::json!([]);
-        header["files"] = serde_json::json!(operations_json);
+        let body: Vec<u8> = ndjson_lines
+            .into_iter()
+            .flat_map(|mut line| {
+                line.push(b'\n');
+                line
+            })
+            .collect();
 
-        let header_part =
-            multipart::Part::text(serde_json::to_string(&header)?).mime_str("application/json")?;
-        form = form.part("header", header_part);
+        let mut headers = self.auth_headers();
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            "application/x-ndjson".parse().unwrap(),
+        );
 
-        let mut request = self
-            .inner
-            .client
-            .post(&url)
-            .headers(self.auth_headers())
-            .multipart(form);
+        let mut request = self.inner.client.post(&url).headers(headers).body(body);
 
-        if let Some(create_pr) = params.create_pr {
-            if create_pr {
-                request = request.query(&[("create_pr", "1")]);
-            }
+        if params.create_pr == Some(true) {
+            request = request.query(&[("create_pr", "1")]);
         }
 
         let response = request.send().await?;
