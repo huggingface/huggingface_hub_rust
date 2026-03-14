@@ -2,9 +2,8 @@ use crate::client::HfApi;
 use crate::constants;
 use crate::error::Result;
 use crate::types::{
-    CreateBranchParams, CreateTagParams, DeleteBranchParams, DeleteTagParams, DiffEntry,
-    GetCommitDiffParams, GetRawDiffParams, GitCommitInfo, GitRefs, ListRepoCommitsParams,
-    ListRepoRefsParams,
+    CreateBranchParams, CreateTagParams, DeleteBranchParams, DeleteTagParams, GetCommitDiffParams,
+    GetRawDiffParams, GitCommitInfo, GitRefs, ListRepoCommitsParams, ListRepoRefsParams,
 };
 use futures::Stream;
 use url::Url;
@@ -57,10 +56,10 @@ impl HfApi {
         Ok(response.json().await?)
     }
 
-    /// Get the structured diff between two revisions.
+    /// Get the diff between two revisions as a unified diff string.
     /// Endpoint: GET /api/{repo_type}s/{repo_id}/compare/{compare}
-    /// `compare` is in the format "revA...revB"
-    pub async fn get_commit_diff(&self, params: &GetCommitDiffParams) -> Result<Vec<DiffEntry>> {
+    /// `compare` is in the format "revA..revB"
+    pub async fn get_commit_diff(&self, params: &GetCommitDiffParams) -> Result<String> {
         let url = format!(
             "{}/compare/{}",
             self.api_url(params.repo_type, &params.repo_id),
@@ -82,7 +81,7 @@ impl HfApi {
                 crate::error::NotFoundContext::Repo,
             )
             .await?;
-        Ok(response.json().await?)
+        Ok(response.text().await?)
     }
 
     /// Get the raw diff between two revisions.

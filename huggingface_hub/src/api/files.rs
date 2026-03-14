@@ -107,112 +107,108 @@ impl HfApi {
 impl HfApi {
     /// Download a single file from a repository to a local directory.
     ///
-    /// Sends a HEAD request first to check for xet headers.
-    /// If xet headers are present and the "xet" feature is not enabled,
-    /// returns HfError::XetNotEnabled.
-    /// Otherwise, streams the file content to `local_dir/filename`.
+    /// All repositories are xet-enabled. When the "xet" feature is active,
+    /// downloads use the xet protocol. Otherwise, falls back to a standard
+    /// HTTP GET and streams the response to disk.
     ///
     /// Endpoint: GET {endpoint}/{prefix}{repo_id}/resolve/{revision}/{filename}
     pub async fn download_file(&self, params: &DownloadFileParams) -> Result<PathBuf> {
-        let revision = params
-            .revision
-            .as_deref()
-            .unwrap_or(constants::DEFAULT_REVISION);
-        let url = self.download_url(
-            params.repo_type,
-            &params.repo_id,
-            revision,
-            &params.filename,
-        );
-
-        let head_response = self
-            .inner
-            .client
-            .head(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
-
-        let head_response = self
-            .check_response(
-                head_response,
-                Some(&params.repo_id),
-                crate::error::NotFoundContext::Entry {
-                    path: params.filename.clone(),
-                },
-            )
-            .await?;
-
-        if head_response
-            .headers()
-            .get(constants::HEADER_X_XET_HASH)
-            .is_some()
+        #[cfg(feature = "xet")]
         {
-            #[cfg(feature = "xet")]
-            {
-                return crate::xet::xet_download(self, params, &head_response).await;
+            let revision = params
+                .revision
+                .as_deref()
+                .unwrap_or(constants::DEFAULT_REVISION);
+            let url = self.download_url(
+                params.repo_type,
+                &params.repo_id,
+                revision,
+                &params.filename,
+            );
+
+            let head_response = self
+                .inner
+                .client
+                .head(&url)
+                .headers(self.auth_headers())
+                .send()
+                .await?;
+
+            let head_response = self
+                .check_response(
+                    head_response,
+                    Some(&params.repo_id),
+                    crate::error::NotFoundContext::Entry {
+                        path: params.filename.clone(),
+                    },
+                )
+                .await?;
+
+            return crate::xet::xet_download(self, params, &head_response).await;
+        }
+
+        #[cfg(not(feature = "xet"))]
+        {
+            let revision = params
+                .revision
+                .as_deref()
+                .unwrap_or(constants::DEFAULT_REVISION);
+            let url = self.download_url(
+                params.repo_type,
+                &params.repo_id,
+                revision,
+                &params.filename,
+            );
+
+            let response = self
+                .inner
+                .client
+                .get(&url)
+                .headers(self.auth_headers())
+                .send()
+                .await?;
+            let response = self
+                .check_response(
+                    response,
+                    Some(&params.repo_id),
+                    crate::error::NotFoundContext::Entry {
+                        path: params.filename.clone(),
+                    },
+                )
+                .await?;
+
+            tokio::fs::create_dir_all(&params.local_dir).await?;
+
+            let dest_path = params.local_dir.join(&params.filename);
+            if let Some(parent) = dest_path.parent() {
+                tokio::fs::create_dir_all(parent).await?;
             }
-            #[cfg(not(feature = "xet"))]
-            {
-                return Err(HfError::XetNotEnabled);
+
+            let mut file = tokio::fs::File::create(&dest_path).await?;
+            let mut stream = response.bytes_stream();
+            use tokio::io::AsyncWriteExt;
+
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk?;
+                file.write_all(&chunk).await?;
             }
+            file.flush().await?;
+
+            Ok(dest_path)
         }
-
-        let response = self
-            .inner
-            .client
-            .get(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
-        let response = self
-            .check_response(
-                response,
-                Some(&params.repo_id),
-                crate::error::NotFoundContext::Entry {
-                    path: params.filename.clone(),
-                },
-            )
-            .await?;
-
-        tokio::fs::create_dir_all(&params.local_dir).await?;
-
-        let dest_path = params.local_dir.join(&params.filename);
-        if let Some(parent) = dest_path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-
-        let mut file = tokio::fs::File::create(&dest_path).await?;
-        let mut stream = response.bytes_stream();
-        use tokio::io::AsyncWriteExt;
-
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
-            file.write_all(&chunk).await?;
-        }
-        file.flush().await?;
-
-        Ok(dest_path)
     }
 }
 
 impl HfApi {
     /// Create a commit with multiple operations.
     ///
-    /// For add operations, this uploads files via multipart form to
+    /// Sends file content as base64-encoded NDJSON to
     /// POST /api/{repo_type}s/{repo_id}/commit/{revision}
     ///
-    /// **IMPLEMENTATION NOTE:** The multipart protocol below is based on the
-    /// Python huggingface_hub library's implementation. The exact format
-    /// (header JSON structure, part naming) MUST be validated against the
-    /// live Hub API during integration testing. The Python library's
-    /// `_commit_api.py` is the reference implementation. If the format
-    /// doesn't match, refer to the Python source for the correct protocol.
-    ///
-    /// For xet-enabled repos, if the server negotiates xet transfer,
-    /// the xet feature must be enabled or HfError::XetNotEnabled is returned.
+    /// All repositories are xet-enabled. Large binary files should be
+    /// uploaded via the xet protocol (see `xet_upload`) before committing.
     pub async fn create_commit(&self, params: &CreateCommitParams) -> Result<CommitInfo> {
-        use reqwest::multipart;
+        use base64::Engine;
 
         let revision = params
             .revision
@@ -224,22 +220,20 @@ impl HfApi {
             revision
         );
 
-        let mut form = multipart::Form::new();
+        let mut ndjson_lines: Vec<Vec<u8>> = Vec::new();
 
-        let mut header = serde_json::json!({
+        let mut header_value = serde_json::json!({
             "summary": params.commit_message,
+            "description": params.commit_description.as_deref().unwrap_or(""),
         });
-        if let Some(ref desc) = params.commit_description {
-            header["description"] = serde_json::Value::String(desc.clone());
-        }
         if let Some(ref parent) = params.parent_commit {
-            header["parentCommit"] = serde_json::Value::String(parent.clone());
+            header_value["parentCommit"] = serde_json::Value::String(parent.clone());
         }
-
-        let mut operations_json = Vec::new();
+        let header_line = serde_json::json!({"key": "header", "value": header_value});
+        ndjson_lines.push(serde_json::to_vec(&header_line)?);
 
         for op in &params.operations {
-            match op {
+            let line = match op {
                 CommitOperation::Add {
                     path_in_repo,
                     source,
@@ -248,42 +242,44 @@ impl HfApi {
                         AddSource::File(path) => tokio::fs::read(path).await?,
                         AddSource::Bytes(bytes) => bytes.clone(),
                     };
-
-                    operations_json.push(serde_json::json!({
+                    let b64 = base64::engine::general_purpose::STANDARD.encode(&content);
+                    serde_json::json!({
                         "key": "file",
-                        "path": path_in_repo,
-                    }));
-
-                    let part = multipart::Part::bytes(content).file_name(path_in_repo.clone());
-                    form = form.part(format!("file:{}", path_in_repo), part);
+                        "value": {
+                            "content": b64,
+                            "path": path_in_repo,
+                            "encoding": "base64",
+                        }
+                    })
                 }
                 CommitOperation::Delete { path_in_repo } => {
-                    operations_json.push(serde_json::json!({
+                    serde_json::json!({
                         "key": "deletedFile",
-                        "path": path_in_repo,
-                    }));
+                        "value": {"path": path_in_repo}
+                    })
                 }
-            }
+            };
+            ndjson_lines.push(serde_json::to_vec(&line)?);
         }
 
-        header["lfsFiles"] = serde_json::json!([]);
-        header["files"] = serde_json::json!(operations_json);
+        let body: Vec<u8> = ndjson_lines
+            .into_iter()
+            .flat_map(|mut line| {
+                line.push(b'\n');
+                line
+            })
+            .collect();
 
-        let header_part =
-            multipart::Part::text(serde_json::to_string(&header)?).mime_str("application/json")?;
-        form = form.part("header", header_part);
+        let mut headers = self.auth_headers();
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            "application/x-ndjson".parse().unwrap(),
+        );
 
-        let mut request = self
-            .inner
-            .client
-            .post(&url)
-            .headers(self.auth_headers())
-            .multipart(form);
+        let mut request = self.inner.client.post(&url).headers(headers).body(body);
 
-        if let Some(create_pr) = params.create_pr {
-            if create_pr {
-                request = request.query(&[("create_pr", "1")]);
-            }
+        if params.create_pr == Some(true) {
+            request = request.query(&[("create_pr", "1")]);
         }
 
         let response = request.send().await?;
