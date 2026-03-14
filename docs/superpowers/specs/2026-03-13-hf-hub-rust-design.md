@@ -151,7 +151,7 @@ pub type Result<T> = std::result::Result<T, HfError>;
 
 HTTP response mapping: 401 → `AuthRequired`, 404 on repo endpoints → `RepoNotFound`, 404 on file/path endpoints → `EntryNotFound`, other non-2xx → `Http`.
 
-**Retry/rate-limit strategy:** v1 does not include built-in retry or rate-limit handling. If the Hub API returns 429 or 5xx, the error is propagated as `HfError::Http`. Users can add retry logic externally (e.g., via `reqwest` middleware or wrapper). Built-in retry support may be added in a future version.
+**Retry/rate-limit strategy:** All HTTP requests are retried with exponential backoff via `reqwest-middleware` and `reqwest-retry`. Server errors (5xx) and rate-limit responses (429) are retried up to 3 times with exponential backoff delays.
 
 ## Types
 
@@ -606,4 +606,3 @@ The following features are deferred to future versions. Each can be added as add
 13. **Download cache management** — full cache layout with symlinks, blob storage, refs, etag-based deduplication (matching Python library's `~/.cache/huggingface/hub` structure)
 14. **Sync (blocking) interface** — `sync_` prefixed methods using `reqwest::blocking::Client`, behind a `sync` feature flag
 15. **Organization followers** — list organization followers
-16. **Built-in retry/rate-limit handling** — automatic retry on 429/5xx responses with backoff
