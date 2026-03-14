@@ -29,3 +29,5 @@ xet = ["dep:xet-data", "dep:xet-client", "dep:async-trait"]
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tempfile = "3"
+rand = "0.9"
+sha2 = "0.10"
