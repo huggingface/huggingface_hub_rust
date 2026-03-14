@@ -28,7 +28,9 @@ impl FromStr for RepoType {
             "model" => Ok(RepoType::Model),
             "dataset" => Ok(RepoType::Dataset),
             "space" => Ok(RepoType::Space),
-            _ => Err(crate::error::HfError::Other(format!("Unknown repo type: {s}"))),
+            _ => Err(crate::error::HfError::Other(format!(
+                "Unknown repo type: {s}"
+            ))),
         }
     }
 }
@@ -150,7 +152,7 @@ pub struct RepoUrl {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{RepoTreeEntry, RepoType};
 
     #[test]
     fn test_repo_type_from_str() {

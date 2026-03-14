@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT};
 use crate::constants;
 use crate::error::{HfError, Result};
+use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT};
+use std::sync::Arc;
 
 pub struct HfApi {
     pub(crate) inner: Arc<HfApiInner>,
@@ -68,23 +68,22 @@ impl HfApiBuilder {
     }
 
     pub fn build(self) -> Result<HfApi> {
-        let endpoint = self.endpoint
+        let endpoint = self
+            .endpoint
             .or_else(|| std::env::var(constants::HF_ENDPOINT).ok())
             .unwrap_or_else(|| constants::DEFAULT_HF_ENDPOINT.to_string());
 
-        // Validate endpoint URL early to avoid panics later
         let _ = url::Url::parse(&endpoint)?;
 
         let token = self.token.or_else(resolve_token);
 
         let mut default_headers = self.headers.unwrap_or_default();
 
-        // Set User-Agent
         let user_agent = self.user_agent.unwrap_or_else(|| {
             let ua_origin = std::env::var(constants::HF_HUB_USER_AGENT_ORIGIN).ok();
             match ua_origin {
-                Some(origin) => format!("hf-hub-rust/0.1.0; {origin}"),
-                None => "hf-hub-rust/0.1.0".to_string(),
+                Some(origin) => format!("huggingface-hub-rust/0.1.0; {origin}"),
+                None => "huggingface-hub-rust/0.1.0".to_string(),
             }
         });
         default_headers.insert(
@@ -187,41 +186,41 @@ impl HfApi {
         match status.as_u16() {
             401 => Err(HfError::AuthRequired),
             404 => match not_found_ctx {
-                crate::error::NotFoundContext::Repo => {
-                    Err(HfError::RepoNotFound { repo_id: repo_id_str })
-                }
-                crate::error::NotFoundContext::Entry { path } => {
-                    Err(HfError::EntryNotFound { path, repo_id: repo_id_str })
-                }
+                crate::error::NotFoundContext::Repo => Err(HfError::RepoNotFound {
+                    repo_id: repo_id_str,
+                }),
+                crate::error::NotFoundContext::Entry { path } => Err(HfError::EntryNotFound {
+                    path,
+                    repo_id: repo_id_str,
+                }),
                 crate::error::NotFoundContext::Revision { revision } => {
-                    Err(HfError::RevisionNotFound { revision, repo_id: repo_id_str })
+                    Err(HfError::RevisionNotFound {
+                        revision,
+                        repo_id: repo_id_str,
+                    })
                 }
-                crate::error::NotFoundContext::Generic => {
-                    Err(HfError::Http { status, url, body })
-                }
+                crate::error::NotFoundContext::Generic => Err(HfError::Http { status, url, body }),
             },
             _ => Err(HfError::Http { status, url, body }),
         }
     }
 }
 
-/// Resolve token from environment or token file
+/// Resolve token from environment or token file.
+/// Priority: HF_TOKEN env → HF_TOKEN_PATH file → $HF_HOME/token file.
 fn resolve_token() -> Option<String> {
-    // Check if implicit token is disabled (any non-empty value disables it)
     if let Ok(val) = std::env::var(constants::HF_HUB_DISABLE_IMPLICIT_TOKEN) {
         if !val.is_empty() {
             return None;
         }
     }
 
-    // 1. HF_TOKEN env var
     if let Ok(token) = std::env::var(constants::HF_TOKEN) {
         if !token.is_empty() {
             return Some(token);
         }
     }
 
-    // 2. HF_TOKEN_PATH env var
     if let Ok(path) = std::env::var(constants::HF_TOKEN_PATH) {
         if let Ok(token) = std::fs::read_to_string(&path) {
             let token = token.trim().to_string();
@@ -231,12 +230,10 @@ fn resolve_token() -> Option<String> {
         }
     }
 
-    // 3. Default token file: $HF_HOME/token
-    let hf_home = std::env::var(constants::HF_HOME)
-        .unwrap_or_else(|_| {
-            let home = dirs_or_home();
-            format!("{home}/.cache/huggingface")
-        });
+    let hf_home = std::env::var(constants::HF_HOME).unwrap_or_else(|_| {
+        let home = dirs_or_home();
+        format!("{home}/.cache/huggingface")
+    });
     let token_path = format!("{hf_home}/{}", constants::TOKEN_FILENAME);
     if let Ok(token) = std::fs::read_to_string(&token_path) {
         let token = token.trim().to_string();

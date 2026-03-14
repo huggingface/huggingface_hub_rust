@@ -4,7 +4,6 @@ pub const DEFAULT_HF_ENDPOINT: &str = "https://huggingface.co";
 /// Default revision (branch)
 pub const DEFAULT_REVISION: &str = "main";
 
-// Environment variable names
 pub const HF_ENDPOINT: &str = "HF_ENDPOINT";
 pub const HF_TOKEN: &str = "HF_TOKEN";
 pub const HF_TOKEN_PATH: &str = "HF_TOKEN_PATH";
@@ -40,7 +39,7 @@ pub fn repo_type_api_segment(repo_type: Option<crate::types::repo::RepoType>) ->
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{repo_type_api_segment, repo_type_url_prefix};
     use crate::types::repo::RepoType;
 
     #[test]

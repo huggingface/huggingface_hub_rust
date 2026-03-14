@@ -3,12 +3,12 @@
 //! Read-only tests: require HF_TOKEN, skip if not set.
 //! Write tests: require HF_TOKEN + HF_TEST_WRITE=1, skip otherwise.
 //!
-//! Run read-only: HF_TOKEN=hf_xxx cargo test -p hf-hub --test integration_test
-//! Run all: HF_TOKEN=hf_xxx HF_TEST_WRITE=1 cargo test -p hf-hub --test integration_test
+//! Run read-only: HF_TOKEN=hf_xxx cargo test -p huggingface-hub --test integration_test
+//! Run all: HF_TOKEN=hf_xxx HF_TEST_WRITE=1 cargo test -p huggingface-hub --test integration_test
 
 use futures::StreamExt;
-use hf_hub::{HfApi, HfApiBuilder};
-use hf_hub::types::*;
+use huggingface_hub::types::*;
+use huggingface_hub::{HfApi, HfApiBuilder};
 
 fn api() -> Option<HfApi> {
     if std::env::var("HF_TOKEN").is_err() {
@@ -18,15 +18,15 @@ fn api() -> Option<HfApi> {
 }
 
 fn write_enabled() -> bool {
-    std::env::var("HF_TEST_WRITE").ok().map_or(false, |v| v == "1")
+    std::env::var("HF_TEST_WRITE")
+        .ok()
+        .map_or(false, |v| v == "1")
 }
 
 #[tokio::test]
 async fn test_model_info() {
     let Some(api) = api() else { return };
-    let params = ModelInfoParams::builder()
-        .repo_id("gpt2")
-        .build();
+    let params = ModelInfoParams::builder().repo_id("gpt2").build();
     let info = api.model_info(&params).await.unwrap();
     assert_eq!(info.id, "openai-community/gpt2");
 }
@@ -44,9 +44,7 @@ async fn test_dataset_info() {
 #[tokio::test]
 async fn test_repo_exists() {
     let Some(api) = api() else { return };
-    let params = RepoExistsParams::builder()
-        .repo_id("gpt2")
-        .build();
+    let params = RepoExistsParams::builder().repo_id("gpt2").build();
     assert!(api.repo_exists(&params).await.unwrap());
 
     let params = RepoExistsParams::builder()
@@ -96,9 +94,7 @@ async fn test_list_models() {
 #[tokio::test]
 async fn test_list_repo_files() {
     let Some(api) = api() else { return };
-    let params = ListRepoFilesParams::builder()
-        .repo_id("gpt2")
-        .build();
+    let params = ListRepoFilesParams::builder().repo_id("gpt2").build();
     let files = api.list_repo_files(&params).await.unwrap();
     assert!(files.contains(&"config.json".to_string()));
     assert!(files.contains(&"README.md".to_string()));
@@ -107,9 +103,7 @@ async fn test_list_repo_files() {
 #[tokio::test]
 async fn test_list_repo_tree() {
     let Some(api) = api() else { return };
-    let params = ListRepoTreeParams::builder()
-        .repo_id("gpt2")
-        .build();
+    let params = ListRepoTreeParams::builder().repo_id("gpt2").build();
     let stream = api.list_repo_tree(&params);
     futures::pin_mut!(stream);
 
@@ -129,9 +123,7 @@ async fn test_list_repo_tree() {
 #[tokio::test]
 async fn test_list_repo_commits() {
     let Some(api) = api() else { return };
-    let params = ListRepoCommitsParams::builder()
-        .repo_id("gpt2")
-        .build();
+    let params = ListRepoCommitsParams::builder().repo_id("gpt2").build();
     let stream = api.list_repo_commits(&params);
     futures::pin_mut!(stream);
 
@@ -143,9 +135,7 @@ async fn test_list_repo_commits() {
 #[tokio::test]
 async fn test_list_repo_refs() {
     let Some(api) = api() else { return };
-    let params = ListRepoRefsParams::builder()
-        .repo_id("gpt2")
-        .build();
+    let params = ListRepoRefsParams::builder().repo_id("gpt2").build();
     let refs = api.list_repo_refs(&params).await.unwrap();
     assert!(!refs.branches.is_empty());
     // "main" branch should exist
@@ -189,9 +179,15 @@ async fn test_download_file() {
 #[tokio::test]
 async fn test_create_and_delete_repo() {
     let Some(api) = api() else { return };
-    if !write_enabled() { return; }
+    if !write_enabled() {
+        return;
+    }
 
-    let repo_id = format!("{}/hf-hub-rust-test-{}", "assafvayner", uuid_v4_short());
+    let repo_id = format!(
+        "{}/huggingface-hub-rust-test-{}",
+        "assafvayner",
+        uuid_v4_short()
+    );
 
     // Create
     let params = CreateRepoParams::builder()
@@ -220,9 +216,7 @@ async fn test_create_and_delete_repo() {
     assert!(api.file_exists(&params).await.unwrap());
 
     // Delete repo
-    let params = DeleteRepoParams::builder()
-        .repo_id(&repo_id)
-        .build();
+    let params = DeleteRepoParams::builder().repo_id(&repo_id).build();
     api.delete_repo(&params).await.unwrap();
 }
 

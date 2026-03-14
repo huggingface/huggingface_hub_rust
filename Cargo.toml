@@ -1,3 +1,3 @@
 [workspace]
-members = ["hf_hub"]
+members = ["huggingface_hub"]
 resolver = "2"

@@ -1,19 +1,24 @@
-use futures::Stream;
-use url::Url;
 use crate::client::HfApi;
 use crate::error::Result;
-use crate::types::*;
+use crate::types::{Organization, User};
+use futures::Stream;
+use url::Url;
 
 impl HfApi {
     /// Get authenticated user info.
     /// Endpoint: GET /api/whoami-v2
     pub async fn whoami(&self) -> Result<User> {
         let url = format!("{}/api/whoami-v2", self.inner.endpoint);
-        let response = self.inner.client.get(&url)
+        let response = self
+            .inner
+            .client
+            .get(&url)
             .headers(self.auth_headers())
             .send()
             .await?;
-        let response = self.check_response(response, None, crate::error::NotFoundContext::Generic).await?;
+        let response = self
+            .check_response(response, None, crate::error::NotFoundContext::Generic)
+            .await?;
         Ok(response.json().await?)
     }
 
@@ -29,11 +34,16 @@ impl HfApi {
     /// Endpoint: GET /api/users/{username}/overview
     pub async fn get_user_overview(&self, username: &str) -> Result<User> {
         let url = format!("{}/api/users/{}/overview", self.inner.endpoint, username);
-        let response = self.inner.client.get(&url)
+        let response = self
+            .inner
+            .client
+            .get(&url)
             .headers(self.auth_headers())
             .send()
             .await?;
-        let response = self.check_response(response, None, crate::error::NotFoundContext::Generic).await?;
+        let response = self
+            .check_response(response, None, crate::error::NotFoundContext::Generic)
+            .await?;
         Ok(response.json().await?)
     }
 
@@ -44,11 +54,16 @@ impl HfApi {
             "{}/api/organizations/{}/overview",
             self.inner.endpoint, organization
         );
-        let response = self.inner.client.get(&url)
+        let response = self
+            .inner
+            .client
+            .get(&url)
             .headers(self.auth_headers())
             .send()
             .await?;
-        let response = self.check_response(response, None, crate::error::NotFoundContext::Generic).await?;
+        let response = self
+            .check_response(response, None, crate::error::NotFoundContext::Generic)
+            .await?;
         Ok(response.json().await?)
     }
 

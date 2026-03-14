@@ -1,10 +1,10 @@
-use std::collections::VecDeque;
+use crate::client::HfApi;
+use crate::error::{HfError, Result};
 use futures::stream::{self, Stream};
 use reqwest::header::HeaderMap;
 use serde::de::DeserializeOwned;
+use std::collections::VecDeque;
 use url::Url;
-use crate::client::HfApi;
-use crate::error::{HfError, Result};
 
 struct PaginationState {
     buffer: VecDeque<serde_json::Value>,
@@ -32,7 +32,6 @@ impl HfApi {
         stream::try_unfold(state, move |mut state| {
             let params = params.clone();
             async move {
-                // Drain buffer first
                 if let Some(raw) = state.buffer.pop_front() {
                     let item: T = serde_json::from_value(raw)?;
                     return Ok(Some((item, state)));
@@ -47,7 +46,10 @@ impl HfApi {
                     None => return Ok(None),
                 };
 
-                let mut request = self.inner.client.get(url.clone())
+                let mut request = self
+                    .inner
+                    .client
+                    .get(url.clone())
                     .headers(self.auth_headers());
                 if state.is_first_page {
                     request = request.query(&params);
@@ -94,11 +96,9 @@ fn parse_link_header_next(headers: &HeaderMap) -> Option<Url> {
 
     for part in link_header.split(',') {
         let part = part.trim();
-        // Check if this segment has rel="next"
         if !part.contains("rel=\"next\"") {
             continue;
         }
-        // Extract URL between < and >
         let start = part.find('<')? + 1;
         let end = part.find('>')?;
         let url_str = &part[start..end];
@@ -109,7 +109,7 @@ fn parse_link_header_next(headers: &HeaderMap) -> Option<Url> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::parse_link_header_next;
     use reqwest::header::{HeaderMap, HeaderValue};
 
     #[test]
@@ -117,9 +117,7 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(
             "link",
-            HeaderValue::from_static(
-                r#"<https://huggingface.co/api/models?p=1>; rel="next""#,
-            ),
+            HeaderValue::from_static(r#"<https://huggingface.co/api/models?p=1>; rel="next""#),
         );
         let url = parse_link_header_next(&headers).unwrap();
         assert_eq!(url.as_str(), "https://huggingface.co/api/models?p=1");

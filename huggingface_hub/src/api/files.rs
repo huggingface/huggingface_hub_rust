@@ -1,10 +1,14 @@
-use std::path::PathBuf;
-use futures::stream::{Stream, StreamExt};
-use url::Url;
 use crate::client::HfApi;
 use crate::constants;
 use crate::error::{HfError, Result};
-use crate::types::*;
+use crate::types::{
+    AddSource, CommitInfo, CommitOperation, CreateCommitParams, DeleteFileParams,
+    DeleteFolderParams, DownloadFileParams, GetPathsInfoParams, ListRepoFilesParams,
+    ListRepoTreeParams, RepoTreeEntry, UploadFileParams, UploadFolderParams,
+};
+use futures::stream::{Stream, StreamExt};
+use std::path::PathBuf;
+use url::Url;
 
 impl HfApi {
     /// List file paths in a repository (convenience wrapper over list_repo_tree).
@@ -14,7 +18,6 @@ impl HfApi {
             .repo_id(&params.repo_id)
             .recursive(true)
             .build();
-        // Copy over optional fields
         let tree_params = ListRepoTreeParams {
             revision: params.revision.clone(),
             repo_type: params.repo_type,
@@ -40,7 +43,9 @@ impl HfApi {
         &self,
         params: &ListRepoTreeParams,
     ) -> impl Stream<Item = Result<RepoTreeEntry>> + '_ {
-        let revision = params.revision.as_deref()
+        let revision = params
+            .revision
+            .as_deref()
             .unwrap_or(constants::DEFAULT_REVISION);
         let url_str = format!(
             "{}/tree/{}",
@@ -63,7 +68,9 @@ impl HfApi {
     /// Get info about specific paths in a repository.
     /// Endpoint: POST /api/{repo_type}s/{repo_id}/paths-info/{revision}
     pub async fn get_paths_info(&self, params: &GetPathsInfoParams) -> Result<Vec<RepoTreeEntry>> {
-        let revision = params.revision.as_deref()
+        let revision = params
+            .revision
+            .as_deref()
             .unwrap_or(constants::DEFAULT_REVISION);
         let url = format!(
             "{}/paths-info/{}",
@@ -75,13 +82,24 @@ impl HfApi {
             "paths": params.paths,
         });
 
-        let response = self.inner.client.post(&url)
+        let response = self
+            .inner
+            .client
+            .post(&url)
             .headers(self.auth_headers())
             .json(&body)
             .send()
             .await?;
 
-        let response = self.check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Entry { path: params.paths.join(", ") }).await?;
+        let response = self
+            .check_response(
+                response,
+                Some(&params.repo_id),
+                crate::error::NotFoundContext::Entry {
+                    path: params.paths.join(", "),
+                },
+            )
+            .await?;
         Ok(response.json().await?)
     }
 }
@@ -96,7 +114,9 @@ impl HfApi {
     ///
     /// Endpoint: GET {endpoint}/{prefix}{repo_id}/resolve/{revision}/{filename}
     pub async fn download_file(&self, params: &DownloadFileParams) -> Result<PathBuf> {
-        let revision = params.revision.as_deref()
+        let revision = params
+            .revision
+            .as_deref()
             .unwrap_or(constants::DEFAULT_REVISION);
         let url = self.download_url(
             params.repo_type,
@@ -105,15 +125,24 @@ impl HfApi {
             &params.filename,
         );
 
-        // HEAD request to check metadata (xet headers, redirects)
-        let head_response = self.inner.client.head(&url)
+        let head_response = self
+            .inner
+            .client
+            .head(&url)
             .headers(self.auth_headers())
             .send()
             .await?;
 
-        let head_response = self.check_response(head_response, Some(&params.repo_id), crate::error::NotFoundContext::Entry { path: params.filename.clone() }).await?;
+        let head_response = self
+            .check_response(
+                head_response,
+                Some(&params.repo_id),
+                crate::error::NotFoundContext::Entry {
+                    path: params.filename.clone(),
+                },
+            )
+            .await?;
 
-        // Check for xet headers
         if head_response.headers().get("x-xet-hash").is_some() {
             #[cfg(feature = "xet")]
             {
@@ -125,23 +154,30 @@ impl HfApi {
             }
         }
 
-        // Standard HTTP download
-        let response = self.inner.client.get(&url)
+        let response = self
+            .inner
+            .client
+            .get(&url)
             .headers(self.auth_headers())
             .send()
             .await?;
-        let response = self.check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Entry { path: params.filename.clone() }).await?;
+        let response = self
+            .check_response(
+                response,
+                Some(&params.repo_id),
+                crate::error::NotFoundContext::Entry {
+                    path: params.filename.clone(),
+                },
+            )
+            .await?;
 
-        // Ensure local_dir exists
         tokio::fs::create_dir_all(&params.local_dir).await?;
 
-        // Determine output path — preserve subdirectory structure from filename
         let dest_path = params.local_dir.join(&params.filename);
         if let Some(parent) = dest_path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        // Stream response to file
         let mut file = tokio::fs::File::create(&dest_path).await?;
         let mut stream = response.bytes_stream();
         use tokio::io::AsyncWriteExt;
@@ -174,7 +210,9 @@ impl HfApi {
     pub async fn create_commit(&self, params: &CreateCommitParams) -> Result<CommitInfo> {
         use reqwest::multipart;
 
-        let revision = params.revision.as_deref()
+        let revision = params
+            .revision
+            .as_deref()
             .unwrap_or(constants::DEFAULT_REVISION);
         let url = format!(
             "{}/commit/{}",
@@ -182,10 +220,8 @@ impl HfApi {
             revision
         );
 
-        // Build the multipart form
         let mut form = multipart::Form::new();
 
-        // Add commit metadata as JSON header part
         let mut header = serde_json::json!({
             "summary": params.commit_message,
         });
@@ -196,12 +232,14 @@ impl HfApi {
             header["parentCommit"] = serde_json::Value::String(parent.clone());
         }
 
-        // Process operations
         let mut operations_json = Vec::new();
 
         for op in &params.operations {
             match op {
-                CommitOperation::Add { path_in_repo, source } => {
+                CommitOperation::Add {
+                    path_in_repo,
+                    source,
+                } => {
                     let content = match source {
                         AddSource::File(path) => tokio::fs::read(path).await?,
                         AddSource::Bytes(bytes) => bytes.clone(),
@@ -212,8 +250,7 @@ impl HfApi {
                         "path": path_in_repo,
                     }));
 
-                    let part = multipart::Part::bytes(content)
-                        .file_name(path_in_repo.clone());
+                    let part = multipart::Part::bytes(content).file_name(path_in_repo.clone());
                     form = form.part(format!("file:{}", path_in_repo), part);
                 }
                 CommitOperation::Delete { path_in_repo } => {
@@ -228,12 +265,14 @@ impl HfApi {
         header["lfsFiles"] = serde_json::json!([]);
         header["files"] = serde_json::json!(operations_json);
 
-        // The header JSON goes as the first part
-        let header_part = multipart::Part::text(serde_json::to_string(&header)?)
-            .mime_str("application/json")?;
+        let header_part =
+            multipart::Part::text(serde_json::to_string(&header)?).mime_str("application/json")?;
         form = form.part("header", header_part);
 
-        let mut request = self.inner.client.post(&url)
+        let mut request = self
+            .inner
+            .client
+            .post(&url)
             .headers(self.auth_headers())
             .multipart(form);
 
@@ -244,13 +283,21 @@ impl HfApi {
         }
 
         let response = request.send().await?;
-        let response = self.check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo).await?;
+        let response = self
+            .check_response(
+                response,
+                Some(&params.repo_id),
+                crate::error::NotFoundContext::Repo,
+            )
+            .await?;
         Ok(response.json().await?)
     }
 
     /// Upload a single file to a repository. Convenience wrapper around create_commit.
     pub async fn upload_file(&self, params: &UploadFileParams) -> Result<CommitInfo> {
-        let commit_message = params.commit_message.clone()
+        let commit_message = params
+            .commit_message
+            .clone()
             .unwrap_or_else(|| format!("Upload {}", params.path_in_repo));
 
         let commit_params = CreateCommitParams::builder()
@@ -291,10 +338,10 @@ impl HfApi {
         )
         .await?;
 
-        // If delete_patterns is set, list existing remote files and add delete
-        // operations for any that match the patterns.
         if let Some(ref delete_patterns) = params.delete_patterns {
-            let revision = params.revision.as_deref()
+            let revision = params
+                .revision
+                .as_deref()
                 .unwrap_or(constants::DEFAULT_REVISION);
             let tree_params = ListRepoTreeParams::builder()
                 .repo_id(&params.repo_id)
@@ -317,7 +364,9 @@ impl HfApi {
             }
         }
 
-        let commit_message = params.commit_message.clone()
+        let commit_message = params
+            .commit_message
+            .clone()
             .unwrap_or_else(|| "Upload folder".to_string());
 
         let commit_params = CreateCommitParams::builder()
@@ -339,7 +388,9 @@ impl HfApi {
 
     /// Delete a file from a repository. Convenience wrapper around create_commit.
     pub async fn delete_file(&self, params: &DeleteFileParams) -> Result<CommitInfo> {
-        let commit_message = params.commit_message.clone()
+        let commit_message = params
+            .commit_message
+            .clone()
             .unwrap_or_else(|| format!("Delete {}", params.path_in_repo));
 
         let commit_params = CreateCommitParams::builder()
@@ -362,10 +413,11 @@ impl HfApi {
 
     /// Delete a folder from a repository. Lists files under the path and deletes them.
     pub async fn delete_folder(&self, params: &DeleteFolderParams) -> Result<CommitInfo> {
-        let revision = params.revision.as_deref()
+        let revision = params
+            .revision
+            .as_deref()
             .unwrap_or(constants::DEFAULT_REVISION);
 
-        // List all files under the folder path
         let tree_params = ListRepoTreeParams::builder()
             .repo_id(&params.repo_id)
             .recursive(true)
@@ -395,7 +447,9 @@ impl HfApi {
             }
         }
 
-        let commit_message = params.commit_message.clone()
+        let commit_message = params
+            .commit_message
+            .clone()
             .unwrap_or_else(|| format!("Delete {}", params.path_in_repo));
 
         let commit_params = CreateCommitParams::builder()
@@ -442,11 +496,11 @@ async fn collect_files_recursive(
             ))
             .await?;
         } else if metadata.is_file() {
-            let relative = path.strip_prefix(root)
+            let relative = path
+                .strip_prefix(root)
                 .map_err(|e| HfError::Other(e.to_string()))?;
             let relative_str = relative.to_string_lossy();
 
-            // Apply pattern filtering using globset
             if let Some(ref allow) = allow_patterns {
                 if !matches_any_glob(allow, &relative_str) {
                     continue;

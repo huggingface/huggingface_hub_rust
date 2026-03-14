@@ -1,9 +1,7 @@
-use std::path::PathBuf;
-use typed_builder::TypedBuilder;
 use super::commit::{AddSource, CommitOperation};
 use super::repo::RepoType;
-
-// --- Repo Info ---
+use std::path::PathBuf;
+use typed_builder::TypedBuilder;
 
 #[derive(TypedBuilder)]
 pub struct ModelInfoParams {
@@ -28,8 +26,6 @@ pub struct SpaceInfoParams {
     #[builder(default, setter(into, strip_option))]
     pub revision: Option<String>,
 }
-
-// --- Existence Checks ---
 
 #[derive(TypedBuilder)]
 pub struct RepoExistsParams {
@@ -60,8 +56,6 @@ pub struct FileExistsParams {
     #[builder(default, setter(into, strip_option))]
     pub repo_type: Option<RepoType>,
 }
-
-// --- Repo Listing ---
 
 #[derive(TypedBuilder)]
 pub struct ListModelsParams {
@@ -117,8 +111,6 @@ pub struct ListSpacesParams {
     pub full: Option<bool>,
 }
 
-// --- Repo Management ---
-
 #[derive(TypedBuilder)]
 pub struct CreateRepoParams {
     #[builder(setter(into))]
@@ -166,8 +158,6 @@ pub struct MoveRepoParams {
     #[builder(default, setter(into, strip_option))]
     pub repo_type: Option<RepoType>,
 }
-
-// --- File Operations ---
 
 #[derive(TypedBuilder)]
 pub struct ListRepoFilesParams {
@@ -314,8 +304,6 @@ pub struct CreateCommitParams {
     pub parent_commit: Option<String>,
 }
 
-// --- Commits & Diffs ---
-
 #[derive(TypedBuilder)]
 pub struct ListRepoCommitsParams {
     #[builder(setter(into))]
@@ -357,8 +345,6 @@ pub struct GetRawDiffParams {
     #[builder(default, setter(into, strip_option))]
     pub repo_type: Option<RepoType>,
 }
-
-// --- Branch/Tag Operations ---
 
 #[derive(TypedBuilder)]
 pub struct CreateBranchParams {

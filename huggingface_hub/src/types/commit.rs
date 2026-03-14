@@ -68,9 +68,7 @@ pub enum CommitOperation {
         source: AddSource,
     },
     /// Delete a file or folder
-    Delete {
-        path_in_repo: String,
-    },
+    Delete { path_in_repo: String },
 }
 
 /// Source of content for an add operation
