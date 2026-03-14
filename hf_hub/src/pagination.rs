@@ -44,10 +44,7 @@ impl HfApi {
 
                 let url = match state.next_url.take() {
                     Some(u) => u,
-                    None => {
-                        state.done = true;
-                        return Ok(None);
-                    }
+                    None => return Ok(None),
                 };
 
                 let mut request = self.inner.client.get(url.clone())

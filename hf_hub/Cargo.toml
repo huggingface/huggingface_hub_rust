@@ -16,6 +16,10 @@ futures = "0.3"
 typed-builder = "0.20"
 globset = "0.4"
 
+[features]
+default = []
+xet = []  # Xet high-performance transfers; actual dependency TBD
+
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tempfile = "3"
