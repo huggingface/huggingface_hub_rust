@@ -127,6 +127,9 @@ pub enum HfError {
     #[error("Revision not found: {revision} in {repo_id}")]
     RevisionNotFound { repo_id: String, revision: String },
 
+    #[error("Entry not found: {path} in {repo_id}")]
+    EntryNotFound { path: String, repo_id: String },
+
     #[error("Xet feature required but not enabled")]
     XetNotEnabled,
 
@@ -146,7 +149,9 @@ pub enum HfError {
 pub type Result<T> = std::result::Result<T, HfError>;
 ```
 
-HTTP response mapping: 401 → `AuthRequired`, 404 on repo endpoints → `RepoNotFound`, other non-2xx → `Http`.
+HTTP response mapping: 401 → `AuthRequired`, 404 on repo endpoints → `RepoNotFound`, 404 on file/path endpoints → `EntryNotFound`, other non-2xx → `Http`.
+
+**Retry/rate-limit strategy:** v1 does not include built-in retry or rate-limit handling. If the Hub API returns 429 or 5xx, the error is propagated as `HfError::Http`. Users can add retry logic externally (e.g., via `reqwest` middleware or wrapper). Built-in retry support may be added in a future version.
 
 ## Types
 
@@ -192,17 +197,189 @@ pub enum RepoTreeEntry {
 }
 ```
 
-### Key Structs
+### Commit Operations
 
-**Repository types:** `ModelInfo`, `DatasetInfo`, `SpaceInfo`, `RepoSibling`, `BlobLfsInfo`, `LastCommitInfo`, `RepoUrl`
+Used by `create_commit` to describe file mutations in a single commit:
 
-**Commit types:** `GitCommitInfo`, `GitRefInfo`, `GitRefs`, `CommitInfo`, `CommitAuthor`, `DiffEntry`
+```rust
+pub enum CommitOperation {
+    /// Upload a file (from path or bytes)
+    Add {
+        path_in_repo: String,
+        source: AddSource,
+    },
+    /// Delete a file or folder
+    Delete {
+        path_in_repo: String,
+    },
+}
 
-**User types:** `User`, `Organization`
+pub enum AddSource {
+    File(PathBuf),
+    Bytes(Vec<u8>),
+}
+```
 
-**Xet types:** `XetConnectionInfo` (internal)
+`CommitOperationCopy` (LFS-only in Python) is excluded since LFS upload is out of scope.
 
-All structs follow the pattern of `ModelInfo` — `id: String` as required, everything else `Option<T>`.
+### Key Struct Definitions
+
+**CommitInfo** — returned by upload/commit operations:
+
+```rust
+#[derive(Debug, Clone, Deserialize)]
+pub struct CommitInfo {
+    pub commit_url: String,
+    pub commit_message: String,
+    pub commit_description: Option<String>,
+    pub oid: String,
+    pub pr_url: Option<String>,
+    pub pr_num: Option<u64>,
+}
+```
+
+**GitRefs** — returned by `list_repo_refs`:
+
+```rust
+#[derive(Debug, Clone, Deserialize)]
+pub struct GitRefs {
+    pub branches: Vec<GitRefInfo>,
+    pub tags: Vec<GitRefInfo>,
+    pub converts: Vec<GitRefInfo>,
+}
+```
+
+**GitCommitInfo** — individual commit metadata:
+
+```rust
+#[derive(Debug, Clone, Deserialize)]
+pub struct GitCommitInfo {
+    pub commit_id: String,
+    pub authors: Vec<CommitAuthor>,
+    pub created_at: String,
+    pub title: String,
+    pub message: String,
+    pub parents: Vec<String>,
+}
+```
+
+**Repository types:** `ModelInfo`, `DatasetInfo`, `SpaceInfo` follow the same pattern — `id: String` required, everything else `Option<T>`. `RepoSibling`, `BlobLfsInfo`, `LastCommitInfo`, `RepoUrl` are supporting structs.
+
+> **Note:** `SpaceInfo` and `space_info()` / `list_spaces()` are in scope as read-only operations. Space *management* (runtime, secrets, variables, pause/restart, etc.) is out of scope.
+
+**User types:** `User`, `Organization` — `username`/`name` required, everything else `Option<T>`.
+
+**Xet types:** `XetConnectionInfo` (internal, not public).
+
+### Key Params Struct Definitions
+
+**CreateCommitParams:**
+
+```rust
+#[derive(TypedBuilder)]
+pub struct CreateCommitParams {
+    pub repo_id: String,
+    pub operations: Vec<CommitOperation>,
+    pub commit_message: String,
+    #[builder(default, setter(into, strip_option))]
+    pub commit_description: Option<String>,
+    #[builder(default, setter(into, strip_option))]
+    pub repo_type: Option<RepoType>,
+    #[builder(default, setter(into, strip_option))]
+    pub revision: Option<String>,
+    #[builder(default, setter(into, strip_option))]
+    pub create_pr: Option<bool>,
+    #[builder(default, setter(into, strip_option))]
+    pub parent_commit: Option<String>,
+}
+```
+
+**UploadFileParams:**
+
+```rust
+#[derive(TypedBuilder)]
+pub struct UploadFileParams {
+    pub repo_id: String,
+    pub source: AddSource,
+    pub path_in_repo: String,
+    #[builder(default, setter(into, strip_option))]
+    pub repo_type: Option<RepoType>,
+    #[builder(default, setter(into, strip_option))]
+    pub revision: Option<String>,
+    #[builder(default, setter(into, strip_option))]
+    pub commit_message: Option<String>,
+    #[builder(default, setter(into, strip_option))]
+    pub commit_description: Option<String>,
+    #[builder(default, setter(into, strip_option))]
+    pub create_pr: Option<bool>,
+    #[builder(default, setter(into, strip_option))]
+    pub parent_commit: Option<String>,
+}
+```
+
+**UploadFolderParams:**
+
+```rust
+#[derive(TypedBuilder)]
+pub struct UploadFolderParams {
+    pub repo_id: String,
+    pub folder_path: PathBuf,
+    #[builder(default, setter(into, strip_option))]
+    pub path_in_repo: Option<String>,
+    #[builder(default, setter(into, strip_option))]
+    pub repo_type: Option<RepoType>,
+    #[builder(default, setter(into, strip_option))]
+    pub revision: Option<String>,
+    #[builder(default, setter(into, strip_option))]
+    pub commit_message: Option<String>,
+    #[builder(default, setter(into, strip_option))]
+    pub commit_description: Option<String>,
+    #[builder(default, setter(into, strip_option))]
+    pub create_pr: Option<bool>,
+    #[builder(default, setter(into, strip_option))]
+    pub allow_patterns: Option<Vec<String>>,
+    #[builder(default, setter(into, strip_option))]
+    pub ignore_patterns: Option<Vec<String>>,
+    #[builder(default, setter(into, strip_option))]
+    pub delete_patterns: Option<Vec<String>>,
+}
+```
+
+**DownloadFileParams:**
+
+```rust
+#[derive(TypedBuilder)]
+pub struct DownloadFileParams {
+    pub repo_id: String,
+    pub filename: String,
+    pub local_dir: PathBuf,
+    #[builder(default, setter(into, strip_option))]
+    pub repo_type: Option<RepoType>,
+    #[builder(default, setter(into, strip_option))]
+    pub revision: Option<String>,
+}
+```
+
+Downloads go to a caller-specified `local_dir`. No caching in v1 — see Out of Scope.
+
+**CreateRepoParams:**
+
+```rust
+#[derive(TypedBuilder)]
+pub struct CreateRepoParams {
+    pub repo_id: String,
+    #[builder(default, setter(into, strip_option))]
+    pub repo_type: Option<RepoType>,
+    #[builder(default, setter(into, strip_option))]
+    pub private: Option<bool>,
+    #[builder(default)]
+    pub exist_ok: bool,
+    #[builder(default, setter(into, strip_option))]
+    pub space_sdk: Option<String>,
+}
+```
+
+Other params structs (`DeleteRepoParams`, `ModelInfoParams`, `ListRepoFilesParams`, etc.) follow the same pattern: required fields non-optional, everything else `Option<T>` with `#[builder(default)]`.
 
 ## API Methods
 
@@ -280,6 +457,7 @@ pub async fn download_file(&self, params: &DownloadFileParams) -> Result<PathBuf
 pub async fn upload_file(&self, params: &UploadFileParams) -> Result<CommitInfo>;
 pub async fn upload_folder(&self, params: &UploadFolderParams) -> Result<CommitInfo>;
 pub async fn delete_file(&self, params: &DeleteFileParams) -> Result<CommitInfo>;
+pub async fn delete_folder(&self, params: &DeleteFolderParams) -> Result<CommitInfo>;
 pub async fn create_commit(&self, params: &CreateCommitParams) -> Result<CommitInfo>;
 ```
 
@@ -289,9 +467,9 @@ pub fn list_repo_commits(&self, params: &ListRepoCommitsParams) -> impl Stream<I
 pub async fn list_repo_refs(&self, params: &ListRepoRefsParams) -> Result<GitRefs>;
 pub async fn get_commit_diff(&self, params: &GetCommitDiffParams) -> Result<Vec<DiffEntry>>;
 pub async fn get_raw_diff(&self, params: &GetRawDiffParams) -> Result<String>;
-pub async fn create_branch(&self, params: &CreateBranchParams) -> Result<GitRefInfo>;
+pub async fn create_branch(&self, params: &CreateBranchParams) -> Result<()>;
 pub async fn delete_branch(&self, params: &DeleteBranchParams) -> Result<()>;
-pub async fn create_tag(&self, params: &CreateTagParams) -> Result<GitRefInfo>;
+pub async fn create_tag(&self, params: &CreateTagParams) -> Result<()>;
 pub async fn delete_tag(&self, params: &DeleteTagParams) -> Result<()>;
 ```
 
@@ -303,6 +481,7 @@ Paginated endpoints return `impl Stream<Item = Result<T>>` using `futures::strea
 struct PaginationState {
     buffer: VecDeque<serde_json::Value>,
     next_url: Option<Url>,
+    is_first_page: bool,
     done: bool,
 }
 
@@ -314,6 +493,7 @@ fn paginate<T: DeserializeOwned>(
     let state = PaginationState {
         buffer: VecDeque::new(),
         next_url: Some(initial_url),
+        is_first_page: true,
         done: false,
     };
 
@@ -331,9 +511,15 @@ fn paginate<T: DeserializeOwned>(
                 None => { state.done = true; return Ok(None); }
             };
 
-            let response = self.inner.client.get(url)
-                .query(&params).headers(self.auth_headers())
-                .send().await?;
+            // Only send query params on the first page. Subsequent pages
+            // use the full URL from the Link header which already includes params.
+            let mut request = self.inner.client.get(url)
+                .headers(self.auth_headers());
+            if state.is_first_page {
+                request = request.query(&params);
+                state.is_first_page = false;
+            }
+            let response = request.send().await?;
 
             state.next_url = parse_link_header_next(&response);
             if state.next_url.is_none() { state.done = true; }
@@ -420,3 +606,4 @@ The following features are deferred to future versions. Each can be added as add
 13. **Download cache management** — full cache layout with symlinks, blob storage, refs, etag-based deduplication (matching Python library's `~/.cache/huggingface/hub` structure)
 14. **Sync (blocking) interface** — `sync_` prefixed methods using `reqwest::blocking::Client`, behind a `sync` feature flag
 15. **Organization followers** — list organization followers
+16. **Built-in retry/rate-limit handling** — automatic retry on 429/5xx responses with backoff
