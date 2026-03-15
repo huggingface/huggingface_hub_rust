@@ -7,6 +7,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use serde::Deserialize;
 use xet_client::cas_client::auth::{AuthError, TokenRefresher};
 use xet_data::processing::data_client;
 use xet_data::processing::{Sha256Policy, XetFileInfo};
@@ -14,13 +15,17 @@ use xet_data::processing::{Sha256Policy, XetFileInfo};
 use crate::client::HfApi;
 use crate::constants;
 use crate::error::{HfError, Result};
-use crate::types::{AddSource, DownloadFileParams, RepoType};
+use crate::types::{AddSource, DownloadFileParams, GetXetTokenParams, RepoType};
 
-const HEADER_XET_ENDPOINT: &str = "x-xet-cas-url";
-const HEADER_XET_ACCESS_TOKEN: &str = "x-xet-access-token";
-const HEADER_XET_EXPIRATION: &str = "x-xet-token-expiration";
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct XetTokenResponse {
+    access_token: String,
+    exp: u64,
+    cas_url: String,
+}
 
-pub(crate) struct XetConnectionInfo {
+pub struct XetConnectionInfo {
     pub endpoint: String,
     pub access_token: String,
     pub expiration_unix_epoch: u64,
@@ -30,24 +35,6 @@ impl XetConnectionInfo {
     fn token_info(&self) -> (String, u64) {
         (self.access_token.clone(), self.expiration_unix_epoch)
     }
-}
-
-fn parse_xet_connection_from_headers(
-    headers: &reqwest::header::HeaderMap,
-) -> Option<XetConnectionInfo> {
-    let endpoint = headers.get(HEADER_XET_ENDPOINT)?.to_str().ok()?.to_string();
-    let access_token = headers
-        .get(HEADER_XET_ACCESS_TOKEN)?
-        .to_str()
-        .ok()?
-        .to_string();
-    let expiration_str = headers.get(HEADER_XET_EXPIRATION)?.to_str().ok()?;
-    let expiration_unix_epoch = expiration_str.parse::<u64>().ok()?;
-    Some(XetConnectionInfo {
-        endpoint,
-        access_token,
-        expiration_unix_epoch,
-    })
 }
 
 /// Implements token refresh by calling the Hub API's xet token endpoint.
@@ -102,8 +89,11 @@ async fn fetch_xet_connection_info(
         .check_response(response, Some(repo_id), crate::error::NotFoundContext::Repo)
         .await?;
 
-    parse_xet_connection_from_headers(response.headers()).ok_or_else(|| {
-        HfError::Other("Xet connection headers not found in token response".to_string())
+    let token_resp: XetTokenResponse = response.json().await?;
+    Ok(XetConnectionInfo {
+        endpoint: token_resp.cas_url,
+        access_token: token_resp.access_token,
+        expiration_unix_epoch: token_resp.exp,
     })
 }
 
@@ -134,13 +124,8 @@ pub(crate) async fn xet_download(
         .as_deref()
         .unwrap_or(constants::DEFAULT_REVISION);
 
-    let conn = match parse_xet_connection_from_headers(headers) {
-        Some(c) => c,
-        None => {
-            fetch_xet_connection_info(api, "read", &params.repo_id, params.repo_type, revision)
-                .await?
-        }
-    };
+    let conn =
+        fetch_xet_connection_info(api, "read", &params.repo_id, params.repo_type, revision).await?;
 
     let token_refresher: Arc<dyn TokenRefresher> = Arc::new(HubTokenRefresher {
         api: api.clone(),
@@ -257,4 +242,23 @@ pub(crate) async fn xet_upload(
         .into_iter()
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| HfError::Other("Unexpected missing xet upload result".to_string()))
+}
+
+impl HfApi {
+    /// Fetch a Xet connection token (read or write) for a repository.
+    /// Endpoint: GET /api/{repo_type}s/{repo_id}/xet-{read|write}-token/{revision}
+    pub async fn get_xet_token(&self, params: &GetXetTokenParams) -> Result<XetConnectionInfo> {
+        let revision = params
+            .revision
+            .as_deref()
+            .unwrap_or(constants::DEFAULT_REVISION);
+        fetch_xet_connection_info(
+            self,
+            params.token_type.as_str(),
+            &params.repo_id,
+            params.repo_type,
+            revision,
+        )
+        .await
+    }
 }

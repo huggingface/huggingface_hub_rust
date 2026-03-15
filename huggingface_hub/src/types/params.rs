@@ -391,3 +391,29 @@ pub struct DeleteTagParams {
     #[builder(default, setter(into, strip_option))]
     pub repo_type: Option<RepoType>,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XetTokenType {
+    Read,
+    Write,
+}
+
+impl XetTokenType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            XetTokenType::Read => "read",
+            XetTokenType::Write => "write",
+        }
+    }
+}
+
+#[derive(TypedBuilder)]
+pub struct GetXetTokenParams {
+    #[builder(setter(into))]
+    pub repo_id: String,
+    pub token_type: XetTokenType,
+    #[builder(default, setter(into, strip_option))]
+    pub repo_type: Option<RepoType>,
+    #[builder(default, setter(into, strip_option))]
+    pub revision: Option<String>,
+}

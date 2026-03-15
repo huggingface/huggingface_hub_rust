@@ -25,7 +25,7 @@ pub mod error;
 pub mod pagination;
 pub mod types;
 #[cfg(feature = "xet")]
-pub(crate) mod xet;
+pub mod xet;
 
 pub use client::{HfApi, HfApiBuilder};
 pub use error::{HfError, Result};
