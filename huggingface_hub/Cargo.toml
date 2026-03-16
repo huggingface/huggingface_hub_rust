@@ -25,6 +25,15 @@ xet-client = { git = "https://github.com/huggingface/xet-core.git", rev = "6232b
 [features]
 default = []
 xet = ["dep:xet-data", "dep:xet-client", "dep:async-trait"]
+spaces = []
+inference_endpoints = []
+collections = []
+discussions = []
+webhooks = []
+jobs = []
+access_requests = []
+likes = []
+papers = []
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

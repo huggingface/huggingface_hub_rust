@@ -94,13 +94,31 @@ huggingface_hub_rust/
 │   │   │   ├── repo.rs             # RepoType, ModelInfo, DatasetInfo, SpaceInfo, RepoTreeEntry
 │   │   │   ├── user.rs             # User, Organization, OrgMembership
 │   │   │   ├── commit.rs           # CommitInfo, GitCommitInfo, GitRefs, CommitOperation, AddSource
-│   │   │   └── params.rs           # All *Params structs with TypedBuilder
+│   │   │   ├── params.rs           # All *Params structs with TypedBuilder
+│   │   │   ├── spaces.rs           # SpaceRuntime, SpaceVariable (behind "spaces" feature)
+│   │   │   ├── inference_endpoints.rs # InferenceEndpointInfo, status types ("inference_endpoints")
+│   │   │   ├── collections.rs      # Collection, CollectionItem ("collections" feature)
+│   │   │   ├── discussions.rs      # Discussion, DiscussionWithDetails, events ("discussions")
+│   │   │   ├── webhooks.rs         # WebhookInfo, WebhookWatchedItem ("webhooks" feature)
+│   │   │   ├── jobs.rs             # JobInfo, JobStatus, ScheduledJobInfo ("jobs" feature)
+│   │   │   ├── access_requests.rs  # AccessRequest ("access_requests" feature)
+│   │   │   ├── likes.rs            # UserLikes ("likes" feature)
+│   │   │   └── papers.rs           # PaperInfo, DailyPaper ("papers" feature)
 │   │   └── api/
 │   │       ├── mod.rs              # Module declarations
 │   │       ├── repo.rs             # Repo info, listing, existence checks, create/delete/update/move
 │   │       ├── files.rs            # File listing, download, upload, create_commit, folder ops
 │   │       ├── commits.rs          # Commit listing, diffs, branch/tag management
-│   │       └── users.rs            # whoami, auth_check, user/org info, followers
+│   │       ├── users.rs            # whoami, auth_check, user/org info, followers
+│   │       ├── spaces.rs           # Space runtime, secrets, variables, hardware, pause/restart
+│   │       ├── inference_endpoints.rs # IE create/get/list/update/delete/pause/resume
+│   │       ├── collections.rs      # Collection CRUD, item management
+│   │       ├── discussions.rs      # Discussions & PRs, comments, merge
+│   │       ├── webhooks.rs         # Webhook CRUD, enable/disable
+│   │       ├── jobs.rs             # Jobs run/list/inspect/cancel, scheduled jobs
+│   │       ├── access_requests.rs  # Gated repo access requests
+│   │       ├── likes.rs            # Like/unlike, list liked repos/likers
+│   │       └── papers.rs           # Paper search, daily papers, paper info
 │   └── tests/
 │       └── integration_test.rs     # Integration tests against live Hub API
 └── docs/

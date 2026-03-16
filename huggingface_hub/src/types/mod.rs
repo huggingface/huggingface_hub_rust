@@ -3,7 +3,45 @@ pub mod params;
 pub mod repo;
 pub mod user;
 
+#[cfg(feature = "access_requests")]
+pub mod access_requests;
+#[cfg(feature = "collections")]
+pub mod collections;
+#[cfg(feature = "discussions")]
+pub mod discussions;
+#[cfg(feature = "inference_endpoints")]
+pub mod inference_endpoints;
+#[cfg(feature = "jobs")]
+pub mod jobs;
+#[cfg(feature = "likes")]
+pub mod likes;
+#[cfg(feature = "papers")]
+pub mod papers;
+#[cfg(feature = "spaces")]
+pub mod spaces;
+#[cfg(feature = "webhooks")]
+pub mod webhooks;
+
 pub use commit::*;
 pub use params::*;
 pub use repo::*;
 pub use user::*;
+
+#[cfg(feature = "access_requests")]
+pub use access_requests::*;
+#[cfg(feature = "collections")]
+pub use collections::*;
+#[cfg(feature = "discussions")]
+pub use discussions::*;
+#[cfg(feature = "inference_endpoints")]
+pub use inference_endpoints::*;
+#[cfg(feature = "jobs")]
+pub use jobs::*;
+#[cfg(feature = "likes")]
+pub use likes::*;
+#[cfg(feature = "papers")]
+pub use papers::*;
+#[cfg(feature = "spaces")]
+pub use spaces::*;
+#[cfg(feature = "webhooks")]
+pub use webhooks::*;
