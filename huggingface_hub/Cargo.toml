@@ -19,12 +19,12 @@ typed-builder = "0.20"
 globset = "0.4"
 base64 = "0.22"
 async-trait = { version = "0.1", optional = true }
-xet-data = { git = "https://github.com/huggingface/xet-core.git", rev = "6232b42", optional = true }
+hf-xet = { git = "https://github.com/huggingface/xet-core.git", rev = "6232b42", optional = true }
 xet-client = { git = "https://github.com/huggingface/xet-core.git", rev = "6232b42", optional = true }
 
 [features]
 default = []
-xet = ["dep:xet-data", "dep:xet-client", "dep:async-trait"]
+xet = ["dep:hf-xet", "dep:xet-client", "dep:async-trait"]
 spaces = []
 inference_endpoints = []
 collections = []
