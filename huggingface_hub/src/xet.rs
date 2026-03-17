@@ -96,21 +96,6 @@ async fn fetch_xet_connection_info(
     })
 }
 
-/// Build a XetSession with the given connection info and token refresher.
-async fn build_xet_session(
-    conn: &XetConnectionInfo,
-    token_refresher: Arc<dyn TokenRefresher>,
-) -> Result<xet::xet_session::XetSession> {
-    let (token, expiry) = conn.token_info();
-    XetSessionBuilder::new()
-        .with_endpoint(conn.endpoint.clone())
-        .with_token_info(token, expiry)
-        .with_token_refresher(token_refresher)
-        .build_async()
-        .await
-        .map_err(|e| HfError::Other(format!("Failed to build xet session: {e}")))
-}
-
 /// Download a file using the xet protocol.
 /// Extracts the file hash and size from the HEAD response headers,
 /// fetches a read token, and uses xet-session's DownloadGroup.
@@ -138,24 +123,15 @@ pub(crate) async fn xet_download(
         .as_deref()
         .unwrap_or(constants::DEFAULT_REVISION);
 
-    let conn =
-        fetch_xet_connection_info(api, "read", &params.repo_id, params.repo_type, revision).await?;
-
-    let token_refresher: Arc<dyn TokenRefresher> = Arc::new(HubTokenRefresher {
-        api: api.clone(),
-        repo_id: params.repo_id.clone(),
-        repo_type: params.repo_type,
-        revision: revision.to_string(),
-        token_type: "read",
-    });
+    let session = api
+        .get_or_init_xet_session("read", &params.repo_id, params.repo_type, revision)
+        .await?;
 
     tokio::fs::create_dir_all(&params.local_dir).await?;
     let dest_path = params.local_dir.join(&params.filename);
     if let Some(parent) = dest_path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
-
-    let session = build_xet_session(&conn, token_refresher).await?;
 
     let group = session
         .new_download_group()
@@ -190,17 +166,9 @@ pub(crate) async fn xet_upload(
     repo_type: Option<RepoType>,
     revision: &str,
 ) -> Result<Vec<XetFileInfo>> {
-    let conn = fetch_xet_connection_info(api, "write", repo_id, repo_type, revision).await?;
-
-    let token_refresher: Arc<dyn TokenRefresher> = Arc::new(HubTokenRefresher {
-        api: api.clone(),
-        repo_id: repo_id.to_string(),
-        repo_type,
-        revision: revision.to_string(),
-        token_type: "write",
-    });
-
-    let session = build_xet_session(&conn, token_refresher).await?;
+    let session = api
+        .get_or_init_xet_session("write", repo_id, repo_type, revision)
+        .await?;
 
     let commit = session
         .new_upload_commit()
@@ -247,6 +215,62 @@ pub(crate) async fn xet_upload(
 }
 
 impl HfApi {
+    /// Return the cached XetSession, creating it on first use.
+    ///
+    /// The session is built once per HfApi lifetime and reused for all
+    /// subsequent xet operations. A token refresher is installed so the
+    /// session can renew its CAS credentials when they expire.
+    async fn get_or_init_xet_session(
+        &self,
+        token_type: &'static str,
+        repo_id: &str,
+        repo_type: Option<RepoType>,
+        revision: &str,
+    ) -> Result<xet::xet_session::XetSession> {
+        {
+            let guard = self
+                .inner
+                .xet_session
+                .lock()
+                .map_err(|e| HfError::Other(format!("xet session lock poisoned: {e}")))?;
+            if let Some(session) = guard.as_ref() {
+                return Ok(session.clone());
+            }
+        }
+
+        let conn =
+            fetch_xet_connection_info(self, token_type, repo_id, repo_type, revision).await?;
+
+        let token_refresher: Arc<dyn TokenRefresher> = Arc::new(HubTokenRefresher {
+            api: self.clone(),
+            repo_id: repo_id.to_string(),
+            repo_type,
+            revision: revision.to_string(),
+            token_type,
+        });
+
+        let (token, expiry) = conn.token_info();
+        let session = XetSessionBuilder::new()
+            .with_endpoint(conn.endpoint.clone())
+            .with_token_info(token, expiry)
+            .with_token_refresher(token_refresher)
+            .build_async()
+            .await
+            .map_err(|e| HfError::Other(format!("Failed to build xet session: {e}")))?;
+
+        let mut guard = self
+            .inner
+            .xet_session
+            .lock()
+            .map_err(|e| HfError::Other(format!("xet session lock poisoned: {e}")))?;
+        if let Some(existing) = guard.as_ref() {
+            Ok(existing.clone())
+        } else {
+            *guard = Some(session.clone());
+            Ok(session)
+        }
+    }
+
     /// Fetch a Xet connection token (read or write) for a repository.
     /// Endpoint: GET /api/{repo_type}s/{repo_id}/xet-{read|write}-token/{revision}
     pub async fn get_xet_token(&self, params: &GetXetTokenParams) -> Result<XetConnectionInfo> {
