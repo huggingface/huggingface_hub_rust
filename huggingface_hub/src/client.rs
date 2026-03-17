@@ -22,6 +22,8 @@ pub(crate) struct HfApiInner {
     pub(crate) client: ClientWithMiddleware,
     pub(crate) endpoint: String,
     pub(crate) token: Option<String>,
+    #[cfg(feature = "xet")]
+    pub(crate) xet_session: std::sync::Mutex<Option<xet::xet_session::XetSession>>,
 }
 
 pub struct HfApiBuilder {
@@ -113,6 +115,8 @@ impl HfApiBuilder {
                 client,
                 endpoint: endpoint.trim_end_matches('/').to_string(),
                 token,
+                #[cfg(feature = "xet")]
+                xet_session: std::sync::Mutex::new(None),
             }),
         })
     }

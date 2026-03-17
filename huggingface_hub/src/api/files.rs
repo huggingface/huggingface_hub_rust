@@ -113,19 +113,19 @@ impl HfApi {
     ///
     /// Endpoint: GET {endpoint}/{prefix}{repo_id}/resolve/{revision}/{filename}
     pub async fn download_file(&self, params: &DownloadFileParams) -> Result<PathBuf> {
+        let revision = params
+            .revision
+            .as_deref()
+            .unwrap_or(constants::DEFAULT_REVISION);
+        let url = self.download_url(
+            params.repo_type,
+            &params.repo_id,
+            revision,
+            &params.filename,
+        );
+
         #[cfg(feature = "xet")]
         {
-            let revision = params
-                .revision
-                .as_deref()
-                .unwrap_or(constants::DEFAULT_REVISION);
-            let url = self.download_url(
-                params.repo_type,
-                &params.repo_id,
-                revision,
-                &params.filename,
-            );
-
             let head_response = self
                 .inner
                 .client
@@ -144,58 +144,51 @@ impl HfApi {
                 )
                 .await?;
 
-            return crate::xet::xet_download(self, params, &head_response).await;
+            let has_xet_hash = head_response
+                .headers()
+                .get(constants::HEADER_X_XET_HASH)
+                .is_some();
+
+            if has_xet_hash {
+                return crate::xet::xet_download(self, params, &head_response).await;
+            }
         }
 
-        #[cfg(not(feature = "xet"))]
-        {
-            let revision = params
-                .revision
-                .as_deref()
-                .unwrap_or(constants::DEFAULT_REVISION);
-            let url = self.download_url(
-                params.repo_type,
-                &params.repo_id,
-                revision,
-                &params.filename,
-            );
+        let response = self
+            .inner
+            .client
+            .get(&url)
+            .headers(self.auth_headers())
+            .send()
+            .await?;
+        let response = self
+            .check_response(
+                response,
+                Some(&params.repo_id),
+                crate::error::NotFoundContext::Entry {
+                    path: params.filename.clone(),
+                },
+            )
+            .await?;
 
-            let response = self
-                .inner
-                .client
-                .get(&url)
-                .headers(self.auth_headers())
-                .send()
-                .await?;
-            let response = self
-                .check_response(
-                    response,
-                    Some(&params.repo_id),
-                    crate::error::NotFoundContext::Entry {
-                        path: params.filename.clone(),
-                    },
-                )
-                .await?;
+        tokio::fs::create_dir_all(&params.local_dir).await?;
 
-            tokio::fs::create_dir_all(&params.local_dir).await?;
-
-            let dest_path = params.local_dir.join(&params.filename);
-            if let Some(parent) = dest_path.parent() {
-                tokio::fs::create_dir_all(parent).await?;
-            }
-
-            let mut file = tokio::fs::File::create(&dest_path).await?;
-            let mut stream = response.bytes_stream();
-            use tokio::io::AsyncWriteExt;
-
-            while let Some(chunk) = stream.next().await {
-                let chunk = chunk?;
-                file.write_all(&chunk).await?;
-            }
-            file.flush().await?;
-
-            Ok(dest_path)
+        let dest_path = params.local_dir.join(&params.filename);
+        if let Some(parent) = dest_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
         }
+
+        let mut file = tokio::fs::File::create(&dest_path).await?;
+        let mut stream = response.bytes_stream();
+        use tokio::io::AsyncWriteExt;
+
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            file.write_all(&chunk).await?;
+        }
+        file.flush().await?;
+
+        Ok(dest_path)
     }
 }
 
