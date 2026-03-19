@@ -215,3 +215,16 @@ impl HfApi {
         Ok(())
     }
 }
+
+sync_api! {
+    impl HfApi {
+        fn get_collection(&self, params: &GetCollectionParams) -> Result<Collection>;
+        fn list_collections(&self, params: &ListCollectionsParams) -> Result<Vec<Collection>>;
+        fn create_collection(&self, params: &CreateCollectionParams) -> Result<Collection>;
+        fn update_collection_metadata(&self, params: &UpdateCollectionMetadataParams) -> Result<Collection>;
+        fn delete_collection(&self, params: &DeleteCollectionParams) -> Result<()>;
+        fn add_collection_item(&self, params: &AddCollectionItemParams) -> Result<Collection>;
+        fn update_collection_item(&self, params: &UpdateCollectionItemParams) -> Result<CollectionItem>;
+        fn delete_collection_item(&self, params: &DeleteCollectionItemParams) -> Result<()>;
+    }
+}

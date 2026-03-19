@@ -85,3 +85,11 @@ impl HfApi {
         Ok(response.json().await?)
     }
 }
+
+sync_api! {
+    impl HfApi {
+        fn list_papers(&self, params: &ListPapersParams) -> Result<Vec<PaperSearchResult>>;
+        fn list_daily_papers(&self, params: &ListDailyPapersParams) -> Result<Vec<DailyPaper>>;
+        fn paper_info(&self, params: &PaperInfoParams) -> Result<PaperInfo>;
+    }
+}

@@ -444,3 +444,26 @@ mod tests {
         assert_eq!(split_repo_id("org/sub/repo"), (Some("org"), "sub/repo"));
     }
 }
+
+sync_api! {
+    impl HfApi {
+        fn model_info(&self, params: &ModelInfoParams) -> Result<ModelInfo>;
+        fn dataset_info(&self, params: &DatasetInfoParams) -> Result<DatasetInfo>;
+        fn space_info(&self, params: &SpaceInfoParams) -> Result<SpaceInfo>;
+        fn repo_exists(&self, params: &RepoExistsParams) -> Result<bool>;
+        fn revision_exists(&self, params: &RevisionExistsParams) -> Result<bool>;
+        fn file_exists(&self, params: &FileExistsParams) -> Result<bool>;
+        fn create_repo(&self, params: &CreateRepoParams) -> Result<RepoUrl>;
+        fn delete_repo(&self, params: &DeleteRepoParams) -> Result<()>;
+        fn update_repo_settings(&self, params: &UpdateRepoParams) -> Result<()>;
+        fn move_repo(&self, params: &MoveRepoParams) -> Result<RepoUrl>;
+    }
+}
+
+sync_api_stream! {
+    impl HfApi {
+        fn list_models(&self, params: &ListModelsParams) -> ModelInfo;
+        fn list_datasets(&self, params: &ListDatasetsParams) -> DatasetInfo;
+        fn list_spaces(&self, params: &ListSpacesParams) -> SpaceInfo;
+    }
+}

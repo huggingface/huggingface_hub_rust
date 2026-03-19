@@ -235,3 +235,21 @@ impl HfApi {
         Ok(())
     }
 }
+
+sync_api! {
+    impl HfApi {
+        fn list_repo_refs(&self, params: &ListRepoRefsParams) -> Result<GitRefs>;
+        fn get_commit_diff(&self, params: &GetCommitDiffParams) -> Result<String>;
+        fn get_raw_diff(&self, params: &GetRawDiffParams) -> Result<String>;
+        fn create_branch(&self, params: &CreateBranchParams) -> Result<()>;
+        fn delete_branch(&self, params: &DeleteBranchParams) -> Result<()>;
+        fn create_tag(&self, params: &CreateTagParams) -> Result<()>;
+        fn delete_tag(&self, params: &DeleteTagParams) -> Result<()>;
+    }
+}
+
+sync_api_stream! {
+    impl HfApi {
+        fn list_repo_commits(&self, params: &ListRepoCommitsParams) -> GitCommitInfo;
+    }
+}

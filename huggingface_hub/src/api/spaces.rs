@@ -275,3 +275,18 @@ impl HfApi {
         Ok(response.json().await?)
     }
 }
+
+sync_api! {
+    impl HfApi {
+        fn get_space_runtime(&self, params: &GetSpaceRuntimeParams) -> Result<SpaceRuntime>;
+        fn request_space_hardware(&self, params: &RequestSpaceHardwareParams) -> Result<SpaceRuntime>;
+        fn set_space_sleep_time(&self, params: &SetSpaceSleepTimeParams) -> Result<()>;
+        fn pause_space(&self, params: &PauseSpaceParams) -> Result<SpaceRuntime>;
+        fn restart_space(&self, params: &RestartSpaceParams) -> Result<SpaceRuntime>;
+        fn add_space_secret(&self, params: &AddSpaceSecretParams) -> Result<()>;
+        fn delete_space_secret(&self, params: &DeleteSpaceSecretParams) -> Result<()>;
+        fn add_space_variable(&self, params: &AddSpaceVariableParams) -> Result<()>;
+        fn delete_space_variable(&self, params: &DeleteSpaceVariableParams) -> Result<()>;
+        fn duplicate_space(&self, params: &DuplicateSpaceParams) -> Result<RepoUrl>;
+    }
+}
