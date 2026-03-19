@@ -158,7 +158,6 @@ pub(crate) async fn xet_download(
 /// Upload files using the xet protocol.
 /// Fetches a write token and uses xet-session's UploadCommit.
 /// Returns the XetFileInfo (hash + size) for each uploaded file.
-#[allow(dead_code)]
 pub(crate) async fn xet_upload(
     api: &HfApi,
     files: &[(String, AddSource)],

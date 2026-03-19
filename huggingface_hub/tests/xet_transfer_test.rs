@@ -293,36 +293,30 @@ async fn test_upload_200mb_random_data_and_verify() {
         .commit_message("upload 200MB random data")
         .build();
 
-    match api.upload_file(&params).await {
-        Ok(commit) => {
-            assert!(commit.commit_oid.is_some());
+    let commit = api
+        .upload_file(&params)
+        .await
+        .expect("Large file upload via xet should succeed");
+    assert!(commit.commit_oid.is_some());
 
-            let exists_params = FileExistsParams::builder()
-                .repo_id(&repo_id)
-                .filename("large_random.bin")
-                .build();
-            assert!(api.file_exists(&exists_params).await.unwrap());
+    let exists_params = FileExistsParams::builder()
+        .repo_id(&repo_id)
+        .filename("large_random.bin")
+        .build();
+    assert!(api.file_exists(&exists_params).await.unwrap());
 
-            let dl_dir = tempfile::tempdir().unwrap();
-            let dl_params = DownloadFileParams::builder()
-                .repo_id(&repo_id)
-                .filename("large_random.bin")
-                .local_dir(dl_dir.path().to_path_buf())
-                .build();
-            let downloaded_path = api.download_file(&dl_params).await.unwrap();
-            assert!(downloaded_path.exists());
+    let dl_dir = tempfile::tempdir().unwrap();
+    let dl_params = DownloadFileParams::builder()
+        .repo_id(&repo_id)
+        .filename("large_random.bin")
+        .local_dir(dl_dir.path().to_path_buf())
+        .build();
+    let downloaded_path = api.download_file(&dl_params).await.unwrap();
+    assert!(downloaded_path.exists());
 
-            let downloaded_data = std::fs::read(&downloaded_path).unwrap();
-            assert_eq!(downloaded_data.len(), 200 * 1024 * 1024);
-            assert_eq!(sha256_hex(&downloaded_data), expected_hash);
-        }
-        Err(e) => {
-            eprintln!(
-                "Large file upload failed (expected if xet upload integration \
-                 is not yet wired into create_commit): {e}"
-            );
-        }
-    }
+    let downloaded_data = std::fs::read(&downloaded_path).unwrap();
+    assert_eq!(downloaded_data.len(), 200 * 1024 * 1024);
+    assert_eq!(sha256_hex(&downloaded_data), expected_hash);
 
     delete_test_repo(&api, &repo_id).await;
 }

@@ -1,3 +1,9 @@
+use std::collections::HashMap;
+use std::path::PathBuf;
+
+use futures::stream::{Stream, StreamExt};
+use url::Url;
+
 use crate::client::HfApi;
 use crate::constants;
 use crate::error::{HfError, Result};
@@ -6,9 +12,6 @@ use crate::types::{
     DeleteFolderParams, DownloadFileParams, GetPathsInfoParams, ListRepoFilesParams,
     ListRepoTreeParams, RepoTreeEntry, UploadFileParams, UploadFolderParams,
 };
-use futures::stream::{Stream, StreamExt};
-use std::path::PathBuf;
-use url::Url;
 
 impl HfApi {
     /// List file paths in a repository (convenience wrapper over list_repo_tree).
@@ -195,14 +198,16 @@ impl HfApi {
 impl HfApi {
     /// Create a commit with multiple operations.
     ///
-    /// Sends file content as base64-encoded NDJSON to
-    /// POST /api/{repo_type}s/{repo_id}/commit/{revision}
+    /// Files are checked against the Hub's preupload endpoint to determine
+    /// upload mode. Files marked as "lfs" are uploaded via the xet protocol
+    /// (requires the "xet" feature) and referenced by SHA256 OID in the commit.
+    /// Files marked as "regular" are sent inline as base64.
     ///
-    /// All repositories are xet-enabled. Large binary files should be
-    /// uploaded via the xet protocol (see `xet_upload`) before committing.
+    /// Returns `HfError::XetNotEnabled` if any files require LFS upload but
+    /// the "xet" feature is not enabled.
+    ///
+    /// Endpoint: POST /api/{repo_type}s/{repo_id}/commit/{revision}
     pub async fn create_commit(&self, params: &CreateCommitParams) -> Result<CommitInfo> {
-        use base64::Engine;
-
         let revision = params
             .revision
             .as_deref()
@@ -212,6 +217,13 @@ impl HfApi {
             self.api_url(params.repo_type, &params.repo_id),
             revision
         );
+
+        // Determine which files should be uploaded via xet (LFS) vs inline
+        // (regular). Files uploaded via xet are referenced by their SHA256 OID
+        // in the commit NDJSON.
+        let lfs_uploaded: HashMap<String, (String, u64)> = self
+            .preupload_and_upload_lfs_files(params, revision)
+            .await?;
 
         let mut ndjson_lines: Vec<Vec<u8>> = Vec::new();
 
@@ -231,19 +243,19 @@ impl HfApi {
                     path_in_repo,
                     source,
                 } => {
-                    let content = match source {
-                        AddSource::File(path) => tokio::fs::read(path).await?,
-                        AddSource::Bytes(bytes) => bytes.clone(),
-                    };
-                    let b64 = base64::engine::general_purpose::STANDARD.encode(&content);
-                    serde_json::json!({
-                        "key": "file",
-                        "value": {
-                            "content": b64,
-                            "path": path_in_repo,
-                            "encoding": "base64",
-                        }
-                    })
+                    if let Some((oid, size)) = lfs_uploaded.get(path_in_repo) {
+                        serde_json::json!({
+                            "key": "lfsFile",
+                            "value": {
+                                "path": path_in_repo,
+                                "algo": "sha256",
+                                "oid": oid,
+                                "size": size,
+                            }
+                        })
+                    } else {
+                        Self::inline_base64_entry(path_in_repo, source).await?
+                    }
                 }
                 CommitOperation::Delete { path_in_repo } => {
                     serde_json::json!({
@@ -284,6 +296,26 @@ impl HfApi {
             )
             .await?;
         Ok(response.json().await?)
+    }
+
+    async fn inline_base64_entry(
+        path_in_repo: &str,
+        source: &AddSource,
+    ) -> Result<serde_json::Value> {
+        use base64::Engine;
+        let content = match source {
+            AddSource::File(path) => tokio::fs::read(path).await?,
+            AddSource::Bytes(bytes) => bytes.clone(),
+        };
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&content);
+        Ok(serde_json::json!({
+            "key": "file",
+            "value": {
+                "content": b64,
+                "path": path_in_repo,
+                "encoding": "base64",
+            }
+        }))
     }
 
     /// Upload a single file to a repository. Convenience wrapper around create_commit.
@@ -459,6 +491,316 @@ impl HfApi {
         };
 
         self.create_commit(&commit_params).await
+    }
+}
+
+// --- Preupload and LFS upload integration ---
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PreuploadFileInfo {
+    path: String,
+    upload_mode: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct PreuploadResponse {
+    files: Vec<PreuploadFileInfo>,
+}
+
+#[cfg(feature = "xet")]
+#[derive(Debug, serde::Deserialize)]
+struct LfsBatchResponse {
+    transfer: Option<String>,
+}
+
+impl HfApi {
+    /// Check upload modes for all files and upload LFS files via xet.
+    ///
+    /// Always calls the preupload endpoint to determine upload mode per file.
+    /// If any files require LFS and the "xet" feature is not enabled, returns
+    /// `HfError::XetNotEnabled`.
+    ///
+    /// Returns a map of path_in_repo -> (sha256_oid, size) for files that were
+    /// uploaded via xet and should be referenced as lfsFile in the commit.
+    async fn preupload_and_upload_lfs_files(
+        &self,
+        params: &CreateCommitParams,
+        revision: &str,
+    ) -> Result<HashMap<String, (String, u64)>> {
+        let add_ops: Vec<(&String, &AddSource)> = params
+            .operations
+            .iter()
+            .filter_map(|op| match op {
+                CommitOperation::Add {
+                    path_in_repo,
+                    source,
+                } => Some((path_in_repo, source)),
+                _ => None,
+            })
+            .collect();
+
+        if add_ops.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        // Step 1: Gather file info (path, size, sample) for preupload check
+        let mut file_infos: Vec<(String, u64, Vec<u8>, &AddSource)> = Vec::new();
+        for (path_in_repo, source) in &add_ops {
+            let (size, sample) = read_size_and_sample(source).await?;
+            file_infos.push(((*path_in_repo).clone(), size, sample, source));
+        }
+
+        // Step 2: Call preupload endpoint to classify files as "lfs" or "regular"
+        let upload_modes = self
+            .fetch_upload_modes(
+                &params.repo_id,
+                params.repo_type,
+                revision,
+                &file_infos
+                    .iter()
+                    .map(|(path, size, sample, _)| (path.as_str(), *size, sample.as_slice()))
+                    .collect::<Vec<_>>(),
+            )
+            .await?;
+
+        // Step 3: Identify LFS files (empty files are always regular)
+        let lfs_files: Vec<&(String, u64, Vec<u8>, &AddSource)> = file_infos
+            .iter()
+            .filter(|(path, size, _, _)| {
+                *size > 0
+                    && upload_modes
+                        .get(path.as_str())
+                        .map(|m| m == "lfs")
+                        .unwrap_or(false)
+            })
+            .collect();
+
+        if lfs_files.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        // LFS files require xet upload — fail if the feature is not enabled
+        #[cfg(not(feature = "xet"))]
+        {
+            let _ = lfs_files;
+            Err(HfError::XetNotEnabled)
+        }
+
+        #[cfg(feature = "xet")]
+        self.upload_lfs_files_via_xet(params, revision, &lfs_files)
+            .await
+    }
+
+    /// Call the Hub preupload endpoint to determine upload mode per file.
+    /// Returns a map of path -> upload_mode ("lfs" or "regular").
+    async fn fetch_upload_modes(
+        &self,
+        repo_id: &str,
+        repo_type: Option<crate::types::RepoType>,
+        revision: &str,
+        files: &[(&str, u64, &[u8])],
+    ) -> Result<HashMap<String, String>> {
+        use base64::Engine;
+
+        let url = format!(
+            "{}/preupload/{}",
+            self.api_url(repo_type, repo_id),
+            revision
+        );
+
+        let files_payload: Vec<serde_json::Value> = files
+            .iter()
+            .map(|(path, size, sample)| {
+                serde_json::json!({
+                    "path": path,
+                    "size": size,
+                    "sample": base64::engine::general_purpose::STANDARD.encode(sample),
+                })
+            })
+            .collect();
+
+        let body = serde_json::json!({ "files": files_payload });
+
+        let response = self
+            .inner
+            .client
+            .post(&url)
+            .headers(self.auth_headers())
+            .json(&body)
+            .send()
+            .await?;
+
+        let response = self
+            .check_response(response, Some(repo_id), crate::error::NotFoundContext::Repo)
+            .await?;
+
+        let preupload: PreuploadResponse = response.json().await?;
+
+        Ok(preupload
+            .files
+            .into_iter()
+            .map(|f| (f.path, f.upload_mode))
+            .collect())
+    }
+}
+
+#[cfg(feature = "xet")]
+impl HfApi {
+    /// Compute SHA256, negotiate LFS batch transfer, and upload via xet.
+    async fn upload_lfs_files_via_xet(
+        &self,
+        params: &CreateCommitParams,
+        revision: &str,
+        lfs_files: &[&(String, u64, Vec<u8>, &AddSource)],
+    ) -> Result<HashMap<String, (String, u64)>> {
+        // Step 4: Compute SHA256 for LFS files
+        let mut lfs_with_sha: Vec<(String, u64, String, &AddSource)> = Vec::new();
+        for (path, size, _, source) in lfs_files {
+            let sha256_oid = sha256_of_source(source).await?;
+            lfs_with_sha.push(((*path).clone(), *size, sha256_oid, source));
+        }
+
+        // Step 5: Call LFS batch endpoint to negotiate transfer method
+        let objects: Vec<(&str, u64)> = lfs_with_sha
+            .iter()
+            .map(|(_, size, oid, _)| (oid.as_str(), *size))
+            .collect();
+
+        let chosen_transfer = self
+            .post_lfs_batch_info(&params.repo_id, params.repo_type, revision, &objects)
+            .await?;
+
+        // Step 6: If server chose xet, upload via xet
+        if chosen_transfer.as_deref() != Some("xet") {
+            return Ok(HashMap::new());
+        }
+
+        let xet_files: Vec<(String, AddSource)> = lfs_with_sha
+            .iter()
+            .map(|(path, _, _, source)| (path.clone(), (*source).clone()))
+            .collect();
+
+        crate::xet::xet_upload(
+            self,
+            &xet_files,
+            &params.repo_id,
+            params.repo_type,
+            revision,
+        )
+        .await?;
+
+        let result: HashMap<String, (String, u64)> = lfs_with_sha
+            .into_iter()
+            .map(|(path, size, oid, _)| (path, (oid, size)))
+            .collect();
+
+        Ok(result)
+    }
+
+    /// Call the LFS batch endpoint to negotiate transfer method.
+    /// Returns the chosen transfer (e.g. "xet", "basic", "multipart").
+    async fn post_lfs_batch_info(
+        &self,
+        repo_id: &str,
+        repo_type: Option<crate::types::RepoType>,
+        revision: &str,
+        objects: &[(&str, u64)],
+    ) -> Result<Option<String>> {
+        let prefix = constants::repo_type_url_prefix(repo_type);
+        let url = format!(
+            "{}/{}{}.git/info/lfs/objects/batch",
+            self.inner.endpoint, prefix, repo_id
+        );
+
+        let objects_payload: Vec<serde_json::Value> = objects
+            .iter()
+            .map(|(oid, size)| {
+                serde_json::json!({
+                    "oid": oid,
+                    "size": size,
+                })
+            })
+            .collect();
+
+        let body = serde_json::json!({
+            "operation": "upload",
+            "transfers": ["basic", "multipart", "xet"],
+            "objects": objects_payload,
+            "hash_algo": "sha256",
+            "ref": { "name": revision },
+        });
+
+        let mut headers = self.auth_headers();
+        headers.insert(
+            reqwest::header::ACCEPT,
+            "application/vnd.git-lfs+json".parse().unwrap(),
+        );
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            "application/vnd.git-lfs+json".parse().unwrap(),
+        );
+
+        let response = self
+            .inner
+            .client
+            .post(&url)
+            .headers(headers)
+            .json(&body)
+            .send()
+            .await?;
+
+        let response = self
+            .check_response(response, Some(repo_id), crate::error::NotFoundContext::Repo)
+            .await?;
+
+        let batch: LfsBatchResponse = response.json().await?;
+        Ok(batch.transfer)
+    }
+}
+
+#[cfg(feature = "xet")]
+async fn sha256_of_source(source: &AddSource) -> Result<String> {
+    use sha2::{Digest, Sha256};
+    match source {
+        AddSource::Bytes(bytes) => {
+            let hash = Sha256::digest(bytes);
+            Ok(format!("{:x}", hash))
+        }
+        AddSource::File(path) => {
+            use tokio::io::AsyncReadExt;
+            let mut file = tokio::fs::File::open(path).await?;
+            let mut hasher = Sha256::new();
+            let mut buf = vec![0u8; 64 * 1024];
+            loop {
+                let n = file.read(&mut buf).await?;
+                if n == 0 {
+                    break;
+                }
+                hasher.update(&buf[..n]);
+            }
+            Ok(format!("{:x}", hasher.finalize()))
+        }
+    }
+}
+
+async fn read_size_and_sample(source: &AddSource) -> Result<(u64, Vec<u8>)> {
+    match source {
+        AddSource::Bytes(bytes) => {
+            let size = bytes.len() as u64;
+            let sample = bytes[..std::cmp::min(bytes.len(), 512)].to_vec();
+            Ok((size, sample))
+        }
+        AddSource::File(path) => {
+            use tokio::io::AsyncReadExt;
+            let mut file = tokio::fs::File::open(path).await?;
+            let metadata = file.metadata().await?;
+            let size = metadata.len();
+            let mut sample = vec![0u8; 512];
+            let n = file.read(&mut sample).await?;
+            sample.truncate(n);
+            Ok((size, sample))
+        }
     }
 }
 
