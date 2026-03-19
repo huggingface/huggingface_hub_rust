@@ -21,10 +21,11 @@ base64 = "0.22"
 async-trait = { version = "0.1", optional = true }
 hf-xet = { git = "https://github.com/huggingface/xet-core.git", rev = "6232b42", optional = true }
 xet-client = { git = "https://github.com/huggingface/xet-core.git", rev = "6232b42", optional = true }
+sha2 = { version = "0.10", optional = true }
 
 [features]
 default = []
-xet = ["dep:hf-xet", "dep:xet-client", "dep:async-trait"]
+xet = ["dep:hf-xet", "dep:xet-client", "dep:async-trait", "dep:sha2"]
 spaces = []
 inference_endpoints = []
 collections = []
