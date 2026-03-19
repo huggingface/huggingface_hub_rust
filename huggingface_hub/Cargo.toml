@@ -25,6 +25,7 @@ sha2 = { version = "0.10", optional = true }
 
 [features]
 default = []
+blocking = ["tokio/rt"]
 xet = ["dep:hf-xet", "dep:xet-client", "dep:async-trait", "dep:sha2"]
 spaces = []
 inference_endpoints = []
