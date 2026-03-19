@@ -105,7 +105,7 @@ impl HfApi {
 }
 
 sync_api! {
-    impl HfApi {
+    impl HfApiSync {
         fn whoami(&self) -> Result<User>;
         fn auth_check(&self) -> Result<()>;
         fn get_user_overview(&self, username: &str) -> Result<User>;
@@ -114,7 +114,7 @@ sync_api! {
 }
 
 sync_api_stream! {
-    impl HfApi {
+    impl HfApiSync {
         fn list_user_followers(&self, username: &str) -> User;
         fn list_user_following(&self, username: &str) -> User;
         fn list_organization_members(&self, organization: &str) -> User;

@@ -237,7 +237,7 @@ impl HfApi {
 }
 
 sync_api! {
-    impl HfApi {
+    impl HfApiSync {
         fn list_repo_refs(&self, params: &ListRepoRefsParams) -> Result<GitRefs>;
         fn get_commit_diff(&self, params: &GetCommitDiffParams) -> Result<String>;
         fn get_raw_diff(&self, params: &GetRawDiffParams) -> Result<String>;
@@ -249,7 +249,7 @@ sync_api! {
 }
 
 sync_api_stream! {
-    impl HfApi {
+    impl HfApiSync {
         fn list_repo_commits(&self, params: &ListRepoCommitsParams) -> GitCommitInfo;
     }
 }

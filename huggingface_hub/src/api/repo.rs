@@ -446,7 +446,7 @@ mod tests {
 }
 
 sync_api! {
-    impl HfApi {
+    impl HfApiSync {
         fn model_info(&self, params: &ModelInfoParams) -> Result<ModelInfo>;
         fn dataset_info(&self, params: &DatasetInfoParams) -> Result<DatasetInfo>;
         fn space_info(&self, params: &SpaceInfoParams) -> Result<SpaceInfo>;
@@ -461,7 +461,7 @@ sync_api! {
 }
 
 sync_api_stream! {
-    impl HfApi {
+    impl HfApiSync {
         fn list_models(&self, params: &ListModelsParams) -> ModelInfo;
         fn list_datasets(&self, params: &ListDatasetsParams) -> DatasetInfo;
         fn list_spaces(&self, params: &ListSpacesParams) -> SpaceInfo;

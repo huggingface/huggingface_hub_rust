@@ -277,7 +277,7 @@ impl HfApi {
 }
 
 sync_api! {
-    impl HfApi {
+    impl HfApiSync {
         fn get_space_runtime(&self, params: &GetSpaceRuntimeParams) -> Result<SpaceRuntime>;
         fn request_space_hardware(&self, params: &RequestSpaceHardwareParams) -> Result<SpaceRuntime>;
         fn set_space_sleep_time(&self, params: &SetSpaceSleepTimeParams) -> Result<()>;

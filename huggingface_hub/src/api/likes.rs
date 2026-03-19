@@ -75,7 +75,7 @@ impl HfApi {
 }
 
 sync_api! {
-    impl HfApi {
+    impl HfApiSync {
         fn like(&self, params: &LikeParams) -> Result<()>;
         fn unlike(&self, params: &LikeParams) -> Result<()>;
         fn list_liked_repos(&self, params: &ListLikedReposParams) -> Result<Vec<LikedRepo>>;
@@ -83,7 +83,7 @@ sync_api! {
 }
 
 sync_api_stream! {
-    impl HfApi {
+    impl HfApiSync {
         fn list_repo_likers(&self, params: &ListRepoLikersParams) -> User;
     }
 }

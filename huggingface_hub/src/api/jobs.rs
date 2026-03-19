@@ -298,7 +298,7 @@ impl HfApi {
 }
 
 sync_api! {
-    impl HfApi {
+    impl HfApiSync {
         fn run_job(&self, params: &RunJobParams) -> Result<JobInfo>;
         fn list_jobs(&self, params: &ListJobsParams) -> Result<Vec<JobInfo>>;
         fn inspect_job(&self, job_id: &str, namespace: Option<&str>) -> Result<JobInfo>;

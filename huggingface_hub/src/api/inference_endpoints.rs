@@ -270,7 +270,7 @@ impl HfApi {
 }
 
 sync_api! {
-    impl HfApi {
+    impl HfApiSync {
         fn create_inference_endpoint(&self, params: &CreateInferenceEndpointParams) -> Result<InferenceEndpointInfo>;
         fn get_inference_endpoint(&self, params: &GetInferenceEndpointParams) -> Result<InferenceEndpointInfo>;
         fn list_inference_endpoints(&self, params: &ListInferenceEndpointsParams) -> Result<Vec<InferenceEndpointInfo>>;

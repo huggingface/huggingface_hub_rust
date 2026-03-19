@@ -301,7 +301,7 @@ impl HfApi {
 }
 
 sync_api! {
-    impl HfApi {
+    impl HfApiSync {
         fn get_repo_discussions(&self, params: &GetRepoDiscussionsParams) -> Result<DiscussionsResponse>;
         fn get_discussion_details(&self, params: &GetDiscussionDetailsParams) -> Result<DiscussionWithDetails>;
         fn create_discussion(&self, params: &CreateDiscussionParams) -> Result<DiscussionWithDetails>;

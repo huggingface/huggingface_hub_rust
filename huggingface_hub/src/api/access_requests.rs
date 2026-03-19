@@ -122,7 +122,7 @@ impl HfApi {
 }
 
 sync_api! {
-    impl HfApi {
+    impl HfApiSync {
         fn list_pending_access_requests(&self, params: &ListAccessRequestsParams) -> Result<Vec<AccessRequest>>;
         fn list_accepted_access_requests(&self, params: &ListAccessRequestsParams) -> Result<Vec<AccessRequest>>;
         fn list_rejected_access_requests(&self, params: &ListAccessRequestsParams) -> Result<Vec<AccessRequest>>;

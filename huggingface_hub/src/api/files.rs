@@ -875,7 +875,7 @@ fn matches_any_glob(patterns: &[String], path: &str) -> bool {
 }
 
 sync_api! {
-    impl HfApi {
+    impl HfApiSync {
         fn list_repo_files(&self, params: &ListRepoFilesParams) -> Result<Vec<String>>;
         fn get_paths_info(&self, params: &GetPathsInfoParams) -> Result<Vec<RepoTreeEntry>>;
         fn download_file(&self, params: &DownloadFileParams) -> Result<PathBuf>;
@@ -888,7 +888,7 @@ sync_api! {
 }
 
 sync_api_stream! {
-    impl HfApi {
+    impl HfApiSync {
         fn list_repo_tree(&self, params: &ListRepoTreeParams) -> RepoTreeEntry;
     }
 }
