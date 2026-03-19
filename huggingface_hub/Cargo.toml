@@ -41,3 +41,64 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tempfile = "3"
 rand = "0.9"
 sha2 = "0.10"
+
+[[example]]
+name = "repo"
+path = "examples/repo.rs"
+
+[[example]]
+name = "files"
+path = "examples/files.rs"
+
+[[example]]
+name = "commits"
+path = "examples/commits.rs"
+
+[[example]]
+name = "users"
+path = "examples/users.rs"
+
+[[example]]
+name = "spaces"
+path = "examples/spaces.rs"
+required-features = ["spaces"]
+
+[[example]]
+name = "inference_endpoints"
+path = "examples/inference_endpoints.rs"
+required-features = ["inference_endpoints"]
+
+[[example]]
+name = "collections"
+path = "examples/collections.rs"
+required-features = ["collections"]
+
+[[example]]
+name = "discussions"
+path = "examples/discussions.rs"
+required-features = ["discussions"]
+
+[[example]]
+name = "webhooks"
+path = "examples/webhooks.rs"
+required-features = ["webhooks"]
+
+[[example]]
+name = "jobs"
+path = "examples/jobs.rs"
+required-features = ["jobs"]
+
+[[example]]
+name = "access_requests"
+path = "examples/access_requests.rs"
+required-features = ["access_requests"]
+
+[[example]]
+name = "likes"
+path = "examples/likes.rs"
+required-features = ["likes"]
+
+[[example]]
+name = "papers"
+path = "examples/papers.rs"
+required-features = ["papers"]
