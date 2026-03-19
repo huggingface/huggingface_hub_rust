@@ -1,4 +1,3 @@
-#[cfg(feature = "xet")]
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -199,12 +198,13 @@ impl HfApi {
 impl HfApi {
     /// Create a commit with multiple operations.
     ///
-    /// When the "xet" feature is enabled, files are checked against the Hub's
-    /// preupload endpoint to determine upload mode. Files marked as "lfs" are
-    /// uploaded via the xet protocol and referenced by SHA256 OID in the commit.
+    /// Files are checked against the Hub's preupload endpoint to determine
+    /// upload mode. Files marked as "lfs" are uploaded via the xet protocol
+    /// (requires the "xet" feature) and referenced by SHA256 OID in the commit.
     /// Files marked as "regular" are sent inline as base64.
     ///
-    /// Without the "xet" feature, all files are sent inline as base64.
+    /// Returns `HfError::XetNotEnabled` if any files require LFS upload but
+    /// the "xet" feature is not enabled.
     ///
     /// Endpoint: POST /api/{repo_type}s/{repo_id}/commit/{revision}
     pub async fn create_commit(&self, params: &CreateCommitParams) -> Result<CommitInfo> {
@@ -218,11 +218,10 @@ impl HfApi {
             revision
         );
 
-        // When xet feature is enabled, determine which files should be uploaded
-        // via xet (LFS) vs inline (regular). Files uploaded via xet are referenced
-        // by their SHA256 OID in the commit NDJSON.
-        #[cfg(feature = "xet")]
-        let xet_uploaded: HashMap<String, (String, u64)> = self
+        // Determine which files should be uploaded via xet (LFS) vs inline
+        // (regular). Files uploaded via xet are referenced by their SHA256 OID
+        // in the commit NDJSON.
+        let lfs_uploaded: HashMap<String, (String, u64)> = self
             .preupload_and_upload_lfs_files(params, revision)
             .await?;
 
@@ -244,8 +243,7 @@ impl HfApi {
                     path_in_repo,
                     source,
                 } => {
-                    #[cfg(feature = "xet")]
-                    if let Some((oid, size)) = xet_uploaded.get(path_in_repo) {
+                    if let Some((oid, size)) = lfs_uploaded.get(path_in_repo) {
                         serde_json::json!({
                             "key": "lfsFile",
                             "value": {
@@ -258,9 +256,6 @@ impl HfApi {
                     } else {
                         Self::inline_base64_entry(path_in_repo, source).await?
                     }
-
-                    #[cfg(not(feature = "xet"))]
-                    Self::inline_base64_entry(path_in_repo, source).await?
                 }
                 CommitOperation::Delete { path_in_repo } => {
                     serde_json::json!({
@@ -499,9 +494,8 @@ impl HfApi {
     }
 }
 
-// --- Xet upload integration (feature-gated) ---
+// --- Preupload and LFS upload integration ---
 
-#[cfg(feature = "xet")]
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PreuploadFileInfo {
@@ -509,7 +503,6 @@ struct PreuploadFileInfo {
     upload_mode: String,
 }
 
-#[cfg(feature = "xet")]
 #[derive(Debug, serde::Deserialize)]
 struct PreuploadResponse {
     files: Vec<PreuploadFileInfo>,
@@ -521,12 +514,15 @@ struct LfsBatchResponse {
     transfer: Option<String>,
 }
 
-#[cfg(feature = "xet")]
 impl HfApi {
-    /// Determine upload modes and upload LFS files via xet if the server chooses it.
+    /// Check upload modes for all files and upload LFS files via xet.
+    ///
+    /// Always calls the preupload endpoint to determine upload mode per file.
+    /// If any files require LFS and the "xet" feature is not enabled, returns
+    /// `HfError::XetNotEnabled`.
     ///
     /// Returns a map of path_in_repo -> (sha256_oid, size) for files that were
-    /// successfully uploaded via xet and should be referenced as lfsFile in the commit.
+    /// uploaded via xet and should be referenced as lfsFile in the commit.
     async fn preupload_and_upload_lfs_files(
         &self,
         params: &CreateCommitParams,
@@ -584,49 +580,16 @@ impl HfApi {
             return Ok(HashMap::new());
         }
 
-        // Step 4: Compute SHA256 for LFS files
-        let mut lfs_with_sha: Vec<(String, u64, String, &AddSource)> = Vec::new();
-        for (path, size, _, source) in &lfs_files {
-            let sha256_oid = sha256_of_source(source).await?;
-            lfs_with_sha.push(((*path).clone(), *size, sha256_oid, source));
+        // LFS files require xet upload — fail if the feature is not enabled
+        #[cfg(not(feature = "xet"))]
+        {
+            let _ = lfs_files;
+            Err(HfError::XetNotEnabled)
         }
 
-        // Step 5: Call LFS batch endpoint to negotiate transfer method
-        let objects: Vec<(&str, u64)> = lfs_with_sha
-            .iter()
-            .map(|(_, size, oid, _)| (oid.as_str(), *size))
-            .collect();
-
-        let chosen_transfer = self
-            .post_lfs_batch_info(&params.repo_id, params.repo_type, revision, &objects)
-            .await?;
-
-        // Step 6: If server chose xet, upload via xet
-        if chosen_transfer.as_deref() != Some("xet") {
-            return Ok(HashMap::new());
-        }
-
-        let xet_files: Vec<(String, AddSource)> = lfs_with_sha
-            .iter()
-            .map(|(path, _, _, source)| (path.clone(), (*source).clone()))
-            .collect();
-
-        crate::xet::xet_upload(
-            self,
-            &xet_files,
-            &params.repo_id,
-            params.repo_type,
-            revision,
-        )
-        .await?;
-
-        // Build the result map
-        let result: HashMap<String, (String, u64)> = lfs_with_sha
-            .into_iter()
-            .map(|(path, size, oid, _)| (path, (oid, size)))
-            .collect();
-
-        Ok(result)
+        #[cfg(feature = "xet")]
+        self.upload_lfs_files_via_xet(params, revision, &lfs_files)
+            .await
     }
 
     /// Call the Hub preupload endpoint to determine upload mode per file.
@@ -679,6 +642,60 @@ impl HfApi {
             .into_iter()
             .map(|f| (f.path, f.upload_mode))
             .collect())
+    }
+}
+
+#[cfg(feature = "xet")]
+impl HfApi {
+    /// Compute SHA256, negotiate LFS batch transfer, and upload via xet.
+    async fn upload_lfs_files_via_xet(
+        &self,
+        params: &CreateCommitParams,
+        revision: &str,
+        lfs_files: &[&(String, u64, Vec<u8>, &AddSource)],
+    ) -> Result<HashMap<String, (String, u64)>> {
+        // Step 4: Compute SHA256 for LFS files
+        let mut lfs_with_sha: Vec<(String, u64, String, &AddSource)> = Vec::new();
+        for (path, size, _, source) in lfs_files {
+            let sha256_oid = sha256_of_source(source).await?;
+            lfs_with_sha.push(((*path).clone(), *size, sha256_oid, source));
+        }
+
+        // Step 5: Call LFS batch endpoint to negotiate transfer method
+        let objects: Vec<(&str, u64)> = lfs_with_sha
+            .iter()
+            .map(|(_, size, oid, _)| (oid.as_str(), *size))
+            .collect();
+
+        let chosen_transfer = self
+            .post_lfs_batch_info(&params.repo_id, params.repo_type, revision, &objects)
+            .await?;
+
+        // Step 6: If server chose xet, upload via xet
+        if chosen_transfer.as_deref() != Some("xet") {
+            return Ok(HashMap::new());
+        }
+
+        let xet_files: Vec<(String, AddSource)> = lfs_with_sha
+            .iter()
+            .map(|(path, _, _, source)| (path.clone(), (*source).clone()))
+            .collect();
+
+        crate::xet::xet_upload(
+            self,
+            &xet_files,
+            &params.repo_id,
+            params.repo_type,
+            revision,
+        )
+        .await?;
+
+        let result: HashMap<String, (String, u64)> = lfs_with_sha
+            .into_iter()
+            .map(|(path, size, oid, _)| (path, (oid, size)))
+            .collect();
+
+        Ok(result)
     }
 
     /// Call the LFS batch endpoint to negotiate transfer method.
@@ -767,7 +784,6 @@ async fn sha256_of_source(source: &AddSource) -> Result<String> {
     }
 }
 
-#[cfg(feature = "xet")]
 async fn read_size_and_sample(source: &AddSource) -> Result<(u64, Vec<u8>)> {
     match source {
         AddSource::Bytes(bytes) => {
