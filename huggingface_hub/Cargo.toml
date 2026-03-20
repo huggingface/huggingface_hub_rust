@@ -25,6 +25,7 @@ sha2 = { version = "0.10", optional = true }
 
 [features]
 default = []
+blocking = ["tokio/rt"]
 xet = ["dep:hf-xet", "dep:xet-client", "dep:async-trait", "dep:sha2"]
 spaces = []
 inference_endpoints = []
@@ -102,3 +103,13 @@ required-features = ["likes"]
 name = "papers"
 path = "examples/papers.rs"
 required-features = ["papers"]
+
+[[example]]
+name = "blocking_read"
+path = "examples/blocking_read.rs"
+required-features = ["blocking"]
+
+[[example]]
+name = "blocking_write"
+path = "examples/blocking_write.rs"
+required-features = ["blocking"]

@@ -296,3 +296,21 @@ impl HfApi {
         Ok(response.json().await?)
     }
 }
+
+sync_api! {
+    impl HfApiSync {
+        fn run_job(&self, params: &RunJobParams) -> Result<JobInfo>;
+        fn list_jobs(&self, params: &ListJobsParams) -> Result<Vec<JobInfo>>;
+        fn inspect_job(&self, job_id: &str, namespace: Option<&str>) -> Result<JobInfo>;
+        fn cancel_job(&self, job_id: &str, namespace: Option<&str>) -> Result<JobInfo>;
+        fn fetch_job_logs(&self, job_id: &str, namespace: Option<&str>) -> Result<Vec<JobLogEntry>>;
+        fn fetch_job_metrics(&self, job_id: &str, namespace: Option<&str>) -> Result<Vec<JobMetrics>>;
+        fn list_job_hardware(&self) -> Result<Vec<JobHardware>>;
+        fn create_scheduled_job(&self, params: &CreateScheduledJobParams) -> Result<ScheduledJobInfo>;
+        fn list_scheduled_jobs(&self) -> Result<Vec<ScheduledJobInfo>>;
+        fn inspect_scheduled_job(&self, scheduled_job_id: &str) -> Result<ScheduledJobInfo>;
+        fn delete_scheduled_job(&self, scheduled_job_id: &str) -> Result<()>;
+        fn suspend_scheduled_job(&self, scheduled_job_id: &str) -> Result<ScheduledJobInfo>;
+        fn resume_scheduled_job(&self, scheduled_job_id: &str) -> Result<ScheduledJobInfo>;
+    }
+}

@@ -103,3 +103,20 @@ impl HfApi {
         self.paginate(url, vec![])
     }
 }
+
+sync_api! {
+    impl HfApiSync {
+        fn whoami(&self) -> Result<User>;
+        fn auth_check(&self) -> Result<()>;
+        fn get_user_overview(&self, username: &str) -> Result<User>;
+        fn get_organization_overview(&self, organization: &str) -> Result<Organization>;
+    }
+}
+
+sync_api_stream! {
+    impl HfApiSync {
+        fn list_user_followers(&self, username: &str) -> User;
+        fn list_user_following(&self, username: &str) -> User;
+        fn list_organization_members(&self, organization: &str) -> User;
+    }
+}

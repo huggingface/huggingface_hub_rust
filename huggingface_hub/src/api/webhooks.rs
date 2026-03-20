@@ -147,3 +147,15 @@ impl HfApi {
         Ok(response.json().await?)
     }
 }
+
+sync_api! {
+    impl HfApiSync {
+        fn list_webhooks(&self) -> Result<Vec<WebhookInfo>>;
+        fn get_webhook(&self, webhook_id: &str) -> Result<WebhookInfo>;
+        fn create_webhook(&self, params: &CreateWebhookParams) -> Result<WebhookInfo>;
+        fn update_webhook(&self, params: &UpdateWebhookParams) -> Result<WebhookInfo>;
+        fn delete_webhook(&self, webhook_id: &str) -> Result<()>;
+        fn enable_webhook(&self, webhook_id: &str) -> Result<WebhookInfo>;
+        fn disable_webhook(&self, webhook_id: &str) -> Result<WebhookInfo>;
+    }
+}

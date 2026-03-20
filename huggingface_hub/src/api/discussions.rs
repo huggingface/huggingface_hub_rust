@@ -299,3 +299,18 @@ impl HfApi {
         Ok(response.json().await?)
     }
 }
+
+sync_api! {
+    impl HfApiSync {
+        fn get_repo_discussions(&self, params: &GetRepoDiscussionsParams) -> Result<DiscussionsResponse>;
+        fn get_discussion_details(&self, params: &GetDiscussionDetailsParams) -> Result<DiscussionWithDetails>;
+        fn create_discussion(&self, params: &CreateDiscussionParams) -> Result<DiscussionWithDetails>;
+        fn create_pull_request(&self, params: &CreatePullRequestParams) -> Result<DiscussionWithDetails>;
+        fn comment_discussion(&self, params: &CommentDiscussionParams) -> Result<DiscussionComment>;
+        fn edit_discussion_comment(&self, params: &EditDiscussionCommentParams) -> Result<DiscussionComment>;
+        fn hide_discussion_comment(&self, params: &HideDiscussionCommentParams) -> Result<DiscussionComment>;
+        fn rename_discussion(&self, params: &RenameDiscussionParams) -> Result<DiscussionWithDetails>;
+        fn change_discussion_status(&self, params: &ChangeDiscussionStatusParams) -> Result<DiscussionWithDetails>;
+        fn merge_pull_request(&self, params: &MergePullRequestParams) -> Result<DiscussionWithDetails>;
+    }
+}

@@ -18,7 +18,62 @@
 //! }
 //! ```
 
+macro_rules! sync_api {
+    (
+        $(#[$impl_meta:meta])*
+        impl HfApiSync {
+            $(
+                fn $name:ident(&self $(, $pname:ident : $ptype:ty)*) -> $ret:ty;
+            )*
+        }
+    ) => {
+        #[cfg(feature = "blocking")]
+        $(#[$impl_meta])*
+        impl $crate::blocking::HfApiSync {
+            $(
+                #[doc = concat!("Synchronous version of [`HfApi::", stringify!($name), "`].")]
+                pub fn $name(&self $(, $pname : $ptype)*) -> $ret {
+                    self.runtime.block_on(self.inner.$name($($pname),*))
+                }
+            )*
+        }
+    };
+}
+
+macro_rules! sync_api_stream {
+    (
+        $(#[$impl_meta:meta])*
+        impl HfApiSync {
+            $(
+                fn $name:ident(&self $(, $pname:ident : $ptype:ty)*) -> $item:ty;
+            )*
+        }
+    ) => {
+        #[cfg(feature = "blocking")]
+        $(#[$impl_meta])*
+        impl $crate::blocking::HfApiSync {
+            $(
+                #[doc = concat!("Synchronous version of [`HfApi::", stringify!($name), "`]. Collects all items into a `Vec`.")]
+                pub fn $name(&self $(, $pname : $ptype)*) -> $crate::error::Result<Vec<$item>> {
+                    use futures::StreamExt;
+                    self.runtime.block_on(async {
+                        let stream = self.inner.$name($($pname),*);
+                        futures::pin_mut!(stream);
+                        let mut items = Vec::new();
+                        while let Some(item) = stream.next().await {
+                            items.push(item?);
+                        }
+                        Ok(items)
+                    })
+                }
+            )*
+        }
+    };
+}
+
 pub mod api;
+#[cfg(feature = "blocking")]
+pub mod blocking;
 pub mod client;
 pub mod constants;
 pub mod error;
@@ -27,6 +82,8 @@ pub mod types;
 #[cfg(feature = "xet")]
 pub mod xet;
 
+#[cfg(feature = "blocking")]
+pub use blocking::HfApiSync;
 pub use client::{HfApi, HfApiBuilder};
 pub use error::{HfError, Result};
 pub use types::*;

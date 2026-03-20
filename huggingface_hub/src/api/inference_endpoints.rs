@@ -268,3 +268,16 @@ impl HfApi {
         Ok(response.json().await?)
     }
 }
+
+sync_api! {
+    impl HfApiSync {
+        fn create_inference_endpoint(&self, params: &CreateInferenceEndpointParams) -> Result<InferenceEndpointInfo>;
+        fn get_inference_endpoint(&self, params: &GetInferenceEndpointParams) -> Result<InferenceEndpointInfo>;
+        fn list_inference_endpoints(&self, params: &ListInferenceEndpointsParams) -> Result<Vec<InferenceEndpointInfo>>;
+        fn update_inference_endpoint(&self, params: &UpdateInferenceEndpointParams) -> Result<InferenceEndpointInfo>;
+        fn delete_inference_endpoint(&self, params: &DeleteInferenceEndpointParams) -> Result<()>;
+        fn pause_inference_endpoint(&self, params: &PauseInferenceEndpointParams) -> Result<InferenceEndpointInfo>;
+        fn resume_inference_endpoint(&self, params: &ResumeInferenceEndpointParams) -> Result<InferenceEndpointInfo>;
+        fn scale_to_zero_inference_endpoint(&self, params: &ScaleToZeroInferenceEndpointParams) -> Result<InferenceEndpointInfo>;
+    }
+}

@@ -873,3 +873,22 @@ fn matches_any_glob(patterns: &[String], path: &str) -> bool {
             .unwrap_or(false)
     })
 }
+
+sync_api! {
+    impl HfApiSync {
+        fn list_repo_files(&self, params: &ListRepoFilesParams) -> Result<Vec<String>>;
+        fn get_paths_info(&self, params: &GetPathsInfoParams) -> Result<Vec<RepoTreeEntry>>;
+        fn download_file(&self, params: &DownloadFileParams) -> Result<PathBuf>;
+        fn create_commit(&self, params: &CreateCommitParams) -> Result<CommitInfo>;
+        fn upload_file(&self, params: &UploadFileParams) -> Result<CommitInfo>;
+        fn upload_folder(&self, params: &UploadFolderParams) -> Result<CommitInfo>;
+        fn delete_file(&self, params: &DeleteFileParams) -> Result<CommitInfo>;
+        fn delete_folder(&self, params: &DeleteFolderParams) -> Result<CommitInfo>;
+    }
+}
+
+sync_api_stream! {
+    impl HfApiSync {
+        fn list_repo_tree(&self, params: &ListRepoTreeParams) -> RepoTreeEntry;
+    }
+}

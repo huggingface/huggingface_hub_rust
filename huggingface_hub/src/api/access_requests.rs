@@ -120,3 +120,15 @@ impl HfApi {
         Ok(())
     }
 }
+
+sync_api! {
+    impl HfApiSync {
+        fn list_pending_access_requests(&self, params: &ListAccessRequestsParams) -> Result<Vec<AccessRequest>>;
+        fn list_accepted_access_requests(&self, params: &ListAccessRequestsParams) -> Result<Vec<AccessRequest>>;
+        fn list_rejected_access_requests(&self, params: &ListAccessRequestsParams) -> Result<Vec<AccessRequest>>;
+        fn accept_access_request(&self, params: &HandleAccessRequestParams) -> Result<()>;
+        fn reject_access_request(&self, params: &HandleAccessRequestParams) -> Result<()>;
+        fn cancel_access_request(&self, params: &HandleAccessRequestParams) -> Result<()>;
+        fn grant_access(&self, params: &GrantAccessParams) -> Result<()>;
+    }
+}
