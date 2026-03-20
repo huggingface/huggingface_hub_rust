@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::Deserialize;
-use xet::xet_session::{FileMetadata, XetFileInfo, XetSessionBuilder};
+use xet::xet_session::{FileMetadata, Sha256Policy, XetFileInfo, XetSessionBuilder};
 use xet_client::cas_client::auth::{AuthError, TokenRefresher};
 
 use crate::client::HfApi;
@@ -141,10 +141,12 @@ pub(crate) async fn xet_download(
     let file_info = XetFileInfo {
         hash: file_hash,
         file_size,
+        sha256: None,
     };
 
     group
         .download_file_to_path(file_info, dest_path.clone())
+        .await
         .map_err(|e| HfError::Other(format!("Xet download failed: {e}")))?;
 
     group
@@ -179,11 +181,11 @@ pub(crate) async fn xet_upload(
     for (_path_in_repo, source) in files {
         let handle = match source {
             AddSource::File(path) => commit
-                .upload_from_path(path.clone())
+                .upload_from_path(path.clone(), Sha256Policy::Compute)
                 .await
                 .map_err(|e| HfError::Other(format!("Xet upload failed: {e}")))?,
             AddSource::Bytes(bytes) => commit
-                .upload_bytes(bytes.clone(), None)
+                .upload_bytes(bytes.clone(), Sha256Policy::Compute, None)
                 .await
                 .map_err(|e| HfError::Other(format!("Xet upload failed: {e}")))?,
         };
@@ -207,6 +209,7 @@ pub(crate) async fn xet_upload(
         xet_file_infos.push(XetFileInfo {
             hash: metadata.hash.clone(),
             file_size: metadata.file_size,
+            sha256: metadata.sha256.clone(),
         });
     }
 

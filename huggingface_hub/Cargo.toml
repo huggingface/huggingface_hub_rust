@@ -19,8 +19,8 @@ typed-builder = "0.20"
 globset = "0.4"
 base64 = "0.22"
 async-trait = { version = "0.1", optional = true }
-hf-xet = { git = "https://github.com/huggingface/xet-core.git", rev = "6232b42", optional = true }
-xet-client = { git = "https://github.com/huggingface/xet-core.git", rev = "6232b42", optional = true }
+hf-xet = { git = "https://github.com/huggingface/xet-core.git", rev = "749c28b", optional = true }
+xet-client = { git = "https://github.com/huggingface/xet-core.git", rev = "749c28b", optional = true }
 sha2 = { version = "0.10", optional = true }
 
 [features]
