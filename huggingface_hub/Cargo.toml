@@ -103,3 +103,13 @@ required-features = ["likes"]
 name = "papers"
 path = "examples/papers.rs"
 required-features = ["papers"]
+
+[[example]]
+name = "blocking_read"
+path = "examples/blocking_read.rs"
+required-features = ["blocking"]
+
+[[example]]
+name = "blocking_write"
+path = "examples/blocking_write.rs"
+required-features = ["blocking"]
