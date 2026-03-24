@@ -1,3 +1,4 @@
+pub(crate) mod cache;
 pub mod commit;
 pub mod params;
 pub mod repo;
@@ -22,6 +23,9 @@ pub mod spaces;
 #[cfg(feature = "webhooks")]
 pub mod webhooks;
 
+pub use cache::{
+    CachedFileInfo, CachedRepoInfo, CachedRevisionInfo, DeleteCacheRevision, HfCacheInfo,
+};
 pub use commit::*;
 pub use params::*;
 pub use repo::*;
