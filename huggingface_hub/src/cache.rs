@@ -1,8 +1,40 @@
 #![allow(dead_code)]
 
+use std::fs::File;
 use std::path::{Path, PathBuf};
 
+use fs4::fs_std::FileExt;
+
 use crate::types::RepoType;
+
+pub(crate) struct CacheLock {
+    _file: File,
+}
+
+pub(crate) async fn acquire_lock(
+    cache_dir: &Path,
+    repo_folder: &str,
+    etag: &str,
+) -> crate::error::Result<CacheLock> {
+    let path = lock_path(cache_dir, repo_folder, etag);
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    let lock_path_clone = path.clone();
+    let lock = tokio::time::timeout(
+        std::time::Duration::from_secs(crate::constants::CACHE_LOCK_TIMEOUT_SECS),
+        tokio::task::spawn_blocking(move || {
+            let file = File::create(&lock_path_clone)?;
+            file.lock_exclusive()?;
+            Ok::<_, std::io::Error>(file)
+        }),
+    )
+    .await
+    .map_err(|_| crate::error::HfError::CacheLockTimeout { path: path.clone() })?
+    .map_err(|e| crate::error::HfError::Other(format!("Lock task failed: {e}")))?
+    .map_err(crate::error::HfError::Io)?;
+    Ok(CacheLock { _file: lock })
+}
 
 pub(crate) async fn write_ref(
     cache_dir: &Path,
@@ -302,5 +334,16 @@ mod tests {
         assert!(!is_commit_hash("main"));
         assert!(!is_commit_hash("abc123"));
         assert!(!is_commit_hash("xyz123def456abc123def456abc123def456abcd"));
+    }
+
+    #[tokio::test]
+    async fn test_acquire_and_release_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let lock = acquire_lock(dir.path(), "models--gpt2", "abc123")
+            .await
+            .unwrap();
+        let lock_file_path = lock_path(dir.path(), "models--gpt2", "abc123");
+        assert!(lock_file_path.exists());
+        drop(lock);
     }
 }
