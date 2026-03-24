@@ -15,3 +15,10 @@ impl HfApi {
         crate::cache::delete_revisions(&self.inner.cache_dir, &refs).await
     }
 }
+
+sync_api! {
+    impl HfApiSync {
+        fn scan_cache(&self) -> Result<HfCacheInfo>;
+        fn delete_cache_revisions(&self, revisions: &[DeleteCacheRevision]) -> Result<()>;
+    }
+}
