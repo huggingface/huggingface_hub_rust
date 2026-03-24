@@ -545,7 +545,7 @@ assert len(repos) == 1, f"Expected 1 gpt2 repo, found {{len(repos)}}"
 repo = repos[0]
 assert len(repo.revisions) >= 1, f"Expected >=1 revision, found {{len(repo.revisions)}}"
 
-revision = repo.revisions[0]
+revision = next(iter(repo.revisions))
 cached_filenames = {{f.file_name for f in revision.files}}
 rust_files = set(json.loads('{rust_files_json}'))
 assert rust_files.issubset(cached_filenames), (
