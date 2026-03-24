@@ -1346,3 +1346,59 @@ async fn test_snapshot_download() {
     let config = snapshot_dir.join("config.json");
     assert!(config.exists());
 }
+
+#[tokio::test]
+async fn test_scan_cache_after_download() {
+    let Some(_) = api() else { return };
+    let cache_dir = tempfile::tempdir().unwrap();
+    let api = HfApiBuilder::new()
+        .cache_dir(cache_dir.path())
+        .build()
+        .unwrap();
+
+    let params = DownloadFileParams::builder()
+        .repo_id("gpt2")
+        .filename("config.json")
+        .build();
+    api.download_file(&params).await.unwrap();
+
+    let info = api.scan_cache().await.unwrap();
+    assert_eq!(info.repos.len(), 1);
+    assert!(info.repos[0].repo_id.contains("gpt2"));
+    assert_eq!(info.repos[0].revisions.len(), 1);
+    assert!(!info.repos[0].revisions[0].files.is_empty());
+    assert!(info.size_on_disk > 0);
+}
+
+#[tokio::test]
+async fn test_delete_cache_revisions_integration() {
+    let Some(_) = api() else { return };
+    let cache_dir = tempfile::tempdir().unwrap();
+    let api = HfApiBuilder::new()
+        .cache_dir(cache_dir.path())
+        .build()
+        .unwrap();
+
+    let params = DownloadFileParams::builder()
+        .repo_id("gpt2")
+        .filename("config.json")
+        .build();
+    api.download_file(&params).await.unwrap();
+
+    let info = api.scan_cache().await.unwrap();
+    let repo = &info.repos[0];
+    let commit = repo.revisions[0].commit_hash.clone();
+
+    api.delete_cache_revisions(&[DeleteCacheRevision {
+        repo_id: repo.repo_id.clone(),
+        repo_type: repo.repo_type,
+        commit_hash: commit,
+    }])
+    .await
+    .unwrap();
+
+    let info = api.scan_cache().await.unwrap();
+    if !info.repos.is_empty() {
+        assert!(info.repos[0].revisions.is_empty());
+    }
+}
