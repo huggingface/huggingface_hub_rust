@@ -1325,3 +1325,24 @@ async fn test_download_file_cache_symlink_structure() {
     let target = std::fs::read_link(&path).unwrap();
     assert!(target.to_string_lossy().contains("blobs"));
 }
+
+#[tokio::test]
+async fn test_snapshot_download() {
+    let Some(_) = api() else { return };
+    let cache_dir = tempfile::tempdir().unwrap();
+    let api = HfApiBuilder::new()
+        .cache_dir(cache_dir.path())
+        .build()
+        .unwrap();
+
+    let params = SnapshotDownloadParams::builder()
+        .repo_id("gpt2")
+        .allow_patterns(vec!["*.json".to_string()])
+        .build();
+    let snapshot_dir = api.snapshot_download(&params).await.unwrap();
+
+    assert!(snapshot_dir.exists());
+    assert!(snapshot_dir.to_string_lossy().contains("snapshots"));
+    let config = snapshot_dir.join("config.json");
+    assert!(config.exists());
+}

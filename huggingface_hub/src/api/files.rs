@@ -10,9 +10,10 @@ use crate::client::HfApi;
 use crate::constants;
 use crate::error::{HfError, Result};
 use crate::types::{
-    AddSource, CommitInfo, CommitOperation, CreateCommitParams, DeleteFileParams,
-    DeleteFolderParams, DownloadFileParams, GetPathsInfoParams, ListRepoFilesParams,
-    ListRepoTreeParams, RepoTreeEntry, UploadFileParams, UploadFolderParams,
+    AddSource, CommitInfo, CommitOperation, CreateCommitParams, DatasetInfoParams,
+    DeleteFileParams, DeleteFolderParams, DownloadFileParams, GetPathsInfoParams,
+    ListRepoFilesParams, ListRepoTreeParams, ModelInfoParams, RepoTreeEntry, RepoType,
+    SnapshotDownloadParams, SpaceInfoParams, UploadFileParams, UploadFolderParams,
 };
 
 impl HfApi {
@@ -497,6 +498,148 @@ impl HfApi {
             &commit_hash,
             &params.filename,
         ))
+    }
+}
+
+impl HfApi {
+    pub async fn snapshot_download(&self, params: &SnapshotDownloadParams) -> Result<PathBuf> {
+        let revision = params
+            .revision
+            .as_deref()
+            .unwrap_or(constants::DEFAULT_REVISION);
+        let max_workers = params.max_workers.unwrap_or(8);
+        let repo_folder = crate::cache::repo_folder_name(&params.repo_id, params.repo_type);
+        let cache_dir = &self.inner.cache_dir;
+
+        if params.local_files_only == Some(true) {
+            let commit_hash = if crate::cache::is_commit_hash(revision) {
+                revision.to_string()
+            } else {
+                crate::cache::read_ref(cache_dir, &repo_folder, revision)
+                    .await?
+                    .ok_or_else(|| HfError::LocalEntryNotFound {
+                        path: format!("{}/{}", repo_folder, revision),
+                    })?
+            };
+            let snapshot_dir = cache_dir
+                .join(&repo_folder)
+                .join("snapshots")
+                .join(&commit_hash);
+            if snapshot_dir.exists() {
+                return Ok(snapshot_dir);
+            }
+            return Err(HfError::LocalEntryNotFound {
+                path: format!("{}/{}", repo_folder, commit_hash),
+            });
+        }
+
+        let commit_hash = if crate::cache::is_commit_hash(revision) {
+            revision.to_string()
+        } else {
+            let sha = match params.repo_type {
+                Some(RepoType::Dataset) => {
+                    let p = DatasetInfoParams::builder()
+                        .repo_id(&params.repo_id)
+                        .revision(revision)
+                        .build();
+                    self.dataset_info(&p).await?.sha
+                }
+                Some(RepoType::Space) => {
+                    let p = SpaceInfoParams::builder()
+                        .repo_id(&params.repo_id)
+                        .revision(revision)
+                        .build();
+                    self.space_info(&p).await?.sha
+                }
+                _ => {
+                    let p = ModelInfoParams::builder()
+                        .repo_id(&params.repo_id)
+                        .revision(revision)
+                        .build();
+                    self.model_info(&p).await?.sha
+                }
+            };
+            sha.ok_or_else(|| {
+                HfError::Other(format!(
+                    "No commit hash returned for {}/{}",
+                    params.repo_id, revision
+                ))
+            })?
+        };
+
+        let tree_params = ListRepoTreeParams::builder()
+            .repo_id(&params.repo_id)
+            .recursive(true)
+            .build();
+        let tree_params = ListRepoTreeParams {
+            revision: Some(commit_hash.clone()),
+            repo_type: params.repo_type,
+            ..tree_params
+        };
+        let stream = self.list_repo_tree(&tree_params);
+        futures::pin_mut!(stream);
+
+        let mut filenames: Vec<String> = Vec::new();
+        while let Some(entry) = stream.next().await {
+            let entry = entry?;
+            if let RepoTreeEntry::File { path, .. } = entry {
+                filenames.push(path);
+            }
+        }
+
+        if let Some(ref allow) = params.allow_patterns {
+            filenames.retain(|f| matches_any_glob(allow, f));
+        }
+        if let Some(ref ignore) = params.ignore_patterns {
+            filenames.retain(|f| !matches_any_glob(ignore, f));
+        }
+
+        if params.force_download != Some(true) && params.local_dir.is_none() {
+            filenames.retain(|f| {
+                !crate::cache::snapshot_path(cache_dir, &repo_folder, &commit_hash, f).exists()
+            });
+        }
+
+        let dl_param_list: Vec<DownloadFileParams> = filenames
+            .iter()
+            .map(|filename| {
+                let builder = DownloadFileParams::builder()
+                    .repo_id(&params.repo_id)
+                    .filename(filename);
+                let base = if let Some(ref local_dir) = params.local_dir {
+                    builder.local_dir(local_dir.clone()).build()
+                } else {
+                    builder.build()
+                };
+                DownloadFileParams {
+                    repo_type: params.repo_type,
+                    revision: Some(commit_hash.clone()),
+                    force_download: params.force_download,
+                    ..base
+                }
+            })
+            .collect();
+
+        {
+            use futures::TryStreamExt;
+            futures::stream::iter(dl_param_list.iter().map(|p| self.download_file(p)))
+                .buffer_unordered(max_workers)
+                .try_collect::<Vec<_>>()
+                .await?;
+        }
+
+        if params.local_dir.is_some() {
+            return Ok(params.local_dir.clone().unwrap());
+        }
+
+        if !crate::cache::is_commit_hash(revision) {
+            crate::cache::write_ref(cache_dir, &repo_folder, revision, &commit_hash).await?;
+        }
+
+        Ok(cache_dir
+            .join(&repo_folder)
+            .join("snapshots")
+            .join(&commit_hash))
     }
 }
 
@@ -1216,6 +1359,7 @@ sync_api! {
         fn list_repo_files(&self, params: &ListRepoFilesParams) -> Result<Vec<String>>;
         fn get_paths_info(&self, params: &GetPathsInfoParams) -> Result<Vec<RepoTreeEntry>>;
         fn download_file(&self, params: &DownloadFileParams) -> Result<PathBuf>;
+        fn snapshot_download(&self, params: &SnapshotDownloadParams) -> Result<PathBuf>;
         fn create_commit(&self, params: &CreateCommitParams) -> Result<CommitInfo>;
         fn upload_file(&self, params: &UploadFileParams) -> Result<CommitInfo>;
         fn upload_folder(&self, params: &UploadFolderParams) -> Result<CommitInfo>;
