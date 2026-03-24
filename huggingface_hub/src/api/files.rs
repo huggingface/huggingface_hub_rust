@@ -164,7 +164,17 @@ impl HfApi {
                 .is_some();
 
             if has_xet_hash {
-                return crate::xet::xet_download(self, params, &head_response).await;
+                let local_dir = params.local_dir.as_ref().unwrap();
+                return crate::xet::xet_download_to_local_dir(
+                    self,
+                    &params.repo_id,
+                    params.repo_type,
+                    revision,
+                    &params.filename,
+                    local_dir,
+                    &head_response,
+                )
+                .await;
             }
         }
 

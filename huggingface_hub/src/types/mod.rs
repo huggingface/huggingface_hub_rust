@@ -23,9 +23,7 @@ pub mod spaces;
 #[cfg(feature = "webhooks")]
 pub mod webhooks;
 
-pub use cache::{
-    CachedFileInfo, CachedRepoInfo, CachedRevisionInfo, DeleteCacheRevision, HfCacheInfo,
-};
+pub use cache::*;
 pub use commit::*;
 pub use params::*;
 pub use repo::*;

@@ -14,7 +14,7 @@ use xet_client::cas_client::auth::{AuthError, TokenRefresher};
 use crate::client::HfApi;
 use crate::constants;
 use crate::error::{HfError, Result};
-use crate::types::{AddSource, DownloadFileParams, GetXetTokenParams, RepoType};
+use crate::types::{AddSource, GetXetTokenParams, RepoType};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -96,12 +96,13 @@ async fn fetch_xet_connection_info(
     })
 }
 
-/// Download a file using the xet protocol.
-/// Extracts the file hash and size from the HEAD response headers,
-/// fetches a read token, and uses xet-session's DownloadGroup.
-pub(crate) async fn xet_download(
+pub(crate) async fn xet_download_to_local_dir(
     api: &HfApi,
-    params: &DownloadFileParams,
+    repo_id: &str,
+    repo_type: Option<RepoType>,
+    revision: &str,
+    filename: &str,
+    local_dir: &std::path::Path,
     head_response: &reqwest::Response,
 ) -> Result<PathBuf> {
     let headers = head_response.headers();
@@ -118,21 +119,12 @@ pub(crate) async fn xet_download(
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
 
-    let revision = params
-        .revision
-        .as_deref()
-        .unwrap_or(constants::DEFAULT_REVISION);
-
     let session = api
-        .get_or_init_xet_session("read", &params.repo_id, params.repo_type, revision)
+        .get_or_init_xet_session("read", repo_id, repo_type, revision)
         .await?;
 
-    let local_dir = params
-        .local_dir
-        .as_ref()
-        .ok_or_else(|| HfError::Other("xet_download requires local_dir".to_string()))?;
     tokio::fs::create_dir_all(local_dir).await?;
-    let dest_path = local_dir.join(&params.filename);
+    let dest_path = local_dir.join(filename);
     if let Some(parent) = dest_path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
