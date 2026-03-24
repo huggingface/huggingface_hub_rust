@@ -147,6 +147,191 @@ pub(crate) fn no_exist_path(
         .join(filename)
 }
 
+fn parse_repo_folder_name(name: &str) -> Option<(RepoType, String)> {
+    let (repo_type, rest) = if let Some(rest) = name.strip_prefix("models--") {
+        (RepoType::Model, rest)
+    } else if let Some(rest) = name.strip_prefix("datasets--") {
+        (RepoType::Dataset, rest)
+    } else if let Some(rest) = name.strip_prefix("spaces--") {
+        (RepoType::Space, rest)
+    } else {
+        return None;
+    };
+
+    let repo_id = rest.replace("--", "/");
+    Some((repo_type, repo_id))
+}
+
+pub(crate) async fn scan_cache_dir(
+    cache_dir: &Path,
+) -> crate::error::Result<crate::types::cache::HfCacheInfo> {
+    use crate::types::cache::{CachedFileInfo, CachedRepoInfo, CachedRevisionInfo, HfCacheInfo};
+    use std::collections::HashMap;
+    use std::time::SystemTime;
+
+    let mut repos = Vec::new();
+    let mut warnings = Vec::new();
+    let mut total_size: u64 = 0;
+
+    let mut entries = match tokio::fs::read_dir(cache_dir).await {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(HfCacheInfo {
+                cache_dir: cache_dir.to_path_buf(),
+                repos: vec![],
+                size_on_disk: 0,
+                warnings: vec![],
+            });
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    while let Some(entry) = entries.next_entry().await? {
+        let folder_name = entry.file_name().to_string_lossy().to_string();
+
+        let (repo_type, repo_id) = match parse_repo_folder_name(&folder_name) {
+            Some(v) => v,
+            None => continue,
+        };
+
+        let repo_path = entry.path();
+
+        let mut commit_refs: HashMap<String, Vec<String>> = HashMap::new();
+        let refs_dir = repo_path.join("refs");
+        if let Ok(mut ref_entries) = tokio::fs::read_dir(&refs_dir).await {
+            while let Ok(Some(ref_entry)) = ref_entries.next_entry().await {
+                if ref_entry.path().is_file() {
+                    if let Ok(content) = tokio::fs::read_to_string(ref_entry.path()).await {
+                        let commit = content.trim().to_string();
+                        let name = ref_entry.file_name().to_string_lossy().to_string();
+                        commit_refs.entry(commit).or_default().push(name);
+                    }
+                }
+            }
+        }
+
+        let snapshots_dir = repo_path.join("snapshots");
+        let mut revisions = Vec::new();
+        let mut repo_size: u64 = 0;
+        let mut repo_nb_files: usize = 0;
+        let mut repo_last_accessed = SystemTime::UNIX_EPOCH;
+        let mut repo_last_modified = SystemTime::UNIX_EPOCH;
+
+        if let Ok(mut snap_entries) = tokio::fs::read_dir(&snapshots_dir).await {
+            while let Ok(Some(snap_entry)) = snap_entries.next_entry().await {
+                let commit_hash = snap_entry.file_name().to_string_lossy().to_string();
+                let snap_path = snap_entry.path();
+                if !snap_path.is_dir() {
+                    continue;
+                }
+
+                let mut files = Vec::new();
+                let mut rev_size: u64 = 0;
+                let mut rev_last_modified = SystemTime::UNIX_EPOCH;
+
+                let mut stack = vec![snap_path.clone()];
+                while let Some(dir) = stack.pop() {
+                    if let Ok(mut dir_entries) = tokio::fs::read_dir(&dir).await {
+                        while let Ok(Some(file_entry)) = dir_entries.next_entry().await {
+                            let file_path = file_entry.path();
+                            if file_path.is_dir() {
+                                stack.push(file_path);
+                                continue;
+                            }
+
+                            let file_name = file_path
+                                .strip_prefix(&snap_path)
+                                .unwrap_or(&file_path)
+                                .to_string_lossy()
+                                .to_string();
+
+                            let (blob_path, blob_meta) =
+                                match tokio::fs::canonicalize(&file_path).await {
+                                    Ok(resolved) => match tokio::fs::metadata(&resolved).await {
+                                        Ok(m) => (resolved, m),
+                                        Err(e) => {
+                                            warnings.push(format!(
+                                                "Cannot read blob for {}: {}",
+                                                file_path.display(),
+                                                e
+                                            ));
+                                            continue;
+                                        }
+                                    },
+                                    Err(e) => {
+                                        warnings.push(format!(
+                                            "Cannot resolve {}: {}",
+                                            file_path.display(),
+                                            e
+                                        ));
+                                        continue;
+                                    }
+                                };
+
+                            let size = blob_meta.len();
+                            let accessed = blob_meta.accessed().unwrap_or(SystemTime::UNIX_EPOCH);
+                            let modified = blob_meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+
+                            if modified > rev_last_modified {
+                                rev_last_modified = modified;
+                            }
+                            if accessed > repo_last_accessed {
+                                repo_last_accessed = accessed;
+                            }
+                            if modified > repo_last_modified {
+                                repo_last_modified = modified;
+                            }
+
+                            rev_size += size;
+                            files.push(CachedFileInfo {
+                                file_name,
+                                file_path: file_path.clone(),
+                                blob_path,
+                                size_on_disk: size,
+                                blob_last_accessed: accessed,
+                                blob_last_modified: modified,
+                            });
+                        }
+                    }
+                }
+
+                repo_nb_files += files.len();
+                repo_size += rev_size;
+
+                let refs = commit_refs.get(&commit_hash).cloned().unwrap_or_default();
+
+                revisions.push(CachedRevisionInfo {
+                    commit_hash,
+                    snapshot_path: snap_path,
+                    files,
+                    size_on_disk: rev_size,
+                    refs,
+                    last_modified: rev_last_modified,
+                });
+            }
+        }
+
+        total_size += repo_size;
+        repos.push(CachedRepoInfo {
+            repo_id,
+            repo_type,
+            repo_path,
+            revisions,
+            nb_files: repo_nb_files,
+            size_on_disk: repo_size,
+            last_accessed: repo_last_accessed,
+            last_modified: repo_last_modified,
+        });
+    }
+
+    Ok(HfCacheInfo {
+        cache_dir: cache_dir.to_path_buf(),
+        repos,
+        size_on_disk: total_size,
+        warnings,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -345,5 +530,87 @@ mod tests {
         let lock_file_path = lock_path(dir.path(), "models--gpt2", "abc123");
         assert!(lock_file_path.exists());
         drop(lock);
+    }
+
+    #[test]
+    fn test_parse_repo_folder_name_model() {
+        assert_eq!(
+            parse_repo_folder_name("models--gpt2"),
+            Some((RepoType::Model, "gpt2".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_repo_folder_name_model_with_org() {
+        assert_eq!(
+            parse_repo_folder_name("models--google--bert"),
+            Some((RepoType::Model, "google/bert".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_repo_folder_name_dataset() {
+        assert_eq!(
+            parse_repo_folder_name("datasets--squad"),
+            Some((RepoType::Dataset, "squad".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_repo_folder_name_invalid() {
+        assert_eq!(parse_repo_folder_name(".locks"), None);
+    }
+
+    #[tokio::test]
+    async fn test_scan_cache_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = scan_cache_dir(dir.path()).await.unwrap();
+        assert_eq!(result.repos.len(), 0);
+        assert_eq!(result.size_on_disk, 0);
+    }
+
+    #[tokio::test]
+    async fn test_scan_cache_nonexistent_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let nonexistent = dir.path().join("does_not_exist");
+        let result = scan_cache_dir(&nonexistent).await.unwrap();
+        assert_eq!(result.repos.len(), 0);
+        assert_eq!(result.size_on_disk, 0);
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn test_scan_cache_with_repo() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path();
+        let repo_folder = "models--gpt2";
+        let blob_dir = cache.join(repo_folder).join("blobs");
+        tokio::fs::create_dir_all(&blob_dir).await.unwrap();
+        tokio::fs::write(blob_dir.join("abc123"), b"hello world")
+            .await
+            .unwrap();
+
+        let snap_dir = cache.join(repo_folder).join("snapshots").join("commit1");
+        tokio::fs::create_dir_all(&snap_dir).await.unwrap();
+        tokio::fs::symlink("../../blobs/abc123", snap_dir.join("file.txt"))
+            .await
+            .unwrap();
+
+        let refs_dir = cache.join(repo_folder).join("refs");
+        tokio::fs::create_dir_all(&refs_dir).await.unwrap();
+        tokio::fs::write(refs_dir.join("main"), "commit1")
+            .await
+            .unwrap();
+
+        let result = scan_cache_dir(cache).await.unwrap();
+        assert_eq!(result.repos.len(), 1);
+        assert_eq!(result.repos[0].repo_id, "gpt2");
+        assert_eq!(result.repos[0].repo_type, RepoType::Model);
+        assert_eq!(result.repos[0].revisions.len(), 1);
+        assert_eq!(result.repos[0].revisions[0].refs, vec!["main"]);
+        assert_eq!(result.repos[0].revisions[0].files.len(), 1);
+        assert_eq!(result.repos[0].revisions[0].size_on_disk, 11);
+        assert_eq!(result.repos[0].size_on_disk, 11);
+        assert_eq!(result.size_on_disk, 11);
     }
 }
