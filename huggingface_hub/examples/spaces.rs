@@ -4,9 +4,8 @@
 //! Run: cargo run -p huggingface-hub --features spaces --example spaces
 
 use huggingface_hub::{
-    AddSpaceSecretParams, AddSpaceVariableParams, CreateRepoParams, DeleteRepoParams,
-    DeleteSpaceSecretParams, DeleteSpaceVariableParams, GetSpaceRuntimeParams, HfApi,
-    PauseSpaceParams, RepoType, RestartSpaceParams,
+    AddSpaceSecretParams, AddSpaceVariableParams, CreateRepoParams, DeleteRepoParams, DeleteSpaceSecretParams,
+    DeleteSpaceVariableParams, GetSpaceRuntimeParams, HfApi, PauseSpaceParams, RepoType, RestartSpaceParams,
 };
 
 #[tokio::main]

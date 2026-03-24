@@ -1,31 +1,22 @@
 use crate::client::HfApi;
 use crate::error::Result;
 use crate::types::{
-    AddCollectionItemParams, Collection, CollectionItem, CreateCollectionParams,
-    DeleteCollectionItemParams, DeleteCollectionParams, GetCollectionParams, ListCollectionsParams,
-    UpdateCollectionItemParams, UpdateCollectionMetadataParams,
+    AddCollectionItemParams, Collection, CollectionItem, CreateCollectionParams, DeleteCollectionItemParams,
+    DeleteCollectionParams, GetCollectionParams, ListCollectionsParams, UpdateCollectionItemParams,
+    UpdateCollectionMetadataParams,
 };
 
 impl HfApi {
     pub async fn get_collection(&self, params: &GetCollectionParams) -> Result<Collection> {
         let url = format!("{}/api/collections/{}", self.inner.endpoint, params.slug);
-        let response = self
-            .inner
-            .client
-            .get(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
         Ok(response.json().await?)
     }
 
-    pub async fn list_collections(
-        &self,
-        params: &ListCollectionsParams,
-    ) -> Result<Vec<Collection>> {
+    pub async fn list_collections(&self, params: &ListCollectionsParams) -> Result<Vec<Collection>> {
         let url = format!("{}/api/collections", self.inner.endpoint);
         let mut query: Vec<(String, String)> = Vec::new();
         if let Some(ref owner) = params.owner {
@@ -83,10 +74,7 @@ impl HfApi {
         Ok(response.json().await?)
     }
 
-    pub async fn update_collection_metadata(
-        &self,
-        params: &UpdateCollectionMetadataParams,
-    ) -> Result<Collection> {
+    pub async fn update_collection_metadata(&self, params: &UpdateCollectionMetadataParams) -> Result<Collection> {
         let url = format!("{}/api/collections/{}", self.inner.endpoint, params.slug);
         let mut body = serde_json::Map::new();
         if let Some(ref title) = params.title {
@@ -120,13 +108,7 @@ impl HfApi {
 
     pub async fn delete_collection(&self, params: &DeleteCollectionParams) -> Result<()> {
         let url = format!("{}/api/collections/{}", self.inner.endpoint, params.slug);
-        let response = self
-            .inner
-            .client
-            .delete(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let response = self.inner.client.delete(&url).headers(self.auth_headers()).send().await?;
         if response.status().as_u16() == 404 && params.missing_ok {
             return Ok(());
         }
@@ -135,14 +117,8 @@ impl HfApi {
         Ok(())
     }
 
-    pub async fn add_collection_item(
-        &self,
-        params: &AddCollectionItemParams,
-    ) -> Result<Collection> {
-        let url = format!(
-            "{}/api/collections/{}/items",
-            self.inner.endpoint, params.slug
-        );
+    pub async fn add_collection_item(&self, params: &AddCollectionItemParams) -> Result<Collection> {
+        let url = format!("{}/api/collections/{}/items", self.inner.endpoint, params.slug);
         let mut body = serde_json::json!({
             "item_id": params.item_id,
             "item_type": params.item_type,
@@ -169,14 +145,8 @@ impl HfApi {
         Ok(response.json().await?)
     }
 
-    pub async fn update_collection_item(
-        &self,
-        params: &UpdateCollectionItemParams,
-    ) -> Result<CollectionItem> {
-        let url = format!(
-            "{}/api/collections/{}/items/{}",
-            self.inner.endpoint, params.slug, params.item_object_id
-        );
+    pub async fn update_collection_item(&self, params: &UpdateCollectionItemParams) -> Result<CollectionItem> {
+        let url = format!("{}/api/collections/{}/items/{}", self.inner.endpoint, params.slug, params.item_object_id);
         let mut body = serde_json::Map::new();
         if let Some(ref note) = params.note {
             body.insert("note".into(), serde_json::json!(note));
@@ -199,17 +169,8 @@ impl HfApi {
     }
 
     pub async fn delete_collection_item(&self, params: &DeleteCollectionItemParams) -> Result<()> {
-        let url = format!(
-            "{}/api/collections/{}/items/{}",
-            self.inner.endpoint, params.slug, params.item_object_id
-        );
-        let response = self
-            .inner
-            .client
-            .delete(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let url = format!("{}/api/collections/{}/items/{}", self.inner.endpoint, params.slug, params.item_object_id);
+        let response = self.inner.client.delete(&url).headers(self.auth_headers()).send().await?;
         self.check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
         Ok(())

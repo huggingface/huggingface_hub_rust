@@ -1,8 +1,8 @@
 use crate::client::HfApi;
 use crate::error::Result;
 use crate::types::{
-    CreateScheduledJobParams, JobHardware, JobInfo, JobLogEntry, JobMetrics, ListJobsParams,
-    RunJobParams, ScheduledJobInfo,
+    CreateScheduledJobParams, JobHardware, JobInfo, JobLogEntry, JobMetrics, ListJobsParams, RunJobParams,
+    ScheduledJobInfo,
 };
 
 impl HfApi {
@@ -12,7 +12,7 @@ impl HfApi {
             None => {
                 let user = self.whoami().await?;
                 Ok(user.username)
-            }
+            },
         }
     }
 
@@ -71,17 +71,9 @@ impl HfApi {
     }
 
     pub async fn inspect_job(&self, job_id: &str, namespace: Option<&str>) -> Result<JobInfo> {
-        let ns = self
-            .resolve_jobs_namespace(&namespace.map(String::from))
-            .await?;
+        let ns = self.resolve_jobs_namespace(&namespace.map(String::from)).await?;
         let url = format!("{}/api/jobs/{}/{}", self.inner.endpoint, ns, job_id);
-        let response = self
-            .inner
-            .client
-            .get(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
@@ -89,61 +81,29 @@ impl HfApi {
     }
 
     pub async fn cancel_job(&self, job_id: &str, namespace: Option<&str>) -> Result<JobInfo> {
-        let ns = self
-            .resolve_jobs_namespace(&namespace.map(String::from))
-            .await?;
+        let ns = self.resolve_jobs_namespace(&namespace.map(String::from)).await?;
         let url = format!("{}/api/jobs/{}/{}/cancel", self.inner.endpoint, ns, job_id);
-        let response = self
-            .inner
-            .client
-            .post(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let response = self.inner.client.post(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
         Ok(response.json().await?)
     }
 
-    pub async fn fetch_job_logs(
-        &self,
-        job_id: &str,
-        namespace: Option<&str>,
-    ) -> Result<Vec<JobLogEntry>> {
-        let ns = self
-            .resolve_jobs_namespace(&namespace.map(String::from))
-            .await?;
+    pub async fn fetch_job_logs(&self, job_id: &str, namespace: Option<&str>) -> Result<Vec<JobLogEntry>> {
+        let ns = self.resolve_jobs_namespace(&namespace.map(String::from)).await?;
         let url = format!("{}/api/jobs/{}/{}/logs", self.inner.endpoint, ns, job_id);
-        let response = self
-            .inner
-            .client
-            .get(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
         Ok(response.json().await?)
     }
 
-    pub async fn fetch_job_metrics(
-        &self,
-        job_id: &str,
-        namespace: Option<&str>,
-    ) -> Result<Vec<JobMetrics>> {
-        let ns = self
-            .resolve_jobs_namespace(&namespace.map(String::from))
-            .await?;
+    pub async fn fetch_job_metrics(&self, job_id: &str, namespace: Option<&str>) -> Result<Vec<JobMetrics>> {
+        let ns = self.resolve_jobs_namespace(&namespace.map(String::from)).await?;
         let url = format!("{}/api/jobs/{}/{}/metrics", self.inner.endpoint, ns, job_id);
-        let response = self
-            .inner
-            .client
-            .get(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
@@ -152,23 +112,14 @@ impl HfApi {
 
     pub async fn list_job_hardware(&self) -> Result<Vec<JobHardware>> {
         let url = format!("{}/api/jobs/hardware", self.inner.endpoint);
-        let response = self
-            .inner
-            .client
-            .get(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
         Ok(response.json().await?)
     }
 
-    pub async fn create_scheduled_job(
-        &self,
-        params: &CreateScheduledJobParams,
-    ) -> Result<ScheduledJobInfo> {
+    pub async fn create_scheduled_job(&self, params: &CreateScheduledJobParams) -> Result<ScheduledJobInfo> {
         let url = format!("{}/api/jobs/scheduled", self.inner.endpoint);
         let mut body = serde_json::json!({
             "dockerImage": params.image,
@@ -212,13 +163,7 @@ impl HfApi {
 
     pub async fn list_scheduled_jobs(&self) -> Result<Vec<ScheduledJobInfo>> {
         let url = format!("{}/api/jobs/scheduled", self.inner.endpoint);
-        let response = self
-            .inner
-            .client
-            .get(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
@@ -226,17 +171,8 @@ impl HfApi {
     }
 
     pub async fn inspect_scheduled_job(&self, scheduled_job_id: &str) -> Result<ScheduledJobInfo> {
-        let url = format!(
-            "{}/api/jobs/scheduled/{}",
-            self.inner.endpoint, scheduled_job_id
-        );
-        let response = self
-            .inner
-            .client
-            .get(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let url = format!("{}/api/jobs/scheduled/{}", self.inner.endpoint, scheduled_job_id);
+        let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
@@ -244,34 +180,16 @@ impl HfApi {
     }
 
     pub async fn delete_scheduled_job(&self, scheduled_job_id: &str) -> Result<()> {
-        let url = format!(
-            "{}/api/jobs/scheduled/{}",
-            self.inner.endpoint, scheduled_job_id
-        );
-        let response = self
-            .inner
-            .client
-            .delete(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let url = format!("{}/api/jobs/scheduled/{}", self.inner.endpoint, scheduled_job_id);
+        let response = self.inner.client.delete(&url).headers(self.auth_headers()).send().await?;
         self.check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
         Ok(())
     }
 
     pub async fn suspend_scheduled_job(&self, scheduled_job_id: &str) -> Result<ScheduledJobInfo> {
-        let url = format!(
-            "{}/api/jobs/scheduled/{}/suspend",
-            self.inner.endpoint, scheduled_job_id
-        );
-        let response = self
-            .inner
-            .client
-            .post(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let url = format!("{}/api/jobs/scheduled/{}/suspend", self.inner.endpoint, scheduled_job_id);
+        let response = self.inner.client.post(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
@@ -279,17 +197,8 @@ impl HfApi {
     }
 
     pub async fn resume_scheduled_job(&self, scheduled_job_id: &str) -> Result<ScheduledJobInfo> {
-        let url = format!(
-            "{}/api/jobs/scheduled/{}/resume",
-            self.inner.endpoint, scheduled_job_id
-        );
-        let response = self
-            .inner
-            .client
-            .post(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let url = format!("{}/api/jobs/scheduled/{}/resume", self.inner.endpoint, scheduled_job_id);
+        let response = self.inner.client.post(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;

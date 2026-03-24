@@ -22,15 +22,11 @@ pub mod spaces;
 #[cfg(feature = "webhooks")]
 pub mod webhooks;
 
-pub use commit::*;
-pub use params::*;
-pub use repo::*;
-pub use user::*;
-
 #[cfg(feature = "access_requests")]
 pub use access_requests::*;
 #[cfg(feature = "collections")]
 pub use collections::*;
+pub use commit::*;
 #[cfg(feature = "discussions")]
 pub use discussions::*;
 #[cfg(feature = "inference_endpoints")]
@@ -41,7 +37,10 @@ pub use jobs::*;
 pub use likes::*;
 #[cfg(feature = "papers")]
 pub use papers::*;
+pub use params::*;
+pub use repo::*;
 #[cfg(feature = "spaces")]
 pub use spaces::*;
+pub use user::*;
 #[cfg(feature = "webhooks")]
 pub use webhooks::*;

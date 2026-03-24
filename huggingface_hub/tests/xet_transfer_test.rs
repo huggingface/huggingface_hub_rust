@@ -8,19 +8,20 @@
 //!   - HF_TEST_WRITE=1 (creates and deletes repos)
 //!   - Compiled with --features xet
 //!
-//! Run: source ~/hf/prod_token && HF_TEST_WRITE=1 cargo test -p huggingface-hub --features xet --test xet_transfer_test -- --nocapture
+//! Run: source ~/hf/prod_token && HF_TEST_WRITE=1 cargo test -p huggingface-hub --features xet --test xet_transfer_test
+//! -- --nocapture
 //!
 //! These tests are slow (uploading large files) and create real repositories.
 
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use huggingface_hub::types::{
-    AddSource, CreateRepoParams, DeleteRepoParams, DownloadFileParams, FileExistsParams,
-    UploadFileParams,
+    AddSource, CreateRepoParams, DeleteRepoParams, DownloadFileParams, FileExistsParams, UploadFileParams,
 };
 use huggingface_hub::{HfApi, HfApiBuilder};
 use rand::Rng;
 use sha2::{Digest, Sha256};
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 fn api() -> Option<HfApi> {
     if std::env::var("HF_TOKEN").is_err() {
@@ -30,9 +31,7 @@ fn api() -> Option<HfApi> {
 }
 
 fn write_enabled() -> bool {
-    std::env::var("HF_TEST_WRITE")
-        .ok()
-        .is_some_and(|v| v == "1")
+    std::env::var("HF_TEST_WRITE").ok().is_some_and(|v| v == "1")
 }
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
@@ -258,14 +257,14 @@ async fn test_download_from_known_xet_repo() {
             assert!(path.exists());
             let metadata = std::fs::metadata(&path).unwrap();
             assert!(metadata.len() > 0);
-        }
+        },
         Err(e) => {
             let err_str = e.to_string();
             assert!(
                 err_str.contains("not found") || err_str.contains("Not Found"),
                 "Expected success or not-found for xet repo, got: {err_str}"
             );
-        }
+        },
     }
 }
 

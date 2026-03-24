@@ -4,9 +4,8 @@
 //! Run: cargo run -p huggingface-hub --features collections --example collections
 
 use huggingface_hub::{
-    AddCollectionItemParams, CreateCollectionParams, DeleteCollectionItemParams,
-    DeleteCollectionParams, GetCollectionParams, HfApi, ListCollectionsParams,
-    UpdateCollectionItemParams, UpdateCollectionMetadataParams,
+    AddCollectionItemParams, CreateCollectionParams, DeleteCollectionItemParams, DeleteCollectionParams,
+    GetCollectionParams, HfApi, ListCollectionsParams, UpdateCollectionItemParams, UpdateCollectionMetadataParams,
 };
 
 #[tokio::main]
@@ -16,12 +15,7 @@ async fn main() -> huggingface_hub::Result<()> {
     // --- Read operations ---
 
     let collections = api
-        .list_collections(
-            &ListCollectionsParams::builder()
-                .owner("huggingface")
-                .limit(3_usize)
-                .build(),
-        )
+        .list_collections(&ListCollectionsParams::builder().owner("huggingface").limit(3_usize).build())
         .await?;
     println!("Collections by huggingface:");
     for c in &collections {
@@ -32,11 +26,7 @@ async fn main() -> huggingface_hub::Result<()> {
         let detail = api
             .get_collection(&GetCollectionParams::builder().slug(&first.slug).build())
             .await?;
-        println!(
-            "\nCollection detail: {} ({} items)",
-            detail.slug,
-            detail.items.len()
-        );
+        println!("\nCollection detail: {} ({} items)", detail.slug, detail.items.len());
     }
 
     // --- Write operations ---
@@ -99,12 +89,8 @@ async fn main() -> huggingface_hub::Result<()> {
     .await?;
     println!("Deleted item from collection");
 
-    api.delete_collection(
-        &DeleteCollectionParams::builder()
-            .slug(&collection.slug)
-            .build(),
-    )
-    .await?;
+    api.delete_collection(&DeleteCollectionParams::builder().slug(&collection.slug).build())
+        .await?;
     println!("Deleted collection");
 
     Ok(())

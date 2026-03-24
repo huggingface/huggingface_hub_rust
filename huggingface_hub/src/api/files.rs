@@ -8,19 +8,16 @@ use crate::client::HfApi;
 use crate::constants;
 use crate::error::{HfError, Result};
 use crate::types::{
-    AddSource, CommitInfo, CommitOperation, CreateCommitParams, DeleteFileParams,
-    DeleteFolderParams, DownloadFileParams, GetPathsInfoParams, ListRepoFilesParams,
-    ListRepoTreeParams, RepoTreeEntry, UploadFileParams, UploadFolderParams,
+    AddSource, CommitInfo, CommitOperation, CreateCommitParams, DeleteFileParams, DeleteFolderParams,
+    DownloadFileParams, GetPathsInfoParams, ListRepoFilesParams, ListRepoTreeParams, RepoTreeEntry, UploadFileParams,
+    UploadFolderParams,
 };
 
 impl HfApi {
     /// List file paths in a repository (convenience wrapper over list_repo_tree).
     /// Returns all file paths recursively.
     pub async fn list_repo_files(&self, params: &ListRepoFilesParams) -> Result<Vec<String>> {
-        let tree_params = ListRepoTreeParams::builder()
-            .repo_id(&params.repo_id)
-            .recursive(true)
-            .build();
+        let tree_params = ListRepoTreeParams::builder().repo_id(&params.repo_id).recursive(true).build();
         let tree_params = ListRepoTreeParams {
             revision: params.revision.clone(),
             repo_type: params.repo_type,
@@ -42,19 +39,9 @@ impl HfApi {
 
     /// List files and directories in a repository tree.
     /// Endpoint: GET /api/{repo_type}s/{repo_id}/tree/{revision}
-    pub fn list_repo_tree(
-        &self,
-        params: &ListRepoTreeParams,
-    ) -> impl Stream<Item = Result<RepoTreeEntry>> + '_ {
-        let revision = params
-            .revision
-            .as_deref()
-            .unwrap_or(constants::DEFAULT_REVISION);
-        let url_str = format!(
-            "{}/tree/{}",
-            self.api_url(params.repo_type, &params.repo_id),
-            revision
-        );
+    pub fn list_repo_tree(&self, params: &ListRepoTreeParams) -> impl Stream<Item = Result<RepoTreeEntry>> + '_ {
+        let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
+        let url_str = format!("{}/tree/{}", self.api_url(params.repo_type, &params.repo_id), revision);
         let url = Url::parse(&url_str).unwrap();
 
         let mut query: Vec<(String, String)> = Vec::new();
@@ -71,15 +58,8 @@ impl HfApi {
     /// Get info about specific paths in a repository.
     /// Endpoint: POST /api/{repo_type}s/{repo_id}/paths-info/{revision}
     pub async fn get_paths_info(&self, params: &GetPathsInfoParams) -> Result<Vec<RepoTreeEntry>> {
-        let revision = params
-            .revision
-            .as_deref()
-            .unwrap_or(constants::DEFAULT_REVISION);
-        let url = format!(
-            "{}/paths-info/{}",
-            self.api_url(params.repo_type, &params.repo_id),
-            revision
-        );
+        let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
+        let url = format!("{}/paths-info/{}", self.api_url(params.repo_type, &params.repo_id), revision);
 
         let body = serde_json::json!({
             "paths": params.paths,
@@ -116,26 +96,12 @@ impl HfApi {
     ///
     /// Endpoint: GET {endpoint}/{prefix}{repo_id}/resolve/{revision}/{filename}
     pub async fn download_file(&self, params: &DownloadFileParams) -> Result<PathBuf> {
-        let revision = params
-            .revision
-            .as_deref()
-            .unwrap_or(constants::DEFAULT_REVISION);
-        let url = self.download_url(
-            params.repo_type,
-            &params.repo_id,
-            revision,
-            &params.filename,
-        );
+        let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
+        let url = self.download_url(params.repo_type, &params.repo_id, revision, &params.filename);
 
         #[cfg(feature = "xet")]
         {
-            let head_response = self
-                .inner
-                .client
-                .head(&url)
-                .headers(self.auth_headers())
-                .send()
-                .await?;
+            let head_response = self.inner.client.head(&url).headers(self.auth_headers()).send().await?;
 
             let head_response = self
                 .check_response(
@@ -147,23 +113,14 @@ impl HfApi {
                 )
                 .await?;
 
-            let has_xet_hash = head_response
-                .headers()
-                .get(constants::HEADER_X_XET_HASH)
-                .is_some();
+            let has_xet_hash = head_response.headers().get(constants::HEADER_X_XET_HASH).is_some();
 
             if has_xet_hash {
                 return crate::xet::xet_download(self, params, &head_response).await;
             }
         }
 
-        let response = self
-            .inner
-            .client
-            .get(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(
                 response,
@@ -208,22 +165,14 @@ impl HfApi {
     ///
     /// Endpoint: POST /api/{repo_type}s/{repo_id}/commit/{revision}
     pub async fn create_commit(&self, params: &CreateCommitParams) -> Result<CommitInfo> {
-        let revision = params
-            .revision
-            .as_deref()
-            .unwrap_or(constants::DEFAULT_REVISION);
-        let url = format!(
-            "{}/commit/{}",
-            self.api_url(params.repo_type, &params.repo_id),
-            revision
-        );
+        let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
+        let url = format!("{}/commit/{}", self.api_url(params.repo_type, &params.repo_id), revision);
 
         // Determine which files should be uploaded via xet (LFS) vs inline
         // (regular). Files uploaded via xet are referenced by their SHA256 OID
         // in the commit NDJSON.
-        let lfs_uploaded: HashMap<String, (String, u64)> = self
-            .preupload_and_upload_lfs_files(params, revision)
-            .await?;
+        let lfs_uploaded: HashMap<String, (String, u64)> =
+            self.preupload_and_upload_lfs_files(params, revision).await?;
 
         let mut ndjson_lines: Vec<Vec<u8>> = Vec::new();
 
@@ -239,10 +188,7 @@ impl HfApi {
 
         for op in &params.operations {
             let line = match op {
-                CommitOperation::Add {
-                    path_in_repo,
-                    source,
-                } => {
+                CommitOperation::Add { path_in_repo, source } => {
                     if let Some((oid, size)) = lfs_uploaded.get(path_in_repo) {
                         serde_json::json!({
                             "key": "lfsFile",
@@ -256,13 +202,13 @@ impl HfApi {
                     } else {
                         Self::inline_base64_entry(path_in_repo, source).await?
                     }
-                }
+                },
                 CommitOperation::Delete { path_in_repo } => {
                     serde_json::json!({
                         "key": "deletedFile",
                         "value": {"path": path_in_repo}
                     })
-                }
+                },
             };
             ndjson_lines.push(serde_json::to_vec(&line)?);
         }
@@ -276,10 +222,7 @@ impl HfApi {
             .collect();
 
         let mut headers = self.auth_headers();
-        headers.insert(
-            reqwest::header::CONTENT_TYPE,
-            "application/x-ndjson".parse().unwrap(),
-        );
+        headers.insert(reqwest::header::CONTENT_TYPE, "application/x-ndjson".parse().unwrap());
 
         let mut request = self.inner.client.post(&url).headers(headers).body(body);
 
@@ -289,19 +232,12 @@ impl HfApi {
 
         let response = request.send().await?;
         let response = self
-            .check_response(
-                response,
-                Some(&params.repo_id),
-                crate::error::NotFoundContext::Repo,
-            )
+            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(response.json().await?)
     }
 
-    async fn inline_base64_entry(
-        path_in_repo: &str,
-        source: &AddSource,
-    ) -> Result<serde_json::Value> {
+    async fn inline_base64_entry(path_in_repo: &str, source: &AddSource) -> Result<serde_json::Value> {
         use base64::Engine;
         let content = match source {
             AddSource::File(path) => tokio::fs::read(path).await?,
@@ -364,14 +300,8 @@ impl HfApi {
         .await?;
 
         if let Some(ref delete_patterns) = params.delete_patterns {
-            let revision = params
-                .revision
-                .as_deref()
-                .unwrap_or(constants::DEFAULT_REVISION);
-            let tree_params = ListRepoTreeParams::builder()
-                .repo_id(&params.repo_id)
-                .recursive(true)
-                .build();
+            let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
+            let tree_params = ListRepoTreeParams::builder().repo_id(&params.repo_id).recursive(true).build();
             let tree_params = ListRepoTreeParams {
                 revision: Some(revision.to_string()),
                 repo_type: params.repo_type,
@@ -389,10 +319,7 @@ impl HfApi {
             }
         }
 
-        let commit_message = params
-            .commit_message
-            .clone()
-            .unwrap_or_else(|| "Upload folder".to_string());
+        let commit_message = params.commit_message.clone().unwrap_or_else(|| "Upload folder".to_string());
 
         let commit_params = CreateCommitParams::builder()
             .repo_id(&params.repo_id)
@@ -438,15 +365,9 @@ impl HfApi {
 
     /// Delete a folder from a repository. Lists files under the path and deletes them.
     pub async fn delete_folder(&self, params: &DeleteFolderParams) -> Result<CommitInfo> {
-        let revision = params
-            .revision
-            .as_deref()
-            .unwrap_or(constants::DEFAULT_REVISION);
+        let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
 
-        let tree_params = ListRepoTreeParams::builder()
-            .repo_id(&params.repo_id)
-            .recursive(true)
-            .build();
+        let tree_params = ListRepoTreeParams::builder().repo_id(&params.repo_id).recursive(true).build();
         let tree_params = ListRepoTreeParams {
             revision: Some(revision.to_string()),
             repo_type: params.repo_type,
@@ -532,10 +453,7 @@ impl HfApi {
             .operations
             .iter()
             .filter_map(|op| match op {
-                CommitOperation::Add {
-                    path_in_repo,
-                    source,
-                } => Some((path_in_repo, source)),
+                CommitOperation::Add { path_in_repo, source } => Some((path_in_repo, source)),
                 _ => None,
             })
             .collect();
@@ -568,11 +486,7 @@ impl HfApi {
         let lfs_files: Vec<&(String, u64, Vec<u8>, &AddSource)> = file_infos
             .iter()
             .filter(|(path, size, _, _)| {
-                *size > 0
-                    && upload_modes
-                        .get(path.as_str())
-                        .map(|m| m == "lfs")
-                        .unwrap_or(false)
+                *size > 0 && upload_modes.get(path.as_str()).map(|m| m == "lfs").unwrap_or(false)
             })
             .collect();
 
@@ -588,8 +502,7 @@ impl HfApi {
         }
 
         #[cfg(feature = "xet")]
-        self.upload_lfs_files_via_xet(params, revision, &lfs_files)
-            .await
+        self.upload_lfs_files_via_xet(params, revision, &lfs_files).await
     }
 
     /// Call the Hub preupload endpoint to determine upload mode per file.
@@ -603,11 +516,7 @@ impl HfApi {
     ) -> Result<HashMap<String, String>> {
         use base64::Engine;
 
-        let url = format!(
-            "{}/preupload/{}",
-            self.api_url(repo_type, repo_id),
-            revision
-        );
+        let url = format!("{}/preupload/{}", self.api_url(repo_type, repo_id), revision);
 
         let files_payload: Vec<serde_json::Value> = files
             .iter()
@@ -637,11 +546,7 @@ impl HfApi {
 
         let preupload: PreuploadResponse = response.json().await?;
 
-        Ok(preupload
-            .files
-            .into_iter()
-            .map(|f| (f.path, f.upload_mode))
-            .collect())
+        Ok(preupload.files.into_iter().map(|f| (f.path, f.upload_mode)).collect())
     }
 }
 
@@ -662,10 +567,7 @@ impl HfApi {
         }
 
         // Step 5: Call LFS batch endpoint to negotiate transfer method
-        let objects: Vec<(&str, u64)> = lfs_with_sha
-            .iter()
-            .map(|(_, size, oid, _)| (oid.as_str(), *size))
-            .collect();
+        let objects: Vec<(&str, u64)> = lfs_with_sha.iter().map(|(_, size, oid, _)| (oid.as_str(), *size)).collect();
 
         let chosen_transfer = self
             .post_lfs_batch_info(&params.repo_id, params.repo_type, revision, &objects)
@@ -681,14 +583,7 @@ impl HfApi {
             .map(|(path, _, _, source)| (path.clone(), (*source).clone()))
             .collect();
 
-        crate::xet::xet_upload(
-            self,
-            &xet_files,
-            &params.repo_id,
-            params.repo_type,
-            revision,
-        )
-        .await?;
+        crate::xet::xet_upload(self, &xet_files, &params.repo_id, params.repo_type, revision).await?;
 
         let result: HashMap<String, (String, u64)> = lfs_with_sha
             .into_iter()
@@ -708,10 +603,7 @@ impl HfApi {
         objects: &[(&str, u64)],
     ) -> Result<Option<String>> {
         let prefix = constants::repo_type_url_prefix(repo_type);
-        let url = format!(
-            "{}/{}{}.git/info/lfs/objects/batch",
-            self.inner.endpoint, prefix, repo_id
-        );
+        let url = format!("{}/{}{}.git/info/lfs/objects/batch", self.inner.endpoint, prefix, repo_id);
 
         let objects_payload: Vec<serde_json::Value> = objects
             .iter()
@@ -732,23 +624,10 @@ impl HfApi {
         });
 
         let mut headers = self.auth_headers();
-        headers.insert(
-            reqwest::header::ACCEPT,
-            "application/vnd.git-lfs+json".parse().unwrap(),
-        );
-        headers.insert(
-            reqwest::header::CONTENT_TYPE,
-            "application/vnd.git-lfs+json".parse().unwrap(),
-        );
+        headers.insert(reqwest::header::ACCEPT, "application/vnd.git-lfs+json".parse().unwrap());
+        headers.insert(reqwest::header::CONTENT_TYPE, "application/vnd.git-lfs+json".parse().unwrap());
 
-        let response = self
-            .inner
-            .client
-            .post(&url)
-            .headers(headers)
-            .json(&body)
-            .send()
-            .await?;
+        let response = self.inner.client.post(&url).headers(headers).json(&body).send().await?;
 
         let response = self
             .check_response(response, Some(repo_id), crate::error::NotFoundContext::Repo)
@@ -766,7 +645,7 @@ async fn sha256_of_source(source: &AddSource) -> Result<String> {
         AddSource::Bytes(bytes) => {
             let hash = Sha256::digest(bytes);
             Ok(format!("{:x}", hash))
-        }
+        },
         AddSource::File(path) => {
             use tokio::io::AsyncReadExt;
             let mut file = tokio::fs::File::open(path).await?;
@@ -780,7 +659,7 @@ async fn sha256_of_source(source: &AddSource) -> Result<String> {
                 hasher.update(&buf[..n]);
             }
             Ok(format!("{:x}", hasher.finalize()))
-        }
+        },
     }
 }
 
@@ -790,7 +669,7 @@ async fn read_size_and_sample(source: &AddSource) -> Result<(u64, Vec<u8>)> {
             let size = bytes.len() as u64;
             let sample = bytes[..std::cmp::min(bytes.len(), 512)].to_vec();
             Ok((size, sample))
-        }
+        },
         AddSource::File(path) => {
             use tokio::io::AsyncReadExt;
             let mut file = tokio::fs::File::open(path).await?;
@@ -800,7 +679,7 @@ async fn read_size_and_sample(source: &AddSource) -> Result<(u64, Vec<u8>)> {
             let n = file.read(&mut sample).await?;
             sample.truncate(n);
             Ok((size, sample))
-        }
+        },
     }
 }
 
@@ -821,19 +700,10 @@ async fn collect_files_recursive(
         let metadata = entry.metadata().await?;
 
         if metadata.is_dir() {
-            Box::pin(collect_files_recursive(
-                root,
-                &path,
-                base_repo_path,
-                allow_patterns,
-                ignore_patterns,
-                operations,
-            ))
-            .await?;
+            Box::pin(collect_files_recursive(root, &path, base_repo_path, allow_patterns, ignore_patterns, operations))
+                .await?;
         } else if metadata.is_file() {
-            let relative = path
-                .strip_prefix(root)
-                .map_err(|e| HfError::Other(e.to_string()))?;
+            let relative = path.strip_prefix(root).map_err(|e| HfError::Other(e.to_string()))?;
             let relative_str = relative.to_string_lossy();
 
             if let Some(ref allow) = allow_patterns {
@@ -866,12 +736,9 @@ async fn collect_files_recursive(
 /// Check if a path matches any of the given glob patterns using the `globset` crate.
 fn matches_any_glob(patterns: &[String], path: &str) -> bool {
     use globset::Glob;
-    patterns.iter().any(|p| {
-        Glob::new(p)
-            .ok()
-            .map(|g| g.compile_matcher().is_match(path))
-            .unwrap_or(false)
-    })
+    patterns
+        .iter()
+        .any(|p| Glob::new(p).ok().map(|g| g.compile_matcher().is_match(path)).unwrap_or(false))
 }
 
 sync_api! {

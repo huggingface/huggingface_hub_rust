@@ -1,29 +1,20 @@
+use futures::Stream;
+use url::Url;
+
 use crate::client::HfApi;
 use crate::constants;
 use crate::error::Result;
 use crate::types::{
-    CreateBranchParams, CreateTagParams, DeleteBranchParams, DeleteTagParams, GetCommitDiffParams,
-    GetRawDiffParams, GitCommitInfo, GitRefs, ListRepoCommitsParams, ListRepoRefsParams,
+    CreateBranchParams, CreateTagParams, DeleteBranchParams, DeleteTagParams, GetCommitDiffParams, GetRawDiffParams,
+    GitCommitInfo, GitRefs, ListRepoCommitsParams, ListRepoRefsParams,
 };
-use futures::Stream;
-use url::Url;
 
 impl HfApi {
     /// List commits in a repository.
     /// Endpoint: GET /api/{repo_type}s/{repo_id}/commits/{revision}
-    pub fn list_repo_commits(
-        &self,
-        params: &ListRepoCommitsParams,
-    ) -> impl Stream<Item = Result<GitCommitInfo>> + '_ {
-        let revision = params
-            .revision
-            .as_deref()
-            .unwrap_or(constants::DEFAULT_REVISION);
-        let url_str = format!(
-            "{}/commits/{}",
-            self.api_url(params.repo_type, &params.repo_id),
-            revision
-        );
+    pub fn list_repo_commits(&self, params: &ListRepoCommitsParams) -> impl Stream<Item = Result<GitCommitInfo>> + '_ {
+        let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
+        let url_str = format!("{}/commits/{}", self.api_url(params.repo_type, &params.repo_id), revision);
         let url = Url::parse(&url_str).unwrap();
         self.paginate(url, vec![])
     }
@@ -47,11 +38,7 @@ impl HfApi {
             .await?;
 
         let response = self
-            .check_response(
-                response,
-                Some(&params.repo_id),
-                crate::error::NotFoundContext::Repo,
-            )
+            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(response.json().await?)
     }
@@ -60,26 +47,12 @@ impl HfApi {
     /// Endpoint: GET /api/{repo_type}s/{repo_id}/compare/{compare}
     /// `compare` is in the format "revA..revB"
     pub async fn get_commit_diff(&self, params: &GetCommitDiffParams) -> Result<String> {
-        let url = format!(
-            "{}/compare/{}",
-            self.api_url(params.repo_type, &params.repo_id),
-            params.compare
-        );
+        let url = format!("{}/compare/{}", self.api_url(params.repo_type, &params.repo_id), params.compare);
+
+        let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;
 
         let response = self
-            .inner
-            .client
-            .get(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
-
-        let response = self
-            .check_response(
-                response,
-                Some(&params.repo_id),
-                crate::error::NotFoundContext::Repo,
-            )
+            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(response.text().await?)
     }
@@ -87,11 +60,7 @@ impl HfApi {
     /// Get the raw diff between two revisions.
     /// Endpoint: GET /api/{repo_type}s/{repo_id}/compare/{compare}?raw=true
     pub async fn get_raw_diff(&self, params: &GetRawDiffParams) -> Result<String> {
-        let url = format!(
-            "{}/compare/{}",
-            self.api_url(params.repo_type, &params.repo_id),
-            params.compare
-        );
+        let url = format!("{}/compare/{}", self.api_url(params.repo_type, &params.repo_id), params.compare);
 
         let response = self
             .inner
@@ -103,11 +72,7 @@ impl HfApi {
             .await?;
 
         let response = self
-            .check_response(
-                response,
-                Some(&params.repo_id),
-                crate::error::NotFoundContext::Repo,
-            )
+            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(response.text().await?)
     }
@@ -115,18 +80,11 @@ impl HfApi {
     /// Create a new branch.
     /// Endpoint: POST /api/{repo_type}s/{repo_id}/branch/{branch}
     pub async fn create_branch(&self, params: &CreateBranchParams) -> Result<()> {
-        let url = format!(
-            "{}/branch/{}",
-            self.api_url(params.repo_type, &params.repo_id),
-            params.branch
-        );
+        let url = format!("{}/branch/{}", self.api_url(params.repo_type, &params.repo_id), params.branch);
 
         let mut body = serde_json::Map::new();
         if let Some(ref revision) = params.revision {
-            body.insert(
-                "startingPoint".into(),
-                serde_json::Value::String(revision.clone()),
-            );
+            body.insert("startingPoint".into(), serde_json::Value::String(revision.clone()));
         }
 
         let response = self
@@ -138,53 +96,28 @@ impl HfApi {
             .send()
             .await?;
 
-        self.check_response(
-            response,
-            Some(&params.repo_id),
-            crate::error::NotFoundContext::Repo,
-        )
-        .await?;
+        self.check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
+            .await?;
         Ok(())
     }
 
     /// Delete a branch.
     /// Endpoint: DELETE /api/{repo_type}s/{repo_id}/branch/{branch}
     pub async fn delete_branch(&self, params: &DeleteBranchParams) -> Result<()> {
-        let url = format!(
-            "{}/branch/{}",
-            self.api_url(params.repo_type, &params.repo_id),
-            params.branch
-        );
+        let url = format!("{}/branch/{}", self.api_url(params.repo_type, &params.repo_id), params.branch);
 
-        let response = self
-            .inner
-            .client
-            .delete(&url)
-            .headers(self.auth_headers())
-            .send()
+        let response = self.inner.client.delete(&url).headers(self.auth_headers()).send().await?;
+
+        self.check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
             .await?;
-
-        self.check_response(
-            response,
-            Some(&params.repo_id),
-            crate::error::NotFoundContext::Repo,
-        )
-        .await?;
         Ok(())
     }
 
     /// Create a new tag.
     /// Endpoint: POST /api/{repo_type}s/{repo_id}/tag/{revision}
     pub async fn create_tag(&self, params: &CreateTagParams) -> Result<()> {
-        let revision = params
-            .revision
-            .as_deref()
-            .unwrap_or(constants::DEFAULT_REVISION);
-        let url = format!(
-            "{}/tag/{}",
-            self.api_url(params.repo_type, &params.repo_id),
-            revision
-        );
+        let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
+        let url = format!("{}/tag/{}", self.api_url(params.repo_type, &params.repo_id), revision);
 
         let mut body = serde_json::json!({ "tag": params.tag });
         if let Some(ref message) = params.message {
@@ -200,38 +133,20 @@ impl HfApi {
             .send()
             .await?;
 
-        self.check_response(
-            response,
-            Some(&params.repo_id),
-            crate::error::NotFoundContext::Repo,
-        )
-        .await?;
+        self.check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
+            .await?;
         Ok(())
     }
 
     /// Delete a tag.
     /// Endpoint: DELETE /api/{repo_type}s/{repo_id}/tag/{tag}
     pub async fn delete_tag(&self, params: &DeleteTagParams) -> Result<()> {
-        let url = format!(
-            "{}/tag/{}",
-            self.api_url(params.repo_type, &params.repo_id),
-            params.tag
-        );
+        let url = format!("{}/tag/{}", self.api_url(params.repo_type, &params.repo_id), params.tag);
 
-        let response = self
-            .inner
-            .client
-            .delete(&url)
-            .headers(self.auth_headers())
-            .send()
+        let response = self.inner.client.delete(&url).headers(self.auth_headers()).send().await?;
+
+        self.check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
             .await?;
-
-        self.check_response(
-            response,
-            Some(&params.repo_id),
-            crate::error::NotFoundContext::Repo,
-        )
-        .await?;
         Ok(())
     }
 }
