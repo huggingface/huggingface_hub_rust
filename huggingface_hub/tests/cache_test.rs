@@ -546,10 +546,14 @@ repo = repos[0]
 assert len(repo.revisions) >= 1, f"Expected >=1 revision, found {{len(repo.revisions)}}"
 
 revision = next(iter(repo.revisions))
-cached_filenames = {{f.file_name for f in revision.files}}
+snapshot_path = str(revision.snapshot_path)
+cached_rel_paths = set()
+for f in revision.files:
+    rel = os.path.relpath(str(f.file_path), snapshot_path)
+    cached_rel_paths.add(rel)
 rust_files = set(json.loads('{rust_files_json}'))
-assert rust_files.issubset(cached_filenames), (
-    f"Rust files {{rust_files}} not all found in Python scan: {{cached_filenames}}"
+assert rust_files.issubset(cached_rel_paths), (
+    f"Rust files {{rust_files}} not all found in Python scan: {{cached_rel_paths}}"
 )
 
 # 2. Every file must be readable via hf_hub_download with local_files_only=True
