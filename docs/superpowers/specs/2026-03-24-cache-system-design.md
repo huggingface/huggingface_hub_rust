@@ -261,6 +261,46 @@ No new feature flags. Caching is always available.
 - `scan_cache` returns correct info after downloads
 - `delete_cache_revisions` cleans up correctly
 
+### Cross-Library Interoperability Tests
+
+Verify that the Rust and Python `huggingface_hub` libraries share a cache without re-downloading files. These tests use a shared temporary cache directory (`HF_HUB_CACHE`) and confirm that blobs written by one library are reused by the other.
+
+All Python commands run inside a virtual environment created as part of test setup. The test fixture creates a venv in a tempdir, installs `huggingface_hub` via pip, and invokes Python scripts through the venv's interpreter.
+
+**Test: Python downloads first, Rust reuses cache**
+
+1. Create a tempdir as `HF_HUB_CACHE`
+2. Create a venv: `python3 -m venv {tempdir}/venv && {tempdir}/venv/bin/pip install huggingface_hub`
+3. Run a Python script (via `{tempdir}/venv/bin/python`) that downloads individual files from a public repo using `hf_hub_download` (e.g., `config.json` and `README.md` from a small model repo)
+4. Verify the cache structure: blobs exist, snapshots contain symlinks
+5. Call Rust `download_file` for the same files at the same revision, pointing at the same `HF_HUB_CACHE`
+6. Assert: no new blobs created (blob count unchanged), Rust returns paths under the same snapshot directory, the returned file content matches
+
+**Test: Python snapshot_download first, Rust snapshot_download reuses**
+
+1. Same venv setup as above
+2. Run a Python script that calls `snapshot_download` on a small public repo (with `allow_patterns` to limit size, e.g., `["*.json", "*.md"]`)
+3. Record the set of blobs in the cache
+4. Call Rust `snapshot_download` for the same repo/revision/patterns, same `HF_HUB_CACHE`
+5. Assert: no new blobs created, snapshot directory is the same, all files resolve to the same blob paths
+
+**Test: Rust downloads first, Python reuses cache**
+
+1. Same venv setup
+2. Call Rust `download_file` for files from a public repo into a shared `HF_HUB_CACHE`
+3. Run a Python script that calls `hf_hub_download` for the same files
+4. Assert: Python script confirms cache hit (can check by running with `local_files_only=True` successfully, or by comparing blob counts before/after)
+
+**Test: Mixed partial downloads**
+
+1. Same venv setup
+2. Python downloads file A from a repo
+3. Rust downloads file B from the same repo at the same revision
+4. Both libraries see the other's cached file: Rust can load file A with `local_files_only=True`, Python can load file B with `local_files_only=True`
+5. Rust `scan_cache` reports both files under the same revision
+
+These tests require `HF_TOKEN` and network access (same as other integration tests). They additionally require Python 3 to be available on the system. Tests skip gracefully if `python3` is not found.
+
 ### Platform Guards
 
 - Symlink-specific assertions use `#[cfg(not(windows))]`
