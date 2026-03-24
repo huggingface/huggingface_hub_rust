@@ -95,16 +95,12 @@ pub(crate) fn is_commit_hash(revision: &str) -> bool {
 }
 
 pub(crate) fn repo_folder_name(repo_id: &str, repo_type: Option<RepoType>) -> String {
-    let type_str = match repo_type {
-        None | Some(RepoType::Model) => "models",
-        Some(RepoType::Dataset) => "datasets",
-        Some(RepoType::Space) => "spaces",
-        Some(RepoType::Kernel) => "kernels",
-    };
-    let parts: Vec<&str> = std::iter::once(type_str)
+    let repo_type = repo_type.unwrap_or(RepoType::Model);
+    let type_plural = format!("{}s", repo_type);
+    std::iter::once(type_plural.as_str())
         .chain(repo_id.split('/'))
-        .collect();
-    parts.join("--")
+        .collect::<Vec<_>>()
+        .join("--")
 }
 
 pub(crate) fn blob_path(cache_dir: &Path, repo_folder: &str, etag: &str) -> PathBuf {
@@ -149,18 +145,9 @@ pub(crate) fn no_exist_path(
 }
 
 fn parse_repo_folder_name(name: &str) -> Option<(RepoType, String)> {
-    let (repo_type, rest) = if let Some(rest) = name.strip_prefix("models--") {
-        (RepoType::Model, rest)
-    } else if let Some(rest) = name.strip_prefix("datasets--") {
-        (RepoType::Dataset, rest)
-    } else if let Some(rest) = name.strip_prefix("spaces--") {
-        (RepoType::Space, rest)
-    } else if let Some(rest) = name.strip_prefix("kernels--") {
-        (RepoType::Kernel, rest)
-    } else {
-        return None;
-    };
-
+    let (type_plural, rest) = name.split_once("--")?;
+    let type_singular = type_plural.strip_suffix('s')?;
+    let repo_type: RepoType = type_singular.parse().ok()?;
     let repo_id = rest.replace("--", "/");
     Some((repo_type, repo_id))
 }
