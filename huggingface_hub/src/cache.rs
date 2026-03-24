@@ -99,6 +99,7 @@ pub(crate) fn repo_folder_name(repo_id: &str, repo_type: Option<RepoType>) -> St
         None | Some(RepoType::Model) => "models",
         Some(RepoType::Dataset) => "datasets",
         Some(RepoType::Space) => "spaces",
+        Some(RepoType::Kernel) => "kernels",
     };
     let parts: Vec<&str> = std::iter::once(type_str)
         .chain(repo_id.split('/'))
@@ -154,6 +155,8 @@ fn parse_repo_folder_name(name: &str) -> Option<(RepoType, String)> {
         (RepoType::Dataset, rest)
     } else if let Some(rest) = name.strip_prefix("spaces--") {
         (RepoType::Space, rest)
+    } else if let Some(rest) = name.strip_prefix("kernels--") {
+        (RepoType::Kernel, rest)
     } else {
         return None;
     };
