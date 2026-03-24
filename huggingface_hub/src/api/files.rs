@@ -2,8 +2,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use futures::stream::{Stream, StreamExt};
+use reqwest::header::IF_NONE_MATCH;
 use url::Url;
 
+use crate::cache;
 use crate::client::HfApi;
 use crate::constants;
 use crate::error::{HfError, Result};
@@ -108,14 +110,22 @@ impl HfApi {
 }
 
 impl HfApi {
-    /// Download a single file from a repository to a local directory.
+    /// Download a single file from a repository.
     ///
-    /// All repositories are xet-enabled. When the "xet" feature is active,
-    /// downloads use the xet protocol. Otherwise, falls back to a standard
-    /// HTTP GET and streams the response to disk.
+    /// When `local_dir` is `Some`, the file is downloaded directly to that directory
+    /// (no caching). When `local_dir` is `None`, the HF cache system is used:
+    /// blobs are stored by etag and symlinked from snapshots/{commit}/{filename}.
     ///
     /// Endpoint: GET {endpoint}/{prefix}{repo_id}/resolve/{revision}/{filename}
     pub async fn download_file(&self, params: &DownloadFileParams) -> Result<PathBuf> {
+        if params.local_dir.is_some() {
+            self.download_file_to_local_dir(params).await
+        } else {
+            self.download_file_to_cache(params).await
+        }
+    }
+
+    async fn download_file_to_local_dir(&self, params: &DownloadFileParams) -> Result<PathBuf> {
         let revision = params
             .revision
             .as_deref()
@@ -174,10 +184,7 @@ impl HfApi {
             )
             .await?;
 
-        let local_dir = params
-            .local_dir
-            .as_ref()
-            .ok_or_else(|| HfError::Other("download_file requires local_dir".to_string()))?;
+        let local_dir = params.local_dir.as_ref().unwrap();
         tokio::fs::create_dir_all(local_dir).await?;
 
         let dest_path = local_dir.join(&params.filename);
@@ -185,18 +192,344 @@ impl HfApi {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        let mut file = tokio::fs::File::create(&dest_path).await?;
-        let mut stream = response.bytes_stream();
-        use tokio::io::AsyncWriteExt;
-
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
-            file.write_all(&chunk).await?;
-        }
-        file.flush().await?;
+        stream_response_to_file(response, &dest_path).await?;
 
         Ok(dest_path)
     }
+
+    fn resolve_from_cache_only(
+        &self,
+        repo_folder: &str,
+        revision: &str,
+        filename: &str,
+    ) -> Result<PathBuf> {
+        let cache_dir = &self.inner.cache_dir;
+
+        let commit_hash = if cache::is_commit_hash(revision) {
+            Some(revision.to_string())
+        } else {
+            let ref_path = cache::ref_path(cache_dir, repo_folder, revision);
+            std::fs::read_to_string(&ref_path)
+                .ok()
+                .map(|s| s.trim().to_string())
+        };
+
+        if let Some(ref hash) = commit_hash {
+            let snap = cache::snapshot_path(cache_dir, repo_folder, hash, filename);
+            if snap.exists() {
+                return Ok(snap);
+            }
+        }
+
+        Err(HfError::LocalEntryNotFound {
+            path: filename.to_string(),
+        })
+    }
+
+    fn find_cached_etag(
+        &self,
+        repo_folder: &str,
+        revision: &str,
+        filename: &str,
+    ) -> Option<String> {
+        let cache_dir = &self.inner.cache_dir;
+
+        let commit_hash = if cache::is_commit_hash(revision) {
+            Some(revision.to_string())
+        } else {
+            let ref_path = cache::ref_path(cache_dir, repo_folder, revision);
+            std::fs::read_to_string(&ref_path)
+                .ok()
+                .map(|s| s.trim().to_string())
+        };
+
+        let hash = commit_hash?;
+        let snap = cache::snapshot_path(cache_dir, repo_folder, &hash, filename);
+        let target = std::fs::read_link(&snap).ok()?;
+        target.file_name()?.to_str().map(|s| s.to_string())
+    }
+
+    async fn download_file_to_cache(&self, params: &DownloadFileParams) -> Result<PathBuf> {
+        let revision = params
+            .revision
+            .as_deref()
+            .unwrap_or(constants::DEFAULT_REVISION);
+        let cache_dir = &self.inner.cache_dir;
+        let repo_folder = cache::repo_folder_name(&params.repo_id, params.repo_type);
+        let force_download = params.force_download.unwrap_or(false);
+
+        if cache::is_commit_hash(revision) && !force_download {
+            let snap = cache::snapshot_path(cache_dir, &repo_folder, revision, &params.filename);
+            if snap.exists() {
+                return Ok(snap);
+            }
+        }
+
+        if params.local_files_only.unwrap_or(false) {
+            return self.resolve_from_cache_only(&repo_folder, revision, &params.filename);
+        }
+
+        let url = self.download_url(
+            params.repo_type,
+            &params.repo_id,
+            revision,
+            &params.filename,
+        );
+
+        #[cfg(feature = "xet")]
+        {
+            let head_response = self
+                .inner
+                .client
+                .head(&url)
+                .headers(self.auth_headers())
+                .send()
+                .await?;
+
+            let status = head_response.status();
+            if status == reqwest::StatusCode::NOT_FOUND {
+                let commit_from_header = extract_commit_hash(&head_response);
+                if let Some(ref commit_hash) = commit_from_header {
+                    let no_exist = cache::no_exist_path(
+                        cache_dir,
+                        &repo_folder,
+                        commit_hash,
+                        &params.filename,
+                    );
+                    if let Some(parent) = no_exist.parent() {
+                        tokio::fs::create_dir_all(parent).await?;
+                    }
+                    tokio::fs::write(&no_exist, b"").await?;
+                }
+                return Err(HfError::EntryNotFound {
+                    path: params.filename.clone(),
+                    repo_id: params.repo_id.clone(),
+                });
+            }
+
+            let head_response = self
+                .check_response(
+                    head_response,
+                    Some(&params.repo_id),
+                    crate::error::NotFoundContext::Entry {
+                        path: params.filename.clone(),
+                    },
+                )
+                .await?;
+
+            let has_xet_hash = head_response
+                .headers()
+                .get(constants::HEADER_X_XET_HASH)
+                .is_some();
+
+            if has_xet_hash {
+                let etag = extract_etag(&head_response).ok_or_else(|| {
+                    HfError::Other("Missing ETag header on xet response".to_string())
+                })?;
+                let commit_hash = extract_commit_hash(&head_response)
+                    .ok_or_else(|| HfError::Other("Missing X-Repo-Commit header".to_string()))?;
+
+                let blob = cache::blob_path(cache_dir, &repo_folder, &etag);
+                if !blob.exists() || force_download {
+                    if let Some(parent) = blob.parent() {
+                        tokio::fs::create_dir_all(parent).await?;
+                    }
+                    let _lock = cache::acquire_lock(cache_dir, &repo_folder, &etag).await?;
+                    let xet_dest = blob.with_extension("incomplete");
+                    let temp_params = DownloadFileParams {
+                        repo_id: params.repo_id.clone(),
+                        filename: params.filename.clone(),
+                        local_dir: Some(xet_dest.parent().unwrap().to_path_buf()),
+                        repo_type: params.repo_type,
+                        revision: params.revision.clone(),
+                        force_download: params.force_download,
+                        local_files_only: None,
+                    };
+                    // Download to a temporary location, then move into the blob
+                    let xet_temp_name = xet_dest.file_name().unwrap().to_string_lossy().to_string();
+                    let temp_params = DownloadFileParams {
+                        filename: xet_temp_name,
+                        ..temp_params
+                    };
+                    crate::xet::xet_download(self, &temp_params, &head_response).await?;
+                    tokio::fs::rename(&xet_dest, &blob).await?;
+                }
+
+                cache::write_ref(cache_dir, &repo_folder, revision, &commit_hash).await?;
+                cache::create_pointer_symlink(
+                    cache_dir,
+                    &repo_folder,
+                    &commit_hash,
+                    &params.filename,
+                    &etag,
+                )
+                .await?;
+
+                return Ok(cache::snapshot_path(
+                    cache_dir,
+                    &repo_folder,
+                    &commit_hash,
+                    &params.filename,
+                ));
+            }
+        }
+
+        let cached_etag = if !force_download {
+            self.find_cached_etag(&repo_folder, revision, &params.filename)
+        } else {
+            None
+        };
+
+        let mut headers = self.auth_headers();
+        if let Some(ref etag_val) = cached_etag {
+            if let Ok(hv) = reqwest::header::HeaderValue::from_str(&format!("\"{etag_val}\"")) {
+                headers.insert(IF_NONE_MATCH, hv);
+            }
+        }
+
+        let response = self.inner.client.get(&url).headers(headers).send().await?;
+
+        let status = response.status();
+
+        if status == reqwest::StatusCode::NOT_FOUND {
+            let commit_from_header = extract_commit_hash(&response);
+            if let Some(ref commit_hash) = commit_from_header {
+                let no_exist =
+                    cache::no_exist_path(cache_dir, &repo_folder, commit_hash, &params.filename);
+                if let Some(parent) = no_exist.parent() {
+                    tokio::fs::create_dir_all(parent).await?;
+                }
+                tokio::fs::write(&no_exist, b"").await?;
+            }
+            return Err(HfError::EntryNotFound {
+                path: params.filename.clone(),
+                repo_id: params.repo_id.clone(),
+            });
+        }
+
+        if status == reqwest::StatusCode::NOT_MODIFIED {
+            let etag = cached_etag.ok_or_else(|| {
+                HfError::Other("Received 304 but no cached etag available".to_string())
+            })?;
+            let commit_hash = if cache::is_commit_hash(revision) {
+                revision.to_string()
+            } else {
+                cache::read_ref(cache_dir, &repo_folder, revision)
+                    .await?
+                    .ok_or_else(|| {
+                        HfError::Other("Received 304 but no cached commit hash".to_string())
+                    })?
+            };
+            cache::write_ref(cache_dir, &repo_folder, revision, &commit_hash).await?;
+            cache::create_pointer_symlink(
+                cache_dir,
+                &repo_folder,
+                &commit_hash,
+                &params.filename,
+                &etag,
+            )
+            .await?;
+            return Ok(cache::snapshot_path(
+                cache_dir,
+                &repo_folder,
+                &commit_hash,
+                &params.filename,
+            ));
+        }
+
+        let response = self
+            .check_response(
+                response,
+                Some(&params.repo_id),
+                crate::error::NotFoundContext::Entry {
+                    path: params.filename.clone(),
+                },
+            )
+            .await?;
+
+        let etag = extract_etag(&response)
+            .ok_or_else(|| HfError::Other("Missing ETag header in response".to_string()))?;
+        let commit_hash = extract_commit_hash(&response)
+            .ok_or_else(|| HfError::Other("Missing X-Repo-Commit header".to_string()))?;
+
+        cache::write_ref(cache_dir, &repo_folder, revision, &commit_hash).await?;
+
+        let blob = cache::blob_path(cache_dir, &repo_folder, &etag);
+
+        if blob.exists() && !force_download {
+            cache::create_pointer_symlink(
+                cache_dir,
+                &repo_folder,
+                &commit_hash,
+                &params.filename,
+                &etag,
+            )
+            .await?;
+            return Ok(cache::snapshot_path(
+                cache_dir,
+                &repo_folder,
+                &commit_hash,
+                &params.filename,
+            ));
+        }
+
+        let _lock = cache::acquire_lock(cache_dir, &repo_folder, &etag).await?;
+        let incomplete_path = blob.with_extension("incomplete");
+        if let Some(parent) = incomplete_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+
+        stream_response_to_file(response, &incomplete_path).await?;
+        tokio::fs::rename(&incomplete_path, &blob).await?;
+
+        cache::create_pointer_symlink(
+            cache_dir,
+            &repo_folder,
+            &commit_hash,
+            &params.filename,
+            &etag,
+        )
+        .await?;
+
+        Ok(cache::snapshot_path(
+            cache_dir,
+            &repo_folder,
+            &commit_hash,
+            &params.filename,
+        ))
+    }
+}
+
+fn extract_etag(response: &reqwest::Response) -> Option<String> {
+    let headers = response.headers();
+    let raw = headers
+        .get(constants::HEADER_X_LINKED_ETAG)
+        .or_else(|| headers.get(reqwest::header::ETAG))
+        .and_then(|v| v.to_str().ok())?;
+    Some(raw.trim_matches('"').to_string())
+}
+
+fn extract_commit_hash(response: &reqwest::Response) -> Option<String> {
+    response
+        .headers()
+        .get(constants::HEADER_X_REPO_COMMIT)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+}
+
+async fn stream_response_to_file(
+    response: reqwest::Response,
+    dest: &std::path::Path,
+) -> Result<()> {
+    use tokio::io::AsyncWriteExt;
+    let mut file = tokio::fs::File::create(dest).await?;
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        file.write_all(&chunk).await?;
+    }
+    file.flush().await?;
+    Ok(())
 }
 
 impl HfApi {
