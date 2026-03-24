@@ -336,24 +336,30 @@ impl HfApi {
                         tokio::fs::create_dir_all(parent).await?;
                     }
                     let _lock = cache::acquire_lock(cache_dir, &repo_folder, &etag).await?;
-                    let xet_dest = blob.with_extension("incomplete");
-                    let temp_params = DownloadFileParams {
-                        repo_id: params.repo_id.clone(),
-                        filename: params.filename.clone(),
-                        local_dir: Some(xet_dest.parent().unwrap().to_path_buf()),
-                        repo_type: params.repo_type,
-                        revision: params.revision.clone(),
-                        force_download: params.force_download,
-                        local_files_only: None,
-                    };
-                    // Download to a temporary location, then move into the blob
-                    let xet_temp_name = xet_dest.file_name().unwrap().to_string_lossy().to_string();
-                    let temp_params = DownloadFileParams {
-                        filename: xet_temp_name,
-                        ..temp_params
-                    };
-                    crate::xet::xet_download(self, &temp_params, &head_response).await?;
-                    tokio::fs::rename(&xet_dest, &blob).await?;
+
+                    let xet_hash = head_response
+                        .headers()
+                        .get(constants::HEADER_X_XET_HASH)
+                        .and_then(|v| v.to_str().ok())
+                        .ok_or_else(|| HfError::Other("Missing X-Xet-Hash header".to_string()))?
+                        .to_string();
+                    let file_size: u64 = head_response
+                        .headers()
+                        .get(reqwest::header::CONTENT_LENGTH)
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0);
+
+                    crate::xet::xet_download_to_blob(
+                        self,
+                        &params.repo_id,
+                        params.repo_type,
+                        revision,
+                        &xet_hash,
+                        file_size,
+                        &blob,
+                    )
+                    .await?;
                 }
 
                 cache::write_ref(cache_dir, &repo_folder, revision, &commit_hash).await?;

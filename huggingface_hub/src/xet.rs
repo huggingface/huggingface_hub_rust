@@ -161,6 +161,50 @@ pub(crate) async fn xet_download(
     Ok(dest_path)
 }
 
+pub(crate) async fn xet_download_to_blob(
+    api: &HfApi,
+    repo_id: &str,
+    repo_type: Option<RepoType>,
+    revision: &str,
+    file_hash: &str,
+    file_size: u64,
+    blob_path: &std::path::Path,
+) -> Result<()> {
+    let session = api
+        .get_or_init_xet_session("read", repo_id, repo_type, revision)
+        .await?;
+
+    if let Some(parent) = blob_path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+
+    let incomplete_path = PathBuf::from(format!("{}.incomplete", blob_path.display()));
+
+    let group = session
+        .new_download_group()
+        .await
+        .map_err(|e| HfError::Other(format!("Xet download failed: {e}")))?;
+
+    let file_info = XetFileInfo {
+        hash: file_hash.to_string(),
+        file_size,
+        sha256: None,
+    };
+
+    group
+        .download_file_to_path(file_info, incomplete_path.clone())
+        .await
+        .map_err(|e| HfError::Other(format!("Xet download failed: {e}")))?;
+
+    group
+        .finish()
+        .await
+        .map_err(|e| HfError::Other(format!("Xet download failed: {e}")))?;
+
+    tokio::fs::rename(&incomplete_path, blob_path).await?;
+    Ok(())
+}
+
 /// Upload files using the xet protocol.
 /// Fetches a write token and uses xet-session's UploadCommit.
 /// Returns the XetFileInfo (hash + size) for each uploaded file.
