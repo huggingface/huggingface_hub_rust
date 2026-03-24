@@ -64,6 +64,24 @@ Stored at cache root level: `{cache_root}/.locks/{repo_folder}/{etag}.lock`. Pre
 
 ## Changes to Existing Types
 
+### Breaking Change: `DownloadFileParams`
+
+`local_dir` changes from a required `PathBuf` to `Option<PathBuf>`. This is a breaking API change — all existing callers must wrap their `local_dir` value in `Some(...)`. Internal callers that access `params.local_dir` directly (including `xet.rs`) must be updated to handle the `Option`.
+
+```rust
+pub struct DownloadFileParams {
+    pub repo_id: String,
+    pub filename: String,
+    pub local_dir: Option<PathBuf>,       // was: required PathBuf
+    pub repo_type: Option<RepoType>,
+    pub revision: Option<String>,
+    pub force_download: Option<bool>,      // new
+    pub local_files_only: Option<bool>,    // new
+}
+```
+
+When `local_dir` is `None`, the cache is used. When `Some`, files download directly to that directory (no cache involvement).
+
 ### HfApiBuilder
 
 New method:
@@ -80,22 +98,6 @@ pub(crate) cache_dir: PathBuf
 
 Resolved during `build()` using the priority order above.
 
-### DownloadFileParams
-
-```rust
-pub struct DownloadFileParams {
-    pub repo_id: String,
-    pub filename: String,
-    pub local_dir: Option<PathBuf>,       // was: required PathBuf
-    pub repo_type: Option<RepoType>,
-    pub revision: Option<String>,
-    pub force_download: Option<bool>,      // new
-    pub local_files_only: Option<bool>,    // new
-}
-```
-
-When `local_dir` is `None`, the cache is used. When `Some`, files download directly to that directory (no cache involvement).
-
 ### HfError
 
 New variants:
@@ -110,24 +112,26 @@ When `local_dir` is `None`:
 
 1. Compute repo folder name and cache paths
 2. If revision is a 40-char hex commit hash, check `snapshots/{hash}/{filename}` — if exists and `force_download` is not set, return path immediately
-3. If `local_files_only` is set, check cache and return `LocalEntryNotFound` on miss
-4. Send HEAD request to `{endpoint}/{prefix}{repo_id}/resolve/{revision}/{filename}` — extract `ETag` (or `X-Linked-Etag` for LFS, which takes priority), `X-Repo-Commit` header for commit hash. Strip quotes from etag values.
+3. If `local_files_only` is set, also try resolving via `refs/{revision}` → commit hash → snapshot check, then return `LocalEntryNotFound` on miss
+4. Send GET request to `{endpoint}/{prefix}{repo_id}/resolve/{revision}/{filename}`. Extract metadata from **response headers**: `ETag` (or `X-Linked-Etag` for LFS, which takes priority), `X-Repo-Commit` for commit hash. Strip quotes from etag values. If the blob already exists in cache (and `force_download` is not set), discard the response body early.
 5. Write commit hash to `refs/{revision}` if revision is not already a commit hash
 6. Check if `blobs/{etag}` exists — if so and `force_download` is not set, skip to step 9
-7. Acquire file lock at `{cache_root}/.locks/{repo_folder}/{etag}.lock` using `fs4`
-8. Stream download to `blobs/{etag}.incomplete`, then atomic rename to `blobs/{etag}`
-9. Create relative symlink: `snapshots/{commit_hash}/{filename}` -> `../../blobs/{etag}`
+7. Acquire file lock at `{cache_root}/.locks/{repo_folder}/{etag}.lock` using `fs4`. Lock timeout: 10 seconds (matching Python). `fs4` uses advisory locks (`flock`/`LockFileEx`) which auto-release on process exit, handling crash recovery.
+8. Stream the response body (from step 4) to `blobs/{etag}.incomplete`, then atomic rename to `blobs/{etag}`. On Unix, `rename(2)` is atomic within the same filesystem. The `.incomplete` and final blob are always in the same directory, guaranteeing same-filesystem.
+9. Create relative symlink: `snapshots/{commit_hash}/{filename}` -> `../../blobs/{etag}`. This happens inside the lock scope to prevent races with concurrent processes creating the same snapshot directory.
 10. Release lock, return the symlink path
+
+This uses a single HTTP request (GET) instead of HEAD+GET. The response headers provide the etag and commit hash needed for cache placement. If the blob already exists (step 6), the response body is discarded without reading it fully.
 
 When `local_dir` is `Some(path)`: download directly to `path/filename` (current behavior, no cache).
 
 ### 404 Handling
 
-When the HEAD or GET request returns 404, create `.no_exist/{commit_hash}/{filename}` marker (if commit hash is known) and return `EntryNotFound`.
+When the GET request returns 404, create `.no_exist/{commit_hash}/{filename}` marker (if commit hash is known from the response) and return `EntryNotFound`.
 
 ### Xet Integration
 
-The existing xet download path (feature-gated behind `xet`) continues to work. The HEAD request in step 4 also checks for `X-Xet-Hash` header. If present and the `xet` feature is enabled, the xet protocol downloads the blob content. The cache structure (blob storage, symlinks) is the same regardless of transfer protocol.
+The existing xet download path (feature-gated behind `xet`) requires a HEAD request to detect the `X-Xet-Hash` header. In cache mode with xet enabled, the flow becomes: send HEAD first, check for `X-Xet-Hash`. If present, use the xet protocol to download directly to `blobs/{etag}.incomplete` (the xet download function must be updated to accept a target blob path instead of `local_dir`), then atomic rename and symlink as normal. If no xet header, proceed with the standard GET flow above. The cache structure is the same regardless of transfer protocol.
 
 ## Snapshot Download
 
@@ -151,10 +155,10 @@ pub struct SnapshotDownloadParams {
 
 ### Flow
 
-1. List all files via `list_repo_tree` (recursive)
-2. Filter by `allow_patterns` / `ignore_patterns` using existing `matches_any_glob`
-3. Download concurrently with `futures::stream::buffer_unordered(max_workers)`
-4. Each file uses the `download_file` cache flow
+1. Resolve the revision to a commit hash upfront. If revision is already a 40-char hex string, use it directly. Otherwise, make a single API call (e.g., `repo_info` or a HEAD request to any file) to resolve the branch/tag to a commit hash. This pinned commit hash is used for all subsequent downloads, ensuring all files come from the same revision even if the branch moves during the download.
+2. List all files via `list_repo_tree` at the pinned commit hash (recursive)
+3. Filter by `allow_patterns` / `ignore_patterns` using existing `matches_any_glob`
+4. Download concurrently with `futures::stream::buffer_unordered(max_workers)`, passing the pinned commit hash as the revision to each `download_file` call
 5. Return snapshot directory: `{cache_root}/{repo_folder}/snapshots/{commit_hash}/`
 
 In `local_dir` mode, return the `local_dir` path.
@@ -169,6 +173,8 @@ pub struct CachedFileInfo {
     pub file_path: PathBuf,
     pub blob_path: PathBuf,
     pub size_on_disk: u64,
+    pub blob_last_accessed: SystemTime,
+    pub blob_last_modified: SystemTime,
 }
 
 pub struct CachedRevisionInfo {
@@ -177,6 +183,7 @@ pub struct CachedRevisionInfo {
     pub files: Vec<CachedFileInfo>,
     pub size_on_disk: u64,
     pub refs: Vec<String>,
+    pub last_modified: SystemTime,
 }
 
 pub struct CachedRepoInfo {
@@ -184,6 +191,7 @@ pub struct CachedRepoInfo {
     pub repo_type: RepoType,
     pub repo_path: PathBuf,
     pub revisions: Vec<CachedRevisionInfo>,
+    pub nb_files: usize,
     pub size_on_disk: u64,
     pub last_accessed: SystemTime,
     pub last_modified: SystemTime,
@@ -207,7 +215,7 @@ pub struct DeleteCacheRevision {
 
 `scan_cache(&self) -> Result<HfCacheInfo>`: Walk the cache directory. For each repo folder, enumerate revisions from `snapshots/`, follow symlinks to determine blob sizes, read `refs/` to map branch/tag names. Collect warnings for malformed entries.
 
-`delete_cache_revisions(&self, revisions: &[DeleteCacheRevision]) -> Result<()>`: Remove specified snapshot directories, update refs, delete orphaned blobs (blobs not referenced by any remaining snapshot symlink).
+`delete_cache_revisions(&self, revisions: &[DeleteCacheRevision]) -> Result<()>`: Remove specified snapshot directories, update refs, delete orphaned blobs (blobs not referenced by any remaining snapshot symlink). Non-fatal errors (revision not found in cache, individual file deletion failures) are logged as warnings and skipped — the operation continues with remaining items rather than failing entirely.
 
 ## New Module: `src/cache.rs`
 
