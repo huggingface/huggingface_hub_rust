@@ -205,6 +205,66 @@ pub(crate) async fn xet_download_to_blob(
     Ok(())
 }
 
+pub(crate) struct XetBatchFile {
+    pub hash: String,
+    pub file_size: u64,
+    pub blob_path: PathBuf,
+}
+
+pub(crate) async fn xet_download_batch(
+    api: &HfApi,
+    repo_id: &str,
+    repo_type: Option<RepoType>,
+    revision: &str,
+    files: &[XetBatchFile],
+) -> Result<()> {
+    if files.is_empty() {
+        return Ok(());
+    }
+
+    let session = api
+        .get_or_init_xet_session("read", repo_id, repo_type, revision)
+        .await?;
+
+    let group = session
+        .new_download_group()
+        .await
+        .map_err(|e| HfError::Other(format!("Xet batch download failed: {e}")))?;
+
+    let mut incomplete_paths = Vec::with_capacity(files.len());
+    for file in files {
+        if let Some(parent) = file.blob_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+
+        let incomplete = PathBuf::from(format!("{}.incomplete", file.blob_path.display()));
+
+        let file_info = XetFileInfo {
+            hash: file.hash.clone(),
+            file_size: file.file_size,
+            sha256: None,
+        };
+
+        group
+            .download_file_to_path(file_info, incomplete.clone())
+            .await
+            .map_err(|e| HfError::Other(format!("Xet batch download failed: {e}")))?;
+
+        incomplete_paths.push((incomplete, file.blob_path.clone()));
+    }
+
+    group
+        .finish()
+        .await
+        .map_err(|e| HfError::Other(format!("Xet batch download failed: {e}")))?;
+
+    for (incomplete, final_path) in &incomplete_paths {
+        tokio::fs::rename(incomplete, final_path).await?;
+    }
+
+    Ok(())
+}
+
 /// Upload files using the xet protocol.
 /// Fetches a write token and uses xet-session's UploadCommit.
 /// Returns the XetFileInfo (hash + size) for each uploaded file.

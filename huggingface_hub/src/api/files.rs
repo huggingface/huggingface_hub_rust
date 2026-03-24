@@ -600,42 +600,205 @@ impl HfApi {
             filenames.retain(|f| !matches_any_glob(ignore, f));
         }
 
-        if params.force_download != Some(true) && params.local_dir.is_none() {
+        let force = params.force_download == Some(true);
+
+        if !force && params.local_dir.is_none() {
             filenames.retain(|f| {
                 !crate::cache::snapshot_path(cache_dir, &repo_folder, &commit_hash, f).exists()
             });
         }
 
-        let dl_param_list: Vec<DownloadFileParams> = filenames
-            .iter()
-            .map(|filename| {
-                let builder = DownloadFileParams::builder()
-                    .repo_id(&params.repo_id)
-                    .filename(filename);
-                let base = if let Some(ref local_dir) = params.local_dir {
-                    builder.local_dir(local_dir.clone()).build()
-                } else {
-                    builder.build()
-                };
-                DownloadFileParams {
-                    repo_type: params.repo_type,
-                    revision: Some(commit_hash.clone()),
-                    force_download: params.force_download,
-                    ..base
-                }
-            })
-            .collect();
+        if params.local_dir.is_some() {
+            let dl_param_list: Vec<DownloadFileParams> = filenames
+                .iter()
+                .map(|filename| {
+                    let builder = DownloadFileParams::builder()
+                        .repo_id(&params.repo_id)
+                        .filename(filename);
+                    let base = builder.local_dir(params.local_dir.clone().unwrap()).build();
+                    DownloadFileParams {
+                        repo_type: params.repo_type,
+                        revision: Some(commit_hash.clone()),
+                        force_download: params.force_download,
+                        ..base
+                    }
+                })
+                .collect();
 
+            {
+                use futures::TryStreamExt;
+                futures::stream::iter(dl_param_list.iter().map(|p| self.download_file(p)))
+                    .buffer_unordered(max_workers)
+                    .try_collect::<Vec<_>>()
+                    .await?;
+            }
+
+            return Ok(params.local_dir.clone().unwrap());
+        }
+
+        // Cache mode downloads
+        #[cfg(feature = "xet")]
+        {
+            struct FileMetadataInfo {
+                filename: String,
+                etag: String,
+                commit_hash: String,
+                xet_hash: Option<String>,
+                file_size: u64,
+            }
+
+            let commit_hash_ref = &commit_hash;
+            let head_futs = filenames.iter().map(|filename| {
+                let url =
+                    self.download_url(params.repo_type, &params.repo_id, commit_hash_ref, filename);
+                let client = &self.inner.client;
+                let auth = self.auth_headers();
+                let filename = filename.clone();
+                async move {
+                    let resp = client.head(&url).headers(auth).send().await?;
+                    if !resp.status().is_success() {
+                        return Err(HfError::Http {
+                            status: resp.status(),
+                            url,
+                            body: String::new(),
+                        });
+                    }
+                    let etag = extract_etag(&resp)
+                        .ok_or_else(|| HfError::Other(format!("Missing ETag for {filename}")))?;
+                    let commit =
+                        extract_commit_hash(&resp).unwrap_or_else(|| commit_hash_ref.clone());
+                    let xet_hash = resp
+                        .headers()
+                        .get(constants::HEADER_X_XET_HASH)
+                        .and_then(|v| v.to_str().ok())
+                        .map(|s| s.to_string());
+                    let file_size: u64 = resp
+                        .headers()
+                        .get(reqwest::header::CONTENT_LENGTH)
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0);
+                    Ok::<_, HfError>(FileMetadataInfo {
+                        filename,
+                        etag,
+                        commit_hash: commit,
+                        xet_hash,
+                        file_size,
+                    })
+                }
+            });
+
+            use futures::TryStreamExt;
+            let file_metas: Vec<FileMetadataInfo> = futures::stream::iter(head_futs)
+                .buffer_unordered(max_workers)
+                .try_collect()
+                .await?;
+
+            let mut xet_metas = Vec::new();
+            let mut non_xet_metas = Vec::new();
+
+            for meta in file_metas {
+                let blob = cache::blob_path(cache_dir, &repo_folder, &meta.etag);
+                if blob.exists() && !force {
+                    cache::create_pointer_symlink(
+                        cache_dir,
+                        &repo_folder,
+                        &meta.commit_hash,
+                        &meta.filename,
+                        &meta.etag,
+                    )
+                    .await?;
+                    continue;
+                }
+                if meta.xet_hash.is_some() {
+                    xet_metas.push(meta);
+                } else {
+                    non_xet_metas.push(meta);
+                }
+            }
+
+            let xet_batch_fut = async {
+                if xet_metas.is_empty() {
+                    return Ok::<_, HfError>(());
+                }
+                let batch_files: Vec<crate::xet::XetBatchFile> = xet_metas
+                    .iter()
+                    .map(|m| crate::xet::XetBatchFile {
+                        hash: m.xet_hash.as_ref().unwrap().clone(),
+                        file_size: m.file_size,
+                        blob_path: cache::blob_path(cache_dir, &repo_folder, &m.etag),
+                    })
+                    .collect();
+                crate::xet::xet_download_batch(
+                    self,
+                    &params.repo_id,
+                    params.repo_type,
+                    &commit_hash,
+                    &batch_files,
+                )
+                .await?;
+                for m in &xet_metas {
+                    cache::create_pointer_symlink(
+                        cache_dir,
+                        &repo_folder,
+                        &m.commit_hash,
+                        &m.filename,
+                        &m.etag,
+                    )
+                    .await?;
+                }
+                Ok(())
+            };
+
+            let non_xet_dl_params: Vec<DownloadFileParams> = non_xet_metas
+                .iter()
+                .map(|m| {
+                    let dl_params = DownloadFileParams::builder()
+                        .repo_id(&params.repo_id)
+                        .filename(&m.filename)
+                        .build();
+                    DownloadFileParams {
+                        repo_type: params.repo_type,
+                        revision: Some(commit_hash.clone()),
+                        force_download: params.force_download,
+                        ..dl_params
+                    }
+                })
+                .collect();
+
+            let non_xet_fut = async {
+                futures::stream::iter(non_xet_dl_params.iter().map(|p| self.download_file(p)))
+                    .buffer_unordered(max_workers)
+                    .try_collect::<Vec<_>>()
+                    .await?;
+                Ok::<_, HfError>(())
+            };
+
+            tokio::try_join!(xet_batch_fut, non_xet_fut)?;
+        }
+
+        #[cfg(not(feature = "xet"))]
         {
             use futures::TryStreamExt;
+            let dl_param_list: Vec<DownloadFileParams> = filenames
+                .iter()
+                .map(|filename| {
+                    let dl_params = DownloadFileParams::builder()
+                        .repo_id(&params.repo_id)
+                        .filename(filename)
+                        .build();
+                    DownloadFileParams {
+                        repo_type: params.repo_type,
+                        revision: Some(commit_hash.clone()),
+                        force_download: params.force_download,
+                        ..dl_params
+                    }
+                })
+                .collect();
             futures::stream::iter(dl_param_list.iter().map(|p| self.download_file(p)))
                 .buffer_unordered(max_workers)
                 .try_collect::<Vec<_>>()
                 .await?;
-        }
-
-        if params.local_dir.is_some() {
-            return Ok(params.local_dir.clone().unwrap());
         }
 
         if !crate::cache::is_commit_hash(revision) {
