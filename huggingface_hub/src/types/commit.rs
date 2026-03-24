@@ -1,5 +1,6 @@
-use serde::Deserialize;
 use std::path::PathBuf;
+
+use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CommitAuthor {
@@ -63,10 +64,7 @@ pub struct DiffEntry {
 #[derive(Debug, Clone)]
 pub enum CommitOperation {
     /// Upload a file (from path or bytes)
-    Add {
-        path_in_repo: String,
-        source: AddSource,
-    },
+    Add { path_in_repo: String, source: AddSource },
     /// Delete a file or folder
     Delete { path_in_repo: String },
 }

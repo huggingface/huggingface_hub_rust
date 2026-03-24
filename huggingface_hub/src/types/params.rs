@@ -1,7 +1,9 @@
+use std::path::PathBuf;
+
+use typed_builder::TypedBuilder;
+
 use super::commit::{AddSource, CommitOperation};
 use super::repo::RepoType;
-use std::path::PathBuf;
-use typed_builder::TypedBuilder;
 
 #[derive(TypedBuilder)]
 pub struct ModelInfoParams {

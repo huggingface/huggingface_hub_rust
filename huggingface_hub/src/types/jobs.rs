@@ -97,10 +97,7 @@ mod tests {
         }"#;
         let job: JobInfo = serde_json::from_str(json).unwrap();
         assert_eq!(job.id, "abc123");
-        assert_eq!(
-            job.status.as_ref().unwrap().stage.as_deref(),
-            Some("COMPLETED")
-        );
+        assert_eq!(job.status.as_ref().unwrap().stage.as_deref(), Some("COMPLETED"));
     }
 
     #[test]

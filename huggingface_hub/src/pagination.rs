@@ -1,10 +1,12 @@
-use crate::client::HfApi;
-use crate::error::{HfError, Result};
+use std::collections::VecDeque;
+
 use futures::stream::{self, Stream};
 use reqwest::header::HeaderMap;
 use serde::de::DeserializeOwned;
-use std::collections::VecDeque;
 use url::Url;
+
+use crate::client::HfApi;
+use crate::error::{HfError, Result};
 
 struct PaginationState {
     buffer: VecDeque<serde_json::Value>,
@@ -46,11 +48,7 @@ impl HfApi {
                     None => return Ok(None),
                 };
 
-                let mut request = self
-                    .inner
-                    .client
-                    .get(url.clone())
-                    .headers(self.auth_headers());
+                let mut request = self.inner.client.get(url.clone()).headers(self.auth_headers());
                 if state.is_first_page {
                     request = request.query(&params);
                     state.is_first_page = false;
@@ -81,7 +79,7 @@ impl HfApi {
                     Some(raw) => {
                         let item: T = serde_json::from_value(raw)?;
                         Ok(Some((item, state)))
-                    }
+                    },
                     None => Ok(None),
                 }
             }
@@ -109,16 +107,14 @@ fn parse_link_header_next(headers: &HeaderMap) -> Option<Url> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_link_header_next;
     use reqwest::header::{HeaderMap, HeaderValue};
+
+    use super::parse_link_header_next;
 
     #[test]
     fn test_parse_link_header_next() {
         let mut headers = HeaderMap::new();
-        headers.insert(
-            "link",
-            HeaderValue::from_static(r#"<https://huggingface.co/api/models?p=1>; rel="next""#),
-        );
+        headers.insert("link", HeaderValue::from_static(r#"<https://huggingface.co/api/models?p=1>; rel="next""#));
         let url = parse_link_header_next(&headers).unwrap();
         assert_eq!(url.as_str(), "https://huggingface.co/api/models?p=1");
     }

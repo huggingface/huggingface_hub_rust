@@ -6,10 +6,9 @@
 //! Run: cargo run -p huggingface-hub --features blocking --example blocking_write
 
 use huggingface_hub::{
-    AddSource, CommitOperation, CreateBranchParams, CreateCommitParams, CreateRepoParams,
-    CreateTagParams, DeleteBranchParams, DeleteFileParams, DeleteRepoParams, DeleteTagParams,
-    DownloadFileParams, FileExistsParams, HfApiSync, ListRepoFilesParams, ListRepoRefsParams,
-    UploadFileParams, UploadFolderParams,
+    AddSource, CommitOperation, CreateBranchParams, CreateCommitParams, CreateRepoParams, CreateTagParams,
+    DeleteBranchParams, DeleteFileParams, DeleteRepoParams, DeleteTagParams, DownloadFileParams, FileExistsParams,
+    HfApiSync, ListRepoFilesParams, ListRepoRefsParams, UploadFileParams, UploadFolderParams,
 };
 
 fn main() -> huggingface_hub::Result<()> {
@@ -101,12 +100,7 @@ fn main() -> huggingface_hub::Result<()> {
 
     // --- Branch and tag management ---
 
-    api.create_branch(
-        &CreateBranchParams::builder()
-            .repo_id(&repo_name)
-            .branch("dev")
-            .build(),
-    )?;
+    api.create_branch(&CreateBranchParams::builder().repo_id(&repo_name).branch("dev").build())?;
     println!("\nCreated branch 'dev'");
 
     api.create_tag(
@@ -119,27 +113,11 @@ fn main() -> huggingface_hub::Result<()> {
     println!("Created tag 'v1.0'");
 
     let refs = api.list_repo_refs(&ListRepoRefsParams::builder().repo_id(&repo_name).build())?;
-    println!(
-        "Branches: {:?}",
-        refs.branches.iter().map(|b| &b.name).collect::<Vec<_>>()
-    );
-    println!(
-        "Tags: {:?}",
-        refs.tags.iter().map(|t| &t.name).collect::<Vec<_>>()
-    );
+    println!("Branches: {:?}", refs.branches.iter().map(|b| &b.name).collect::<Vec<_>>());
+    println!("Tags: {:?}", refs.tags.iter().map(|t| &t.name).collect::<Vec<_>>());
 
-    api.delete_tag(
-        &DeleteTagParams::builder()
-            .repo_id(&repo_name)
-            .tag("v1.0")
-            .build(),
-    )?;
-    api.delete_branch(
-        &DeleteBranchParams::builder()
-            .repo_id(&repo_name)
-            .branch("dev")
-            .build(),
-    )?;
+    api.delete_tag(&DeleteTagParams::builder().repo_id(&repo_name).tag("v1.0").build())?;
+    api.delete_branch(&DeleteBranchParams::builder().repo_id(&repo_name).branch("dev").build())?;
     println!("Cleaned up branch and tag");
 
     // --- Delete a file ---
@@ -150,22 +128,12 @@ fn main() -> huggingface_hub::Result<()> {
             .path_in_repo("hello.txt")
             .build(),
     )?;
-    let gone = !api.file_exists(
-        &FileExistsParams::builder()
-            .repo_id(&repo_name)
-            .filename("hello.txt")
-            .build(),
-    )?;
+    let gone = !api.file_exists(&FileExistsParams::builder().repo_id(&repo_name).filename("hello.txt").build())?;
     println!("\nhello.txt deleted: {gone}");
 
     // --- Clean up ---
 
-    api.delete_repo(
-        &DeleteRepoParams::builder()
-            .repo_id(&repo_name)
-            .missing_ok(true)
-            .build(),
-    )?;
+    api.delete_repo(&DeleteRepoParams::builder().repo_id(&repo_name).missing_ok(true).build())?;
     println!("Deleted repo");
 
     Ok(())

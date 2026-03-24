@@ -1,10 +1,9 @@
 use crate::client::HfApi;
 use crate::error::Result;
 use crate::types::{
-    CreateInferenceEndpointParams, DeleteInferenceEndpointParams, GetInferenceEndpointParams,
-    InferenceEndpointInfo, ListInferenceEndpointsParams, PauseInferenceEndpointParams,
-    ResumeInferenceEndpointParams, ScaleToZeroInferenceEndpointParams,
-    UpdateInferenceEndpointParams,
+    CreateInferenceEndpointParams, DeleteInferenceEndpointParams, GetInferenceEndpointParams, InferenceEndpointInfo,
+    ListInferenceEndpointsParams, PauseInferenceEndpointParams, ResumeInferenceEndpointParams,
+    ScaleToZeroInferenceEndpointParams, UpdateInferenceEndpointParams,
 };
 
 const IE_API_BASE: &str = "https://api.endpoints.huggingface.cloud/v2/endpoint";
@@ -16,7 +15,7 @@ impl HfApi {
             None => {
                 let user = self.whoami().await?;
                 Ok(user.username)
-            }
+            },
         }
     }
 
@@ -75,19 +74,10 @@ impl HfApi {
         Ok(response.json().await?)
     }
 
-    pub async fn get_inference_endpoint(
-        &self,
-        params: &GetInferenceEndpointParams,
-    ) -> Result<InferenceEndpointInfo> {
+    pub async fn get_inference_endpoint(&self, params: &GetInferenceEndpointParams) -> Result<InferenceEndpointInfo> {
         let ns = self.resolve_ie_namespace(&params.namespace).await?;
         let url = format!("{IE_API_BASE}/{ns}/{}", params.name);
-        let response = self
-            .inner
-            .client
-            .get(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
@@ -100,24 +90,13 @@ impl HfApi {
     ) -> Result<Vec<InferenceEndpointInfo>> {
         let ns = self.resolve_ie_namespace(&params.namespace).await?;
         let url = format!("{IE_API_BASE}/{ns}");
-        let response = self
-            .inner
-            .client
-            .get(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
         let wrapper: serde_json::Value = response.json().await?;
-        let items = wrapper
-            .get("items")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
-        let endpoints: Vec<InferenceEndpointInfo> =
-            serde_json::from_value(serde_json::json!(items))?;
+        let items = wrapper.get("items").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+        let endpoints: Vec<InferenceEndpointInfo> = serde_json::from_value(serde_json::json!(items))?;
         Ok(endpoints)
     }
 
@@ -139,10 +118,7 @@ impl HfApi {
         if let Some(ref itype) = params.instance_type {
             compute.insert("instanceType".into(), serde_json::json!(itype));
         }
-        if params.min_replica.is_some()
-            || params.max_replica.is_some()
-            || params.scale_to_zero_timeout.is_some()
-        {
+        if params.min_replica.is_some() || params.max_replica.is_some() || params.scale_to_zero_timeout.is_some() {
             let mut scaling = serde_json::Map::new();
             if let Some(min) = params.min_replica {
                 scaling.insert("minReplica".into(), serde_json::json!(min));
@@ -193,19 +169,10 @@ impl HfApi {
         Ok(response.json().await?)
     }
 
-    pub async fn delete_inference_endpoint(
-        &self,
-        params: &DeleteInferenceEndpointParams,
-    ) -> Result<()> {
+    pub async fn delete_inference_endpoint(&self, params: &DeleteInferenceEndpointParams) -> Result<()> {
         let ns = self.resolve_ie_namespace(&params.namespace).await?;
         let url = format!("{IE_API_BASE}/{ns}/{}", params.name);
-        let response = self
-            .inner
-            .client
-            .delete(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let response = self.inner.client.delete(&url).headers(self.auth_headers()).send().await?;
         self.check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
         Ok(())
@@ -217,13 +184,7 @@ impl HfApi {
     ) -> Result<InferenceEndpointInfo> {
         let ns = self.resolve_ie_namespace(&params.namespace).await?;
         let url = format!("{IE_API_BASE}/{ns}/{}/pause", params.name);
-        let response = self
-            .inner
-            .client
-            .post(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let response = self.inner.client.post(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
@@ -236,13 +197,7 @@ impl HfApi {
     ) -> Result<InferenceEndpointInfo> {
         let ns = self.resolve_ie_namespace(&params.namespace).await?;
         let url = format!("{IE_API_BASE}/{ns}/{}/resume", params.name);
-        let response = self
-            .inner
-            .client
-            .post(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let response = self.inner.client.post(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
@@ -255,13 +210,7 @@ impl HfApi {
     ) -> Result<InferenceEndpointInfo> {
         let ns = self.resolve_ie_namespace(&params.namespace).await?;
         let url = format!("{IE_API_BASE}/{ns}/{}/scale-to-zero", params.name);
-        let response = self
-            .inner
-            .client
-            .post(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let response = self.inner.client.post(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;

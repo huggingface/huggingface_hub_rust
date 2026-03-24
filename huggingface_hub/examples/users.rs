@@ -14,16 +14,10 @@ async fn main() -> huggingface_hub::Result<()> {
     println!("Token is valid");
 
     let me = api.whoami().await?;
-    println!(
-        "Logged in as: {} (type: {:?}, pro: {:?})",
-        me.username, me.user_type, me.is_pro
-    );
+    println!("Logged in as: {} (type: {:?}, pro: {:?})", me.username, me.user_type, me.is_pro);
 
     let user = api.get_user_overview("julien-c").await?;
-    println!(
-        "\nUser overview: {} (fullname: {:?})",
-        user.username, user.fullname
-    );
+    println!("\nUser overview: {} (fullname: {:?})", user.username, user.fullname);
 
     let org = api.get_organization_overview("huggingface").await?;
     println!("Org overview: {} (fullname: {:?})", org.name, org.fullname);

@@ -5,9 +5,9 @@
 
 use futures::StreamExt;
 use huggingface_hub::{
-    AddSource, CommitOperation, CreateCommitParams, CreateRepoParams, DeleteFileParams,
-    DeleteFolderParams, DeleteRepoParams, DownloadFileParams, GetPathsInfoParams, HfApi,
-    ListRepoFilesParams, ListRepoTreeParams, RepoTreeEntry, UploadFileParams, UploadFolderParams,
+    AddSource, CommitOperation, CreateCommitParams, CreateRepoParams, DeleteFileParams, DeleteFolderParams,
+    DeleteRepoParams, DownloadFileParams, GetPathsInfoParams, HfApi, ListRepoFilesParams, ListRepoTreeParams,
+    RepoTreeEntry, UploadFileParams, UploadFolderParams,
 };
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
@@ -23,12 +23,7 @@ async fn main() -> huggingface_hub::Result<()> {
         println!("  - {f}");
     }
 
-    let tree_stream = api.list_repo_tree(
-        &ListRepoTreeParams::builder()
-            .repo_id("gpt2")
-            .recursive(true)
-            .build(),
-    );
+    let tree_stream = api.list_repo_tree(&ListRepoTreeParams::builder().repo_id("gpt2").recursive(true).build());
     futures::pin_mut!(tree_stream);
     println!("\nTree entries in gpt2:");
     let mut count = 0;
@@ -142,22 +137,12 @@ async fn main() -> huggingface_hub::Result<()> {
     .await?;
     println!("Deleted hello.txt");
 
-    api.delete_folder(
-        &DeleteFolderParams::builder()
-            .repo_id(&repo_name)
-            .path_in_repo("data")
-            .build(),
-    )
-    .await?;
+    api.delete_folder(&DeleteFolderParams::builder().repo_id(&repo_name).path_in_repo("data").build())
+        .await?;
     println!("Deleted data/ folder");
 
-    api.delete_repo(
-        &DeleteRepoParams::builder()
-            .repo_id(&repo_name)
-            .missing_ok(true)
-            .build(),
-    )
-    .await?;
+    api.delete_repo(&DeleteRepoParams::builder().repo_id(&repo_name).missing_ok(true).build())
+        .await?;
     println!("Cleaned up test repo");
 
     Ok(())

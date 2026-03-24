@@ -20,9 +20,7 @@ fn sync_api() -> Option<HfApiSync> {
 }
 
 fn write_enabled() -> bool {
-    std::env::var("HF_TEST_WRITE")
-        .ok()
-        .is_some_and(|v| v == "1")
+    std::env::var("HF_TEST_WRITE").ok().is_some_and(|v| v == "1")
 }
 
 // --- Repo info ---
@@ -38,9 +36,7 @@ fn test_sync_model_info() {
 #[test]
 fn test_sync_dataset_info() {
     let Some(api) = sync_api() else { return };
-    let params = DatasetInfoParams::builder()
-        .repo_id("rajpurkar/squad")
-        .build();
+    let params = DatasetInfoParams::builder().repo_id("rajpurkar/squad").build();
     let info = api.dataset_info(&params).unwrap();
     assert!(info.id.contains("squad"));
 }
@@ -60,10 +56,7 @@ fn test_sync_repo_exists() {
 #[test]
 fn test_sync_file_exists() {
     let Some(api) = sync_api() else { return };
-    let params = FileExistsParams::builder()
-        .repo_id("gpt2")
-        .filename("config.json")
-        .build();
+    let params = FileExistsParams::builder().repo_id("gpt2").filename("config.json").build();
     assert!(api.file_exists(&params).unwrap());
 
     let params = FileExistsParams::builder()
@@ -78,10 +71,7 @@ fn test_sync_file_exists() {
 #[test]
 fn test_sync_list_models() {
     let Some(api) = sync_api() else { return };
-    let params = ListModelsParams::builder()
-        .author("openai-community")
-        .limit(3_usize)
-        .build();
+    let params = ListModelsParams::builder().author("openai-community").limit(3_usize).build();
     let models = api.list_models(&params).unwrap();
     assert!(!models.is_empty());
     assert!(models[0].id.starts_with("openai-community/"));
@@ -90,10 +80,7 @@ fn test_sync_list_models() {
 #[test]
 fn test_sync_list_datasets() {
     let Some(api) = sync_api() else { return };
-    let params = ListDatasetsParams::builder()
-        .author("huggingface")
-        .limit(3_usize)
-        .build();
+    let params = ListDatasetsParams::builder().author("huggingface").limit(3_usize).build();
     let datasets = api.list_datasets(&params).unwrap();
     assert!(!datasets.is_empty());
 }
@@ -142,10 +129,7 @@ fn test_sync_list_repo_refs() {
 #[test]
 fn test_sync_revision_exists() {
     let Some(api) = sync_api() else { return };
-    let params = RevisionExistsParams::builder()
-        .repo_id("gpt2")
-        .revision("main")
-        .build();
+    let params = RevisionExistsParams::builder().repo_id("gpt2").revision("main").build();
     assert!(api.revision_exists(&params).unwrap());
 
     let params = RevisionExistsParams::builder()
@@ -228,9 +212,7 @@ fn test_sync_list_organization_members() {
 #[test]
 fn test_sync_get_commit_diff() {
     let Some(api) = sync_api() else { return };
-    let commits_params = ListRepoCommitsParams::builder()
-        .repo_id("openai-community/gpt2")
-        .build();
+    let commits_params = ListRepoCommitsParams::builder().repo_id("openai-community/gpt2").build();
     let commits = api.list_repo_commits(&commits_params).unwrap();
     assert!(commits.len() >= 2);
 
@@ -252,11 +234,7 @@ fn uuid_v4_short() -> String {
 
 fn create_test_repo(api: &HfApiSync) -> String {
     let whoami = api.whoami().expect("whoami failed");
-    let repo_id = format!(
-        "{}/huggingface-hub-rust-sync-test-{}",
-        whoami.username,
-        uuid_v4_short()
-    );
+    let repo_id = format!("{}/huggingface-hub-rust-sync-test-{}", whoami.username, uuid_v4_short());
     let params = CreateRepoParams::builder()
         .repo_id(&repo_id)
         .private(true)
@@ -288,11 +266,7 @@ fn test_sync_create_and_delete_repo() {
     }
 
     let whoami = api.whoami().expect("whoami failed");
-    let repo_id = format!(
-        "{}/huggingface-hub-rust-sync-test-{}",
-        whoami.username,
-        uuid_v4_short()
-    );
+    let repo_id = format!("{}/huggingface-hub-rust-sync-test-{}", whoami.username, uuid_v4_short());
 
     let params = CreateRepoParams::builder()
         .repo_id(&repo_id)
@@ -311,10 +285,7 @@ fn test_sync_create_and_delete_repo() {
     let commit = api.upload_file(&params).unwrap();
     assert!(commit.commit_oid.is_some());
 
-    let params = FileExistsParams::builder()
-        .repo_id(&repo_id)
-        .filename("test.txt")
-        .build();
+    let params = FileExistsParams::builder().repo_id(&repo_id).filename("test.txt").build();
     assert!(api.file_exists(&params).unwrap());
 
     let params = DeleteRepoParams::builder().repo_id(&repo_id).build();
@@ -391,20 +362,14 @@ fn test_sync_branch_operations() {
     }
     let repo_id = create_test_repo(&api);
 
-    let create_params = CreateBranchParams::builder()
-        .repo_id(&repo_id)
-        .branch("test-branch")
-        .build();
+    let create_params = CreateBranchParams::builder().repo_id(&repo_id).branch("test-branch").build();
     api.create_branch(&create_params).unwrap();
 
     let refs_params = ListRepoRefsParams::builder().repo_id(&repo_id).build();
     let refs = api.list_repo_refs(&refs_params).unwrap();
     assert!(refs.branches.iter().any(|b| b.name == "test-branch"));
 
-    let delete_params = DeleteBranchParams::builder()
-        .repo_id(&repo_id)
-        .branch("test-branch")
-        .build();
+    let delete_params = DeleteBranchParams::builder().repo_id(&repo_id).branch("test-branch").build();
     api.delete_branch(&delete_params).unwrap();
 
     let refs = api.list_repo_refs(&refs_params).unwrap();

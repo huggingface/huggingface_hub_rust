@@ -7,10 +7,9 @@
 //! Run: cargo run -p huggingface-hub --features inference_endpoints --example inference_endpoints
 
 use huggingface_hub::{
-    CreateInferenceEndpointParams, DeleteInferenceEndpointParams, GetInferenceEndpointParams,
-    HfApi, ListInferenceEndpointsParams, PauseInferenceEndpointParams,
-    ResumeInferenceEndpointParams, ScaleToZeroInferenceEndpointParams,
-    UpdateInferenceEndpointParams,
+    CreateInferenceEndpointParams, DeleteInferenceEndpointParams, GetInferenceEndpointParams, HfApi,
+    ListInferenceEndpointsParams, PauseInferenceEndpointParams, ResumeInferenceEndpointParams,
+    ScaleToZeroInferenceEndpointParams, UpdateInferenceEndpointParams,
 };
 
 #[tokio::main]
@@ -68,38 +67,22 @@ async fn main() -> huggingface_hub::Result<()> {
     println!("Updated endpoint: {:?}", updated);
 
     let paused = api
-        .pause_inference_endpoint(
-            &PauseInferenceEndpointParams::builder()
-                .name(&ep_name)
-                .build(),
-        )
+        .pause_inference_endpoint(&PauseInferenceEndpointParams::builder().name(&ep_name).build())
         .await?;
     println!("Paused endpoint: {:?}", paused);
 
     let resumed = api
-        .resume_inference_endpoint(
-            &ResumeInferenceEndpointParams::builder()
-                .name(&ep_name)
-                .build(),
-        )
+        .resume_inference_endpoint(&ResumeInferenceEndpointParams::builder().name(&ep_name).build())
         .await?;
     println!("Resumed endpoint: {:?}", resumed);
 
     let scaled = api
-        .scale_to_zero_inference_endpoint(
-            &ScaleToZeroInferenceEndpointParams::builder()
-                .name(&ep_name)
-                .build(),
-        )
+        .scale_to_zero_inference_endpoint(&ScaleToZeroInferenceEndpointParams::builder().name(&ep_name).build())
         .await?;
     println!("Scaled to zero: {:?}", scaled);
 
-    api.delete_inference_endpoint(
-        &DeleteInferenceEndpointParams::builder()
-            .name(&ep_name)
-            .build(),
-    )
-    .await?;
+    api.delete_inference_endpoint(&DeleteInferenceEndpointParams::builder().name(&ep_name).build())
+        .await?;
     println!("Deleted endpoint");
 
     Ok(())

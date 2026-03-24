@@ -1,10 +1,12 @@
-use crate::constants;
-use crate::error::{HfError, Result};
+use std::sync::Arc;
+
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT};
 use reqwest_middleware::ClientWithMiddleware;
 use reqwest_retry::policies::ExponentialBackoff;
 use reqwest_retry::RetryTransientMiddleware;
-use std::sync::Arc;
+
+use crate::constants;
+use crate::error::{HfError, Result};
 
 pub struct HfApi {
     pub(crate) inner: Arc<HfApiInner>,
@@ -94,15 +96,12 @@ impl HfApiBuilder {
         });
         default_headers.insert(
             USER_AGENT,
-            HeaderValue::from_str(&user_agent)
-                .map_err(|e| HfError::Other(format!("Invalid user agent: {e}")))?,
+            HeaderValue::from_str(&user_agent).map_err(|e| HfError::Other(format!("Invalid user agent: {e}")))?,
         );
 
         let raw_client = match self.client {
             Some(c) => c,
-            None => reqwest::Client::builder()
-                .default_headers(default_headers)
-                .build()?,
+            None => reqwest::Client::builder().default_headers(default_headers).build()?,
         };
 
         let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
@@ -149,11 +148,7 @@ impl HfApi {
     }
 
     /// Build a URL for the API: {endpoint}/api/{segment}/{repo_id}
-    pub(crate) fn api_url(
-        &self,
-        repo_type: Option<crate::types::RepoType>,
-        repo_id: &str,
-    ) -> String {
+    pub(crate) fn api_url(&self, repo_type: Option<crate::types::RepoType>, repo_id: &str) -> String {
         let segment = constants::repo_type_api_segment(repo_type);
         format!("{}/api/{}/{}", self.inner.endpoint, segment, repo_id)
     }
@@ -167,10 +162,7 @@ impl HfApi {
         filename: &str,
     ) -> String {
         let prefix = constants::repo_type_url_prefix(repo_type);
-        format!(
-            "{}/{}{}/resolve/{}/{}",
-            self.inner.endpoint, prefix, repo_id, revision, filename
-        )
+        format!("{}/{}{}/resolve/{}/{}", self.inner.endpoint, prefix, repo_id, revision, filename)
     }
 
     /// Check an HTTP response and map error status codes to HfError variants.
@@ -199,19 +191,15 @@ impl HfApi {
         match status.as_u16() {
             401 => Err(HfError::AuthRequired),
             404 => match not_found_ctx {
-                crate::error::NotFoundContext::Repo => Err(HfError::RepoNotFound {
-                    repo_id: repo_id_str,
-                }),
+                crate::error::NotFoundContext::Repo => Err(HfError::RepoNotFound { repo_id: repo_id_str }),
                 crate::error::NotFoundContext::Entry { path } => Err(HfError::EntryNotFound {
                     path,
                     repo_id: repo_id_str,
                 }),
-                crate::error::NotFoundContext::Revision { revision } => {
-                    Err(HfError::RevisionNotFound {
-                        revision,
-                        repo_id: repo_id_str,
-                    })
-                }
+                crate::error::NotFoundContext::Revision { revision } => Err(HfError::RevisionNotFound {
+                    revision,
+                    repo_id: repo_id_str,
+                }),
                 crate::error::NotFoundContext::Generic => Err(HfError::Http { status, url, body }),
             },
             _ => Err(HfError::Http { status, url, body }),

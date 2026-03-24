@@ -7,9 +7,9 @@
 //! Run: cargo run -p huggingface-hub --features blocking --example blocking_read
 
 use huggingface_hub::{
-    DatasetInfoParams, DownloadFileParams, GetPathsInfoParams, HfApiSync, ListDatasetsParams,
-    ListModelsParams, ListRepoCommitsParams, ListRepoFilesParams, ListRepoTreeParams,
-    ModelInfoParams, RepoExistsParams, RepoTreeEntry, SpaceInfoParams,
+    DatasetInfoParams, DownloadFileParams, GetPathsInfoParams, HfApiSync, ListDatasetsParams, ListModelsParams,
+    ListRepoCommitsParams, ListRepoFilesParams, ListRepoTreeParams, ModelInfoParams, RepoExistsParams, RepoTreeEntry,
+    SpaceInfoParams,
 };
 
 fn main() -> huggingface_hub::Result<()> {
@@ -20,15 +20,8 @@ fn main() -> huggingface_hub::Result<()> {
     let model = api.model_info(&ModelInfoParams::builder().repo_id("gpt2").build())?;
     println!("Model: {} (downloads: {:?})", model.id, model.downloads);
 
-    let dataset = api.dataset_info(
-        &DatasetInfoParams::builder()
-            .repo_id("rajpurkar/squad")
-            .build(),
-    )?;
-    println!(
-        "Dataset: {} (downloads: {:?})",
-        dataset.id, dataset.downloads
-    );
+    let dataset = api.dataset_info(&DatasetInfoParams::builder().repo_id("rajpurkar/squad").build())?;
+    println!("Dataset: {} (downloads: {:?})", dataset.id, dataset.downloads);
 
     let space = api.space_info(
         &SpaceInfoParams::builder()
@@ -62,12 +55,7 @@ fn main() -> huggingface_hub::Result<()> {
         println!("  - {f}");
     }
 
-    let tree = api.list_repo_tree(
-        &ListRepoTreeParams::builder()
-            .repo_id("gpt2")
-            .recursive(true)
-            .build(),
-    )?;
+    let tree = api.list_repo_tree(&ListRepoTreeParams::builder().repo_id("gpt2").recursive(true).build())?;
     println!("\nTree entries in gpt2:");
     for entry in tree.iter().take(5) {
         match entry {
@@ -96,11 +84,7 @@ fn main() -> huggingface_hub::Result<()> {
 
     // --- Commits ---
 
-    let commits = api.list_repo_commits(
-        &ListRepoCommitsParams::builder()
-            .repo_id("openai-community/gpt2")
-            .build(),
-    )?;
+    let commits = api.list_repo_commits(&ListRepoCommitsParams::builder().repo_id("openai-community/gpt2").build())?;
     println!("\nRecent commits on gpt2 ({} total):", commits.len());
     for c in commits.iter().take(3) {
         println!("  - {} {}", &c.id[..8], c.title);

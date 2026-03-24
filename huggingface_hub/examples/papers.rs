@@ -10,12 +10,7 @@ async fn main() -> huggingface_hub::Result<()> {
     let api = HfApi::new()?;
 
     let results = api
-        .list_papers(
-            &ListPapersParams::builder()
-                .query("transformers")
-                .limit(3_usize)
-                .build(),
-        )
+        .list_papers(&ListPapersParams::builder().query("transformers").limit(3_usize).build())
         .await?;
     println!("Paper search results for 'transformers':");
     for paper in &results {
@@ -31,9 +26,7 @@ async fn main() -> huggingface_hub::Result<()> {
     }
 
     if let Some(first) = results.first().and_then(|r| r.paper.as_ref()) {
-        let info = api
-            .paper_info(&PaperInfoParams::builder().paper_id(&first.id).build())
-            .await?;
+        let info = api.paper_info(&PaperInfoParams::builder().paper_id(&first.id).build()).await?;
         println!("\nPaper info: {:?}", info);
     }
 
