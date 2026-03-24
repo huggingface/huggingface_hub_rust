@@ -332,6 +332,86 @@ pub(crate) async fn scan_cache_dir(
     })
 }
 
+pub(crate) async fn delete_revisions(
+    cache_dir: &Path,
+    revisions: &[(&str, RepoType, &str)],
+) -> crate::error::Result<()> {
+    use std::collections::{HashMap, HashSet};
+
+    let mut grouped: HashMap<String, Vec<&str>> = HashMap::new();
+    for (repo_id, repo_type, commit_hash) in revisions {
+        let folder = repo_folder_name(repo_id, Some(*repo_type));
+        grouped.entry(folder).or_default().push(commit_hash);
+    }
+
+    for (repo_folder, commits_to_delete) in &grouped {
+        let repo_path = cache_dir.join(repo_folder);
+        if !repo_path.exists() {
+            continue;
+        }
+
+        let commits_set: HashSet<&str> = commits_to_delete.iter().copied().collect();
+
+        for commit in &commits_set {
+            let snap_dir = repo_path.join("snapshots").join(commit);
+            if snap_dir.exists() {
+                let _ = tokio::fs::remove_dir_all(&snap_dir).await;
+            }
+        }
+
+        let refs_dir = repo_path.join("refs");
+        if let Ok(mut ref_entries) = tokio::fs::read_dir(&refs_dir).await {
+            while let Ok(Some(entry)) = ref_entries.next_entry().await {
+                if entry.path().is_file() {
+                    if let Ok(content) = tokio::fs::read_to_string(entry.path()).await {
+                        if commits_set.contains(content.trim()) {
+                            let _ = tokio::fs::remove_file(entry.path()).await;
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut referenced_blobs: HashSet<String> = HashSet::new();
+        let snapshots_dir = repo_path.join("snapshots");
+        if let Ok(mut snap_entries) = tokio::fs::read_dir(&snapshots_dir).await {
+            while let Ok(Some(snap_entry)) = snap_entries.next_entry().await {
+                if !snap_entry.path().is_dir() {
+                    continue;
+                }
+                let mut stack = vec![snap_entry.path()];
+                while let Some(dir) = stack.pop() {
+                    if let Ok(mut dir_entries) = tokio::fs::read_dir(&dir).await {
+                        while let Ok(Some(file_entry)) = dir_entries.next_entry().await {
+                            let path = file_entry.path();
+                            if path.is_dir() {
+                                stack.push(path);
+                            } else if let Ok(target) = tokio::fs::read_link(&path).await {
+                                if let Some(blob_name) = target.file_name() {
+                                    referenced_blobs
+                                        .insert(blob_name.to_string_lossy().to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let blobs_dir = repo_path.join("blobs");
+        if let Ok(mut blob_entries) = tokio::fs::read_dir(&blobs_dir).await {
+            while let Ok(Some(blob_entry)) = blob_entries.next_entry().await {
+                let name = blob_entry.file_name().to_string_lossy().to_string();
+                if !referenced_blobs.contains(&name) {
+                    let _ = tokio::fs::remove_file(blob_entry.path()).await;
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -612,5 +692,53 @@ mod tests {
         assert_eq!(result.repos[0].revisions[0].size_on_disk, 11);
         assert_eq!(result.repos[0].size_on_disk, 11);
         assert_eq!(result.size_on_disk, 11);
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn test_delete_cache_revision() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path();
+        let repo_folder = "models--gpt2";
+
+        let blob_dir = cache.join(repo_folder).join("blobs");
+        tokio::fs::create_dir_all(&blob_dir).await.unwrap();
+        tokio::fs::write(blob_dir.join("shared_blob"), b"shared")
+            .await
+            .unwrap();
+        tokio::fs::write(blob_dir.join("unique_blob"), b"unique")
+            .await
+            .unwrap();
+
+        let snap1 = cache.join(repo_folder).join("snapshots").join("commit1");
+        let snap2 = cache.join(repo_folder).join("snapshots").join("commit2");
+        tokio::fs::create_dir_all(&snap1).await.unwrap();
+        tokio::fs::create_dir_all(&snap2).await.unwrap();
+
+        tokio::fs::symlink("../../blobs/shared_blob", snap1.join("file.txt"))
+            .await
+            .unwrap();
+        tokio::fs::symlink("../../blobs/shared_blob", snap2.join("file.txt"))
+            .await
+            .unwrap();
+        tokio::fs::symlink("../../blobs/unique_blob", snap1.join("extra.txt"))
+            .await
+            .unwrap();
+
+        let refs_dir = cache.join(repo_folder).join("refs");
+        tokio::fs::create_dir_all(&refs_dir).await.unwrap();
+        tokio::fs::write(refs_dir.join("main"), "commit1")
+            .await
+            .unwrap();
+
+        delete_revisions(cache, &[("gpt2", RepoType::Model, "commit1")])
+            .await
+            .unwrap();
+
+        assert!(!snap1.exists());
+        assert!(snap2.exists());
+        assert!(blob_dir.join("shared_blob").exists());
+        assert!(!blob_dir.join("unique_blob").exists());
+        assert!(!refs_dir.join("main").exists());
     }
 }
