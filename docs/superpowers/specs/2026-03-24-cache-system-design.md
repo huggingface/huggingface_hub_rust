@@ -135,7 +135,9 @@ When the GET request returns 404, create `.no_exist/{commit_hash}/{filename}` ma
 
 Xet integration only applies when the download flow reaches the network fetch phase (steps 4+). If there is a cache hit at step 2 (snapshot symlink exists), no HTTP request is made and xet is not involved.
 
-When the flow reaches step 4 with the `xet` feature enabled: send a HEAD request first to check for the `X-Xet-Hash` header (and extract etag/commit hash from headers). If `X-Xet-Hash` is present, use the xet protocol to download directly to `blobs/{etag}.incomplete` (the xet download function must be updated to accept a target blob path instead of `local_dir`), then atomic rename and symlink as normal (steps 8-10). If no `X-Xet-Hash` header, proceed with the standard conditional GET flow (step 4 onwards). The cache structure is the same regardless of transfer protocol.
+**Single-file `download_file`**: When the flow reaches step 4 with the `xet` feature enabled, send a HEAD request first to check for the `X-Xet-Hash` header (and extract etag/commit hash from headers). If `X-Xet-Hash` is present, use the xet protocol to download directly to `blobs/{etag}.incomplete` (the xet download function must be updated to accept a target blob path instead of `local_dir`), then atomic rename and symlink as normal (steps 8-10). One download group per file is acceptable here. If no `X-Xet-Hash` header, proceed with the standard conditional GET flow (step 4 onwards). The cache structure is the same regardless of transfer protocol.
+
+**Batch xet downloads in `snapshot_download`**: See the Snapshot Download section below for how xet files are batched into a single download group.
 
 ## Snapshot Download
 
@@ -162,8 +164,15 @@ pub struct SnapshotDownloadParams {
 1. Resolve the revision to a commit hash upfront. If revision is already a 40-char hex string, use it directly. Otherwise, make a single API call (e.g., `repo_info` or a HEAD request to any file) to resolve the branch/tag to a commit hash. This pinned commit hash is used for all subsequent downloads, ensuring all files come from the same revision even if the branch moves during the download.
 2. List all files via `list_repo_tree` at the pinned commit hash (recursive)
 3. Filter by `allow_patterns` / `ignore_patterns` using existing `matches_any_glob`
-4. Download concurrently with `futures::stream::buffer_unordered(max_workers)`, passing the pinned commit hash as the revision to each `download_file` call
-5. Return snapshot directory: `{cache_root}/{repo_folder}/snapshots/{commit_hash}/`
+4. Filter out cache hits: for each file, check if `snapshots/{commit_hash}/{filename}` exists (and `force_download` is not set). Skip files already cached.
+5. **Detection phase** (xet feature enabled): Send concurrent HEAD requests for all remaining files. Collect etag, commit hash, and `X-Xet-Hash` presence for each. Split files into two groups: xet-backed and non-xet.
+   - If xet feature is not enabled, skip detection — all files go to the non-xet group and use the standard conditional GET flow.
+6. **Download phase** — run xet and non-xet downloads in parallel using `tokio::join!`:
+   - **Xet group**: Create a single `XetSession` download group. Queue all xet-backed files into it, each targeting `blobs/{etag}.incomplete`. Call `finish()` once. Then atomic rename all to `blobs/{etag}`.
+   - **Non-xet group**: Download concurrently with `futures::stream::buffer_unordered(max_workers)` using the standard conditional GET flow (with `If-None-Match`). Each file streams to `blobs/{etag}.incomplete`, then atomic rename.
+7. Create symlinks for all downloaded files: `snapshots/{commit_hash}/{filename}` -> `../../blobs/{etag}`
+8. Write ref file if needed
+9. Return snapshot directory: `{cache_root}/{repo_folder}/snapshots/{commit_hash}/`
 
 In `local_dir` mode, return the `local_dir` path.
 
