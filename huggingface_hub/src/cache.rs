@@ -156,13 +156,24 @@ async fn read_commit_refs(repo_path: &Path) -> std::collections::HashMap<String,
     use std::collections::HashMap;
     let mut commit_refs: HashMap<String, Vec<String>> = HashMap::new();
     let refs_dir = repo_path.join("refs");
-    if let Ok(mut ref_entries) = tokio::fs::read_dir(&refs_dir).await {
-        while let Ok(Some(ref_entry)) = ref_entries.next_entry().await {
-            if ref_entry.path().is_file() {
-                if let Ok(content) = tokio::fs::read_to_string(ref_entry.path()).await {
-                    let commit = content.trim().to_string();
-                    let name = ref_entry.file_name().to_string_lossy().to_string();
-                    commit_refs.entry(commit).or_default().push(name);
+    let mut stack = vec![refs_dir.clone()];
+    while let Some(dir) = stack.pop() {
+        if let Ok(mut ref_entries) = tokio::fs::read_dir(&dir).await {
+            while let Ok(Some(ref_entry)) = ref_entries.next_entry().await {
+                let entry_path = ref_entry.path();
+                if entry_path.is_dir() {
+                    stack.push(entry_path);
+                } else if entry_path.is_file() {
+                    if let Ok(content) = tokio::fs::read_to_string(&entry_path).await {
+                        let commit = content.trim().to_string();
+                        let name = entry_path
+                            .strip_prefix(&refs_dir)
+                            .map(|p| p.to_string_lossy().to_string())
+                            .unwrap_or_else(|_| {
+                                ref_entry.file_name().to_string_lossy().to_string()
+                            });
+                        commit_refs.entry(commit).or_default().push(name);
+                    }
                 }
             }
         }
@@ -270,7 +281,6 @@ pub(crate) async fn scan_cache_dir(
         let commit_refs = read_commit_refs(&repo_path).await;
 
         let mut revisions = Vec::new();
-        let mut repo_size: u64 = 0;
         let mut repo_nb_files: usize = 0;
         let mut repo_last_accessed = SystemTime::UNIX_EPOCH;
         let mut repo_last_modified = SystemTime::UNIX_EPOCH;
@@ -303,7 +313,6 @@ pub(crate) async fn scan_cache_dir(
                 }
 
                 repo_nb_files += files.len();
-                repo_size += rev_size;
                 let refs = commit_refs.get(&commit_hash).cloned().unwrap_or_default();
 
                 revisions.push(CachedRevisionInfo {
@@ -316,6 +325,17 @@ pub(crate) async fn scan_cache_dir(
                 });
             }
         }
+
+        let mut unique_blobs: std::collections::HashMap<std::path::PathBuf, u64> =
+            std::collections::HashMap::new();
+        for rev in &revisions {
+            for f in &rev.files {
+                unique_blobs
+                    .entry(f.blob_path.clone())
+                    .or_insert(f.size_on_disk);
+            }
+        }
+        let repo_size: u64 = unique_blobs.values().sum();
 
         total_size += repo_size;
         repos.push(CachedRepoInfo {
@@ -342,6 +362,8 @@ pub(crate) async fn delete_revisions(
     cache_dir: &Path,
     revisions: &[(&str, RepoType, &str)],
 ) -> crate::error::Result<()> {
+    // Note: deletion does not acquire blob locks, matching the Python huggingface_hub
+    // library behavior. Concurrent downloads may race with deletion.
     use std::collections::{HashMap, HashSet};
 
     let mut grouped: HashMap<String, Vec<&str>> = HashMap::new();
@@ -422,8 +444,8 @@ pub(crate) async fn delete_revisions(
 mod tests {
     use super::{
         acquire_lock, blob_path, create_pointer_symlink, delete_revisions, is_commit_hash,
-        lock_path, no_exist_path, parse_repo_folder_name, read_ref, ref_path, repo_folder_name,
-        scan_cache_dir, snapshot_path, write_ref,
+        lock_path, no_exist_path, parse_repo_folder_name, read_commit_refs, read_ref, ref_path,
+        repo_folder_name, scan_cache_dir, snapshot_path, write_ref,
     };
     use crate::types::RepoType;
     use std::path::{Path, PathBuf};
@@ -752,5 +774,64 @@ mod tests {
         assert!(blob_dir.join("shared_blob").exists());
         assert!(!blob_dir.join("unique_blob").exists());
         assert!(!refs_dir.join("main").exists());
+    }
+
+    #[tokio::test]
+    async fn test_read_commit_refs_nested() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_path = dir.path().join("models--gpt2");
+        let refs_dir = repo_path.join("refs");
+
+        // Create a regular ref
+        tokio::fs::create_dir_all(&refs_dir).await.unwrap();
+        tokio::fs::write(refs_dir.join("main"), "commit1")
+            .await
+            .unwrap();
+
+        // Create a nested PR ref
+        let pr_dir = refs_dir.join("refs").join("pr");
+        tokio::fs::create_dir_all(&pr_dir).await.unwrap();
+        tokio::fs::write(pr_dir.join("1"), "commit2").await.unwrap();
+
+        let refs = read_commit_refs(&repo_path).await;
+        assert_eq!(refs.get("commit1").unwrap(), &vec!["main".to_string()]);
+        assert_eq!(refs.get("commit2").unwrap(), &vec!["refs/pr/1".to_string()]);
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn test_scan_cache_deduplicates_blob_sizes() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path();
+        let repo_folder = "models--gpt2";
+
+        let blob_dir = cache.join(repo_folder).join("blobs");
+        tokio::fs::create_dir_all(&blob_dir).await.unwrap();
+        let blob_content = vec![0u8; 100];
+        tokio::fs::write(blob_dir.join("shared_blob"), &blob_content)
+            .await
+            .unwrap();
+
+        let snap1 = cache.join(repo_folder).join("snapshots").join("commit1");
+        let snap2 = cache.join(repo_folder).join("snapshots").join("commit2");
+        tokio::fs::create_dir_all(&snap1).await.unwrap();
+        tokio::fs::create_dir_all(&snap2).await.unwrap();
+        tokio::fs::symlink("../../blobs/shared_blob", snap1.join("file.txt"))
+            .await
+            .unwrap();
+        tokio::fs::symlink("../../blobs/shared_blob", snap2.join("file.txt"))
+            .await
+            .unwrap();
+
+        let result = scan_cache_dir(cache).await.unwrap();
+        assert_eq!(result.repos.len(), 1);
+        let rev_sizes: Vec<u64> = result.repos[0]
+            .revisions
+            .iter()
+            .map(|r| r.size_on_disk)
+            .collect();
+        assert!(rev_sizes.iter().all(|&s| s == 100));
+        assert_eq!(result.repos[0].size_on_disk, 100);
+        assert_eq!(result.size_on_disk, 100);
     }
 }

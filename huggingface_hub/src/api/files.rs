@@ -643,6 +643,8 @@ impl HfApi {
                 let filename = filename.clone();
                 async move {
                     let resp = client.head(&url).headers(auth).send().await?;
+                    // A HEAD failure on any file aborts the entire snapshot download,
+                    // matching the Python huggingface_hub library's snapshot_download behavior.
                     if !resp.status().is_success() {
                         return Err(HfError::Http {
                             status: resp.status(),
