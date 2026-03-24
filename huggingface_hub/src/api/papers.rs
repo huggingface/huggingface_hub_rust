@@ -1,8 +1,7 @@
 use crate::client::HfApi;
 use crate::error::Result;
 use crate::types::{
-    DailyPaper, ListDailyPapersParams, ListPapersParams, PaperInfo, PaperInfoParams,
-    PaperSearchResult,
+    DailyPaper, ListDailyPapersParams, ListPapersParams, PaperInfo, PaperInfoParams, PaperSearchResult,
 };
 
 impl HfApi {
@@ -29,10 +28,7 @@ impl HfApi {
         Ok(response.json().await?)
     }
 
-    pub async fn list_daily_papers(
-        &self,
-        params: &ListDailyPapersParams,
-    ) -> Result<Vec<DailyPaper>> {
+    pub async fn list_daily_papers(&self, params: &ListDailyPapersParams) -> Result<Vec<DailyPaper>> {
         let url = format!("{}/api/daily_papers", self.inner.endpoint);
         let mut query: Vec<(String, String)> = Vec::new();
         if let Some(ref date) = params.date {
@@ -72,13 +68,7 @@ impl HfApi {
 
     pub async fn paper_info(&self, params: &PaperInfoParams) -> Result<PaperInfo> {
         let url = format!("{}/api/papers/{}", self.inner.endpoint, params.paper_id);
-        let response = self
-            .inner
-            .client
-            .get(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;

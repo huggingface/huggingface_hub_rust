@@ -4,9 +4,8 @@
 //! Run: cargo run -p huggingface-hub --features discussions --example discussions
 
 use huggingface_hub::{
-    ChangeDiscussionStatusParams, CommentDiscussionParams, CreateDiscussionParams,
-    CreateRepoParams, DeleteRepoParams, EditDiscussionCommentParams, GetDiscussionDetailsParams,
-    GetRepoDiscussionsParams, HfApi, RenameDiscussionParams,
+    ChangeDiscussionStatusParams, CommentDiscussionParams, CreateDiscussionParams, CreateRepoParams, DeleteRepoParams,
+    EditDiscussionCommentParams, GetDiscussionDetailsParams, GetRepoDiscussionsParams, HfApi, RenameDiscussionParams,
 };
 
 #[tokio::main]
@@ -18,11 +17,7 @@ async fn main() -> huggingface_hub::Result<()> {
     let discussions = api
         .get_repo_discussions(&GetRepoDiscussionsParams::builder().repo_id("gpt2").build())
         .await?;
-    println!(
-        "Discussions in gpt2: {} (total: {:?})",
-        discussions.discussions.len(),
-        discussions.count
-    );
+    println!("Discussions in gpt2: {} (total: {:?})", discussions.discussions.len(), discussions.count);
 
     if let Some(first) = discussions.discussions.first() {
         let details = api
@@ -33,10 +28,7 @@ async fn main() -> huggingface_hub::Result<()> {
                     .build(),
             )
             .await?;
-        println!(
-            "Discussion #{}: {:?} (status: {:?})",
-            details.num, details.title, details.status
-        );
+        println!("Discussion #{}: {:?} (status: {:?})", details.num, details.title, details.status);
     }
 
     // --- Write operations ---
@@ -111,13 +103,8 @@ async fn main() -> huggingface_hub::Result<()> {
     .await?;
     println!("Closed discussion");
 
-    api.delete_repo(
-        &DeleteRepoParams::builder()
-            .repo_id(&repo_name)
-            .missing_ok(true)
-            .build(),
-    )
-    .await?;
+    api.delete_repo(&DeleteRepoParams::builder().repo_id(&repo_name).missing_ok(true).build())
+        .await?;
     println!("Cleaned up test repo");
 
     Ok(())

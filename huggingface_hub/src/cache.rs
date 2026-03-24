@@ -11,11 +11,7 @@ pub(crate) struct CacheLock {
     _file: File,
 }
 
-pub(crate) async fn acquire_lock(
-    cache_dir: &Path,
-    repo_folder: &str,
-    etag: &str,
-) -> crate::error::Result<CacheLock> {
+pub(crate) async fn acquire_lock(cache_dir: &Path, repo_folder: &str, etag: &str) -> crate::error::Result<CacheLock> {
     let path = lock_path(cache_dir, repo_folder, etag);
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await?;
@@ -107,17 +103,8 @@ pub(crate) fn blob_path(cache_dir: &Path, repo_folder: &str, etag: &str) -> Path
     cache_dir.join(repo_folder).join("blobs").join(etag)
 }
 
-pub(crate) fn snapshot_path(
-    cache_dir: &Path,
-    repo_folder: &str,
-    commit_hash: &str,
-    filename: &str,
-) -> PathBuf {
-    cache_dir
-        .join(repo_folder)
-        .join("snapshots")
-        .join(commit_hash)
-        .join(filename)
+pub(crate) fn snapshot_path(cache_dir: &Path, repo_folder: &str, commit_hash: &str, filename: &str) -> PathBuf {
+    cache_dir.join(repo_folder).join("snapshots").join(commit_hash).join(filename)
 }
 
 pub(crate) fn ref_path(cache_dir: &Path, repo_folder: &str, revision: &str) -> PathBuf {
@@ -125,23 +112,11 @@ pub(crate) fn ref_path(cache_dir: &Path, repo_folder: &str, revision: &str) -> P
 }
 
 pub(crate) fn lock_path(cache_dir: &Path, repo_folder: &str, etag: &str) -> PathBuf {
-    cache_dir
-        .join(".locks")
-        .join(repo_folder)
-        .join(format!("{etag}.lock"))
+    cache_dir.join(".locks").join(repo_folder).join(format!("{etag}.lock"))
 }
 
-pub(crate) fn no_exist_path(
-    cache_dir: &Path,
-    repo_folder: &str,
-    commit_hash: &str,
-    filename: &str,
-) -> PathBuf {
-    cache_dir
-        .join(repo_folder)
-        .join(".no_exist")
-        .join(commit_hash)
-        .join(filename)
+pub(crate) fn no_exist_path(cache_dir: &Path, repo_folder: &str, commit_hash: &str, filename: &str) -> PathBuf {
+    cache_dir.join(repo_folder).join(".no_exist").join(commit_hash).join(filename)
 }
 
 fn parse_repo_folder_name(name: &str) -> Option<(RepoType, String)> {
@@ -169,9 +144,7 @@ async fn read_commit_refs(repo_path: &Path) -> std::collections::HashMap<String,
                         let name = entry_path
                             .strip_prefix(&refs_dir)
                             .map(|p| p.to_string_lossy().to_string())
-                            .unwrap_or_else(|_| {
-                                ref_entry.file_name().to_string_lossy().to_string()
-                            });
+                            .unwrap_or_else(|_| ref_entry.file_name().to_string_lossy().to_string());
                         commit_refs.entry(commit).or_default().push(name);
                     }
                 }
@@ -203,10 +176,7 @@ async fn resolve_blob_info(file_path: &Path) -> std::result::Result<BlobInfo, St
     })
 }
 
-async fn scan_snapshot(
-    snap_path: &Path,
-    warnings: &mut Vec<String>,
-) -> Vec<crate::types::cache::CachedFileInfo> {
+async fn scan_snapshot(snap_path: &Path, warnings: &mut Vec<String>) -> Vec<crate::types::cache::CachedFileInfo> {
     use crate::types::cache::CachedFileInfo;
     let mut files = Vec::new();
     let mut stack = vec![snap_path.to_path_buf()];
@@ -230,7 +200,7 @@ async fn scan_snapshot(
                     Err(msg) => {
                         warnings.push(msg);
                         continue;
-                    }
+                    },
                 };
 
                 files.push(CachedFileInfo {
@@ -247,11 +217,10 @@ async fn scan_snapshot(
     files
 }
 
-pub(crate) async fn scan_cache_dir(
-    cache_dir: &Path,
-) -> crate::error::Result<crate::types::cache::HfCacheInfo> {
-    use crate::types::cache::{CachedRepoInfo, CachedRevisionInfo, HfCacheInfo};
+pub(crate) async fn scan_cache_dir(cache_dir: &Path) -> crate::error::Result<crate::types::cache::HfCacheInfo> {
     use std::time::SystemTime;
+
+    use crate::types::cache::{CachedRepoInfo, CachedRevisionInfo, HfCacheInfo};
 
     let mut repos = Vec::new();
     let mut warnings = Vec::new();
@@ -266,7 +235,7 @@ pub(crate) async fn scan_cache_dir(
                 size_on_disk: 0,
                 warnings: vec![],
             });
-        }
+        },
         Err(e) => return Err(e.into()),
     };
 
@@ -326,13 +295,10 @@ pub(crate) async fn scan_cache_dir(
             }
         }
 
-        let mut unique_blobs: std::collections::HashMap<std::path::PathBuf, u64> =
-            std::collections::HashMap::new();
+        let mut unique_blobs: std::collections::HashMap<std::path::PathBuf, u64> = std::collections::HashMap::new();
         for rev in &revisions {
             for f in &rev.files {
-                unique_blobs
-                    .entry(f.blob_path.clone())
-                    .or_insert(f.size_on_disk);
+                unique_blobs.entry(f.blob_path.clone()).or_insert(f.size_on_disk);
             }
         }
         let repo_size: u64 = unique_blobs.values().sum();
@@ -416,8 +382,7 @@ pub(crate) async fn delete_revisions(
                                 stack.push(path);
                             } else if let Ok(target) = tokio::fs::read_link(&path).await {
                                 if let Some(blob_name) = target.file_name() {
-                                    referenced_blobs
-                                        .insert(blob_name.to_string_lossy().to_string());
+                                    referenced_blobs.insert(blob_name.to_string_lossy().to_string());
                                 }
                             }
                         }
@@ -442,13 +407,14 @@ pub(crate) async fn delete_revisions(
 
 #[cfg(test)]
 mod tests {
+    use std::path::{Path, PathBuf};
+
     use super::{
-        acquire_lock, blob_path, create_pointer_symlink, delete_revisions, is_commit_hash,
-        lock_path, no_exist_path, parse_repo_folder_name, read_commit_refs, read_ref, ref_path,
-        repo_folder_name, scan_cache_dir, snapshot_path, write_ref,
+        acquire_lock, blob_path, create_pointer_symlink, delete_revisions, is_commit_hash, lock_path, no_exist_path,
+        parse_repo_folder_name, read_commit_refs, read_ref, ref_path, repo_folder_name, scan_cache_dir, snapshot_path,
+        write_ref,
     };
     use crate::types::RepoType;
-    use std::path::{Path, PathBuf};
 
     #[test]
     fn test_repo_folder_name_model_with_org() {
@@ -460,10 +426,7 @@ mod tests {
 
     #[test]
     fn test_repo_folder_name_model_no_org() {
-        assert_eq!(
-            repo_folder_name("gpt2", Some(RepoType::Model)),
-            "models--gpt2"
-        );
+        assert_eq!(repo_folder_name("gpt2", Some(RepoType::Model)), "models--gpt2");
     }
 
     #[test]
@@ -473,18 +436,12 @@ mod tests {
 
     #[test]
     fn test_repo_folder_name_dataset() {
-        assert_eq!(
-            repo_folder_name("rajpurkar/squad", Some(RepoType::Dataset)),
-            "datasets--rajpurkar--squad"
-        );
+        assert_eq!(repo_folder_name("rajpurkar/squad", Some(RepoType::Dataset)), "datasets--rajpurkar--squad");
     }
 
     #[test]
     fn test_repo_folder_name_space() {
-        assert_eq!(
-            repo_folder_name("dalle-mini/dalle-mini", Some(RepoType::Space)),
-            "spaces--dalle-mini--dalle-mini"
-        );
+        assert_eq!(repo_folder_name("dalle-mini/dalle-mini", Some(RepoType::Space)), "spaces--dalle-mini--dalle-mini");
     }
 
     #[test]
@@ -507,12 +464,7 @@ mod tests {
     #[test]
     fn test_snapshot_path_nested_file() {
         assert_eq!(
-            snapshot_path(
-                Path::new("/cache"),
-                "models--gpt2",
-                "aaa111",
-                "subdir/model.bin"
-            ),
+            snapshot_path(Path::new("/cache"), "models--gpt2", "aaa111", "subdir/model.bin"),
             PathBuf::from("/cache/models--gpt2/snapshots/aaa111/subdir/model.bin")
         );
     }
@@ -544,12 +496,7 @@ mod tests {
     #[test]
     fn test_no_exist_path() {
         assert_eq!(
-            no_exist_path(
-                Path::new("/cache"),
-                "models--gpt2",
-                "aaa111",
-                "missing.json"
-            ),
+            no_exist_path(Path::new("/cache"), "models--gpt2", "aaa111", "missing.json"),
             PathBuf::from("/cache/models--gpt2/.no_exist/aaa111/missing.json")
         );
     }
@@ -557,19 +504,11 @@ mod tests {
     #[tokio::test]
     async fn test_write_and_read_ref() {
         let dir = tempfile::tempdir().unwrap();
-        write_ref(
-            dir.path(),
-            "models--gpt2",
-            "main",
-            "abc123def456abc123def456abc123def456abcd",
-        )
-        .await
-        .unwrap();
+        write_ref(dir.path(), "models--gpt2", "main", "abc123def456abc123def456abc123def456abcd")
+            .await
+            .unwrap();
         let hash = read_ref(dir.path(), "models--gpt2", "main").await.unwrap();
-        assert_eq!(
-            hash,
-            Some("abc123def456abc123def456abc123def456abcd".to_string())
-        );
+        assert_eq!(hash, Some("abc123def456abc123def456abc123def456abcd".to_string()));
     }
 
     #[tokio::test]
@@ -585,9 +524,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cache = dir.path();
         let blob = blob_path(cache, "models--gpt2", "abc123");
-        tokio::fs::create_dir_all(blob.parent().unwrap())
-            .await
-            .unwrap();
+        tokio::fs::create_dir_all(blob.parent().unwrap()).await.unwrap();
         tokio::fs::write(&blob, b"file content").await.unwrap();
         create_pointer_symlink(cache, "models--gpt2", "def456", "config.json", "abc123")
             .await
@@ -605,19 +542,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cache = dir.path();
         let blob = blob_path(cache, "models--gpt2", "abc123");
-        tokio::fs::create_dir_all(blob.parent().unwrap())
+        tokio::fs::create_dir_all(blob.parent().unwrap()).await.unwrap();
+        tokio::fs::write(&blob, b"nested content").await.unwrap();
+        create_pointer_symlink(cache, "models--gpt2", "def456", "subdir/model.bin", "abc123")
             .await
             .unwrap();
-        tokio::fs::write(&blob, b"nested content").await.unwrap();
-        create_pointer_symlink(
-            cache,
-            "models--gpt2",
-            "def456",
-            "subdir/model.bin",
-            "abc123",
-        )
-        .await
-        .unwrap();
         let pointer = snapshot_path(cache, "models--gpt2", "def456", "subdir/model.bin");
         assert!(pointer.exists());
         assert!(pointer.symlink_metadata().unwrap().file_type().is_symlink());
@@ -638,9 +567,7 @@ mod tests {
     #[tokio::test]
     async fn test_acquire_and_release_lock() {
         let dir = tempfile::tempdir().unwrap();
-        let lock = acquire_lock(dir.path(), "models--gpt2", "abc123")
-            .await
-            .unwrap();
+        let lock = acquire_lock(dir.path(), "models--gpt2", "abc123").await.unwrap();
         let lock_file_path = lock_path(dir.path(), "models--gpt2", "abc123");
         assert!(lock_file_path.exists());
         drop(lock);
@@ -648,26 +575,17 @@ mod tests {
 
     #[test]
     fn test_parse_repo_folder_name_model() {
-        assert_eq!(
-            parse_repo_folder_name("models--gpt2"),
-            Some((RepoType::Model, "gpt2".to_string()))
-        );
+        assert_eq!(parse_repo_folder_name("models--gpt2"), Some((RepoType::Model, "gpt2".to_string())));
     }
 
     #[test]
     fn test_parse_repo_folder_name_model_with_org() {
-        assert_eq!(
-            parse_repo_folder_name("models--google--bert"),
-            Some((RepoType::Model, "google/bert".to_string()))
-        );
+        assert_eq!(parse_repo_folder_name("models--google--bert"), Some((RepoType::Model, "google/bert".to_string())));
     }
 
     #[test]
     fn test_parse_repo_folder_name_dataset() {
-        assert_eq!(
-            parse_repo_folder_name("datasets--squad"),
-            Some((RepoType::Dataset, "squad".to_string()))
-        );
+        assert_eq!(parse_repo_folder_name("datasets--squad"), Some((RepoType::Dataset, "squad".to_string())));
     }
 
     #[test]
@@ -700,9 +618,7 @@ mod tests {
         let repo_folder = "models--gpt2";
         let blob_dir = cache.join(repo_folder).join("blobs");
         tokio::fs::create_dir_all(&blob_dir).await.unwrap();
-        tokio::fs::write(blob_dir.join("abc123"), b"hello world")
-            .await
-            .unwrap();
+        tokio::fs::write(blob_dir.join("abc123"), b"hello world").await.unwrap();
 
         let snap_dir = cache.join(repo_folder).join("snapshots").join("commit1");
         tokio::fs::create_dir_all(&snap_dir).await.unwrap();
@@ -712,9 +628,7 @@ mod tests {
 
         let refs_dir = cache.join(repo_folder).join("refs");
         tokio::fs::create_dir_all(&refs_dir).await.unwrap();
-        tokio::fs::write(refs_dir.join("main"), "commit1")
-            .await
-            .unwrap();
+        tokio::fs::write(refs_dir.join("main"), "commit1").await.unwrap();
 
         let result = scan_cache_dir(cache).await.unwrap();
         assert_eq!(result.repos.len(), 1);
@@ -737,12 +651,8 @@ mod tests {
 
         let blob_dir = cache.join(repo_folder).join("blobs");
         tokio::fs::create_dir_all(&blob_dir).await.unwrap();
-        tokio::fs::write(blob_dir.join("shared_blob"), b"shared")
-            .await
-            .unwrap();
-        tokio::fs::write(blob_dir.join("unique_blob"), b"unique")
-            .await
-            .unwrap();
+        tokio::fs::write(blob_dir.join("shared_blob"), b"shared").await.unwrap();
+        tokio::fs::write(blob_dir.join("unique_blob"), b"unique").await.unwrap();
 
         let snap1 = cache.join(repo_folder).join("snapshots").join("commit1");
         let snap2 = cache.join(repo_folder).join("snapshots").join("commit2");
@@ -761,13 +671,9 @@ mod tests {
 
         let refs_dir = cache.join(repo_folder).join("refs");
         tokio::fs::create_dir_all(&refs_dir).await.unwrap();
-        tokio::fs::write(refs_dir.join("main"), "commit1")
-            .await
-            .unwrap();
+        tokio::fs::write(refs_dir.join("main"), "commit1").await.unwrap();
 
-        delete_revisions(cache, &[("gpt2", RepoType::Model, "commit1")])
-            .await
-            .unwrap();
+        delete_revisions(cache, &[("gpt2", RepoType::Model, "commit1")]).await.unwrap();
 
         assert!(!snap1.exists());
         assert!(snap2.exists());
@@ -784,9 +690,7 @@ mod tests {
 
         // Create a regular ref
         tokio::fs::create_dir_all(&refs_dir).await.unwrap();
-        tokio::fs::write(refs_dir.join("main"), "commit1")
-            .await
-            .unwrap();
+        tokio::fs::write(refs_dir.join("main"), "commit1").await.unwrap();
 
         // Create a nested PR ref
         let pr_dir = refs_dir.join("refs").join("pr");
@@ -808,9 +712,7 @@ mod tests {
         let blob_dir = cache.join(repo_folder).join("blobs");
         tokio::fs::create_dir_all(&blob_dir).await.unwrap();
         let blob_content = vec![0u8; 100];
-        tokio::fs::write(blob_dir.join("shared_blob"), &blob_content)
-            .await
-            .unwrap();
+        tokio::fs::write(blob_dir.join("shared_blob"), &blob_content).await.unwrap();
 
         let snap1 = cache.join(repo_folder).join("snapshots").join("commit1");
         let snap2 = cache.join(repo_folder).join("snapshots").join("commit2");
@@ -825,11 +727,7 @@ mod tests {
 
         let result = scan_cache_dir(cache).await.unwrap();
         assert_eq!(result.repos.len(), 1);
-        let rev_sizes: Vec<u64> = result.repos[0]
-            .revisions
-            .iter()
-            .map(|r| r.size_on_disk)
-            .collect();
+        let rev_sizes: Vec<u64> = result.repos[0].revisions.iter().map(|r| r.size_on_disk).collect();
         assert!(rev_sizes.iter().all(|&s| s == 100));
         assert_eq!(result.repos[0].size_on_disk, 100);
         assert_eq!(result.size_on_disk, 100);

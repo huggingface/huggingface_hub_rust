@@ -48,15 +48,9 @@ struct HubTokenRefresher {
 #[async_trait::async_trait]
 impl TokenRefresher for HubTokenRefresher {
     async fn refresh(&self) -> std::result::Result<(String, u64), AuthError> {
-        let conn = fetch_xet_connection_info(
-            &self.api,
-            self.token_type,
-            &self.repo_id,
-            self.repo_type,
-            &self.revision,
-        )
-        .await
-        .map_err(|e| AuthError::token_refresh_failure(e.to_string()))?;
+        let conn = fetch_xet_connection_info(&self.api, self.token_type, &self.repo_id, self.repo_type, &self.revision)
+            .await
+            .map_err(|e| AuthError::token_refresh_failure(e.to_string()))?;
         Ok(conn.token_info())
     }
 }
@@ -71,18 +65,9 @@ async fn fetch_xet_connection_info(
     revision: &str,
 ) -> Result<XetConnectionInfo> {
     let segment = constants::repo_type_api_segment(repo_type);
-    let url = format!(
-        "{}/api/{}/{}/xet-{}-token/{}",
-        api.inner.endpoint, segment, repo_id, token_type, revision
-    );
+    let url = format!("{}/api/{}/{}/xet-{}-token/{}", api.inner.endpoint, segment, repo_id, token_type, revision);
 
-    let response = api
-        .inner
-        .client
-        .get(&url)
-        .headers(api.auth_headers())
-        .send()
-        .await?;
+    let response = api.inner.client.get(&url).headers(api.auth_headers()).send().await?;
 
     let response = api
         .check_response(response, Some(repo_id), crate::error::NotFoundContext::Repo)
@@ -119,9 +104,7 @@ pub(crate) async fn xet_download_to_local_dir(
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
 
-    let session = api
-        .get_or_init_xet_session("read", repo_id, repo_type, revision)
-        .await?;
+    let session = api.get_or_init_xet_session("read", repo_id, repo_type, revision).await?;
 
     tokio::fs::create_dir_all(local_dir).await?;
     let dest_path = local_dir.join(filename);
@@ -162,9 +145,7 @@ pub(crate) async fn xet_download_to_blob(
     file_size: u64,
     blob_path: &std::path::Path,
 ) -> Result<()> {
-    let session = api
-        .get_or_init_xet_session("read", repo_id, repo_type, revision)
-        .await?;
+    let session = api.get_or_init_xet_session("read", repo_id, repo_type, revision).await?;
 
     if let Some(parent) = blob_path.parent() {
         tokio::fs::create_dir_all(parent).await?;
@@ -214,9 +195,7 @@ pub(crate) async fn xet_download_batch(
         return Ok(());
     }
 
-    let session = api
-        .get_or_init_xet_session("read", repo_id, repo_type, revision)
-        .await?;
+    let session = api.get_or_init_xet_session("read", repo_id, repo_type, revision).await?;
 
     let group = session
         .new_download_group()
@@ -267,9 +246,7 @@ pub(crate) async fn xet_upload(
     repo_type: Option<RepoType>,
     revision: &str,
 ) -> Result<Vec<XetFileInfo>> {
-    let session = api
-        .get_or_init_xet_session("write", repo_id, repo_type, revision)
-        .await?;
+    let session = api.get_or_init_xet_session("write", repo_id, repo_type, revision).await?;
 
     let commit = session
         .new_upload_commit()
@@ -340,8 +317,7 @@ impl HfApi {
             }
         }
 
-        let conn =
-            fetch_xet_connection_info(self, token_type, repo_id, repo_type, revision).await?;
+        let conn = fetch_xet_connection_info(self, token_type, repo_id, repo_type, revision).await?;
 
         let token_refresher: Arc<dyn TokenRefresher> = Arc::new(HubTokenRefresher {
             api: self.clone(),
@@ -376,17 +352,7 @@ impl HfApi {
     /// Fetch a Xet connection token (read or write) for a repository.
     /// Endpoint: GET /api/{repo_type}s/{repo_id}/xet-{read|write}-token/{revision}
     pub async fn get_xet_token(&self, params: &GetXetTokenParams) -> Result<XetConnectionInfo> {
-        let revision = params
-            .revision
-            .as_deref()
-            .unwrap_or(constants::DEFAULT_REVISION);
-        fetch_xet_connection_info(
-            self,
-            params.token_type.as_str(),
-            &params.repo_id,
-            params.repo_type,
-            revision,
-        )
-        .await
+        let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
+        fetch_xet_connection_info(self, params.token_type.as_str(), &params.repo_id, params.repo_type, revision).await
     }
 }

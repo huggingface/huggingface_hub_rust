@@ -21,10 +21,7 @@ impl HfApiSync {
             .enable_all()
             .build()
             .map_err(|e| HfError::Other(format!("Failed to create tokio runtime: {e}")))?;
-        Ok(Self {
-            inner: api,
-            runtime,
-        })
+        Ok(Self { inner: api, runtime })
     }
 
     pub fn api(&self) -> &HfApi {

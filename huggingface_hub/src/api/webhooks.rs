@@ -5,13 +5,7 @@ use crate::types::{CreateWebhookParams, UpdateWebhookParams, WebhookInfo};
 impl HfApi {
     pub async fn list_webhooks(&self) -> Result<Vec<WebhookInfo>> {
         let url = format!("{}/api/settings/webhooks", self.inner.endpoint);
-        let response = self
-            .inner
-            .client
-            .get(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
@@ -19,17 +13,8 @@ impl HfApi {
     }
 
     pub async fn get_webhook(&self, webhook_id: &str) -> Result<WebhookInfo> {
-        let url = format!(
-            "{}/api/settings/webhooks/{}",
-            self.inner.endpoint, webhook_id
-        );
-        let response = self
-            .inner
-            .client
-            .get(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let url = format!("{}/api/settings/webhooks/{}", self.inner.endpoint, webhook_id);
+        let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
@@ -63,10 +48,7 @@ impl HfApi {
     }
 
     pub async fn update_webhook(&self, params: &UpdateWebhookParams) -> Result<WebhookInfo> {
-        let url = format!(
-            "{}/api/settings/webhooks/{}",
-            self.inner.endpoint, params.webhook_id
-        );
+        let url = format!("{}/api/settings/webhooks/{}", self.inner.endpoint, params.webhook_id);
         let mut body = serde_json::Map::new();
         if let Some(ref wh_url) = params.url {
             body.insert("url".into(), serde_json::json!(wh_url));
@@ -95,34 +77,16 @@ impl HfApi {
     }
 
     pub async fn delete_webhook(&self, webhook_id: &str) -> Result<()> {
-        let url = format!(
-            "{}/api/settings/webhooks/{}",
-            self.inner.endpoint, webhook_id
-        );
-        let response = self
-            .inner
-            .client
-            .delete(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let url = format!("{}/api/settings/webhooks/{}", self.inner.endpoint, webhook_id);
+        let response = self.inner.client.delete(&url).headers(self.auth_headers()).send().await?;
         self.check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
         Ok(())
     }
 
     pub async fn enable_webhook(&self, webhook_id: &str) -> Result<WebhookInfo> {
-        let url = format!(
-            "{}/api/settings/webhooks/{}/enable",
-            self.inner.endpoint, webhook_id
-        );
-        let response = self
-            .inner
-            .client
-            .post(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let url = format!("{}/api/settings/webhooks/{}/enable", self.inner.endpoint, webhook_id);
+        let response = self.inner.client.post(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
@@ -130,17 +94,8 @@ impl HfApi {
     }
 
     pub async fn disable_webhook(&self, webhook_id: &str) -> Result<WebhookInfo> {
-        let url = format!(
-            "{}/api/settings/webhooks/{}/disable",
-            self.inner.endpoint, webhook_id
-        );
-        let response = self
-            .inner
-            .client
-            .post(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await?;
+        let url = format!("{}/api/settings/webhooks/{}/disable", self.inner.endpoint, webhook_id);
+        let response = self.inner.client.post(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;

@@ -21,9 +21,7 @@ fn api() -> Option<HfApi> {
 }
 
 fn write_enabled() -> bool {
-    std::env::var("HF_TEST_WRITE")
-        .ok()
-        .is_some_and(|v| v == "1")
+    std::env::var("HF_TEST_WRITE").ok().is_some_and(|v| v == "1")
 }
 
 #[tokio::test]
@@ -37,9 +35,7 @@ async fn test_model_info() {
 #[tokio::test]
 async fn test_dataset_info() {
     let Some(api) = api() else { return };
-    let params = DatasetInfoParams::builder()
-        .repo_id("rajpurkar/squad")
-        .build();
+    let params = DatasetInfoParams::builder().repo_id("rajpurkar/squad").build();
     let info = api.dataset_info(&params).await.unwrap();
     assert!(info.id.contains("squad"));
 }
@@ -59,10 +55,7 @@ async fn test_repo_exists() {
 #[tokio::test]
 async fn test_file_exists() {
     let Some(api) = api() else { return };
-    let params = FileExistsParams::builder()
-        .repo_id("gpt2")
-        .filename("config.json")
-        .build();
+    let params = FileExistsParams::builder().repo_id("gpt2").filename("config.json").build();
     assert!(api.file_exists(&params).await.unwrap());
 
     let params = FileExistsParams::builder()
@@ -75,10 +68,7 @@ async fn test_file_exists() {
 #[tokio::test]
 async fn test_list_models() {
     let Some(api) = api() else { return };
-    let params = ListModelsParams::builder()
-        .author("openai-community")
-        .limit(3_usize)
-        .build();
+    let params = ListModelsParams::builder().author("openai-community").limit(3_usize).build();
     let stream = api.list_models(&params);
     futures::pin_mut!(stream);
 
@@ -148,10 +138,7 @@ async fn test_list_repo_refs() {
 #[tokio::test]
 async fn test_revision_exists() {
     let Some(api) = api() else { return };
-    let params = RevisionExistsParams::builder()
-        .repo_id("gpt2")
-        .revision("main")
-        .build();
+    let params = RevisionExistsParams::builder().repo_id("gpt2").revision("main").build();
     assert!(api.revision_exists(&params).await.unwrap());
 
     let params = RevisionExistsParams::builder()
@@ -241,9 +228,7 @@ async fn test_list_organization_members() {
 #[tokio::test]
 async fn test_space_info() {
     let Some(api) = api() else { return };
-    let params = SpaceInfoParams::builder()
-        .repo_id("HuggingFaceFW/blogpost-fineweb-v1")
-        .build();
+    let params = SpaceInfoParams::builder().repo_id("HuggingFaceFW/blogpost-fineweb-v1").build();
     let info = api.space_info(&params).await.unwrap();
     assert!(info.id.contains("blogpost-fineweb-v1"));
 }
@@ -251,10 +236,7 @@ async fn test_space_info() {
 #[tokio::test]
 async fn test_list_datasets() {
     let Some(api) = api() else { return };
-    let params = ListDatasetsParams::builder()
-        .author("huggingface")
-        .limit(3_usize)
-        .build();
+    let params = ListDatasetsParams::builder().author("huggingface").limit(3_usize).build();
     let stream = api.list_datasets(&params);
     futures::pin_mut!(stream);
 
@@ -272,10 +254,7 @@ async fn test_list_datasets() {
 #[tokio::test]
 async fn test_list_spaces() {
     let Some(api) = api() else { return };
-    let params = ListSpacesParams::builder()
-        .author("huggingface")
-        .limit(3_usize)
-        .build();
+    let params = ListSpacesParams::builder().author("huggingface").limit(3_usize).build();
     let stream = api.list_spaces(&params);
     futures::pin_mut!(stream);
 
@@ -318,9 +297,7 @@ async fn test_get_paths_info() {
 async fn test_get_commit_diff() {
     let Some(api) = api() else { return };
 
-    let commits_params = ListRepoCommitsParams::builder()
-        .repo_id("openai-community/gpt2")
-        .build();
+    let commits_params = ListRepoCommitsParams::builder().repo_id("openai-community/gpt2").build();
     let stream = api.list_repo_commits(&commits_params);
     futures::pin_mut!(stream);
 
@@ -339,9 +316,7 @@ async fn test_get_commit_diff() {
 async fn test_get_raw_diff() {
     let Some(api) = api() else { return };
 
-    let commits_params = ListRepoCommitsParams::builder()
-        .repo_id("openai-community/gpt2")
-        .build();
+    let commits_params = ListRepoCommitsParams::builder().repo_id("openai-community/gpt2").build();
     let stream = api.list_repo_commits(&commits_params);
     futures::pin_mut!(stream);
 
@@ -370,11 +345,7 @@ async fn test_create_and_delete_repo() {
         .await
         .expect("whoami should return something, make sure HF_TOKEN is set");
 
-    let repo_id = format!(
-        "{}/huggingface-hub-rust-test-{}",
-        whoami.username,
-        uuid_v4_short()
-    );
+    let repo_id = format!("{}/huggingface-hub-rust-test-{}", whoami.username, uuid_v4_short());
 
     // Create
     let params = CreateRepoParams::builder()
@@ -396,10 +367,7 @@ async fn test_create_and_delete_repo() {
     assert!(commit.commit_oid.is_some());
 
     // Verify file exists
-    let params = FileExistsParams::builder()
-        .repo_id(&repo_id)
-        .filename("test.txt")
-        .build();
+    let params = FileExistsParams::builder().repo_id(&repo_id).filename("test.txt").build();
     assert!(api.file_exists(&params).await.unwrap());
 
     // Delete repo
@@ -415,11 +383,7 @@ fn uuid_v4_short() -> String {
 
 async fn create_test_repo(api: &HfApi) -> String {
     let whoami = api.whoami().await.expect("whoami failed");
-    let repo_id = format!(
-        "{}/huggingface-hub-rust-test-{}",
-        whoami.username,
-        uuid_v4_short()
-    );
+    let repo_id = format!("{}/huggingface-hub-rust-test-{}", whoami.username, uuid_v4_short());
     let params = CreateRepoParams::builder()
         .repo_id(&repo_id)
         .private(true)
@@ -528,10 +492,7 @@ async fn test_delete_file() {
         .build();
     api.delete_file(&params).await.unwrap();
 
-    let exists_params = FileExistsParams::builder()
-        .repo_id(&repo_id)
-        .filename("deleteme.txt")
-        .build();
+    let exists_params = FileExistsParams::builder().repo_id(&repo_id).filename("deleteme.txt").build();
     assert!(!api.file_exists(&exists_params).await.unwrap());
 
     delete_test_repo(&api, &repo_id).await;
@@ -568,10 +529,7 @@ async fn test_delete_folder() {
         .build();
     api.delete_folder(&params).await.unwrap();
 
-    let exists_a = FileExistsParams::builder()
-        .repo_id(&repo_id)
-        .filename("folder/a.txt")
-        .build();
+    let exists_a = FileExistsParams::builder().repo_id(&repo_id).filename("folder/a.txt").build();
     assert!(!api.file_exists(&exists_a).await.unwrap());
 
     delete_test_repo(&api, &repo_id).await;
@@ -585,20 +543,14 @@ async fn test_create_and_delete_branch() {
     }
     let repo_id = create_test_repo(&api).await;
 
-    let create_params = CreateBranchParams::builder()
-        .repo_id(&repo_id)
-        .branch("test-branch")
-        .build();
+    let create_params = CreateBranchParams::builder().repo_id(&repo_id).branch("test-branch").build();
     api.create_branch(&create_params).await.unwrap();
 
     let refs_params = ListRepoRefsParams::builder().repo_id(&repo_id).build();
     let refs = api.list_repo_refs(&refs_params).await.unwrap();
     assert!(refs.branches.iter().any(|b| b.name == "test-branch"));
 
-    let delete_params = DeleteBranchParams::builder()
-        .repo_id(&repo_id)
-        .branch("test-branch")
-        .build();
+    let delete_params = DeleteBranchParams::builder().repo_id(&repo_id).branch("test-branch").build();
     api.delete_branch(&delete_params).await.unwrap();
 
     let refs = api.list_repo_refs(&refs_params).await.unwrap();
@@ -615,20 +567,14 @@ async fn test_create_and_delete_tag() {
     }
     let repo_id = create_test_repo(&api).await;
 
-    let create_params = CreateTagParams::builder()
-        .repo_id(&repo_id)
-        .tag("v1.0")
-        .build();
+    let create_params = CreateTagParams::builder().repo_id(&repo_id).tag("v1.0").build();
     api.create_tag(&create_params).await.unwrap();
 
     let refs_params = ListRepoRefsParams::builder().repo_id(&repo_id).build();
     let refs = api.list_repo_refs(&refs_params).await.unwrap();
     assert!(refs.tags.iter().any(|t| t.name == "v1.0"));
 
-    let delete_params = DeleteTagParams::builder()
-        .repo_id(&repo_id)
-        .tag("v1.0")
-        .build();
+    let delete_params = DeleteTagParams::builder().repo_id(&repo_id).tag("v1.0").build();
     api.delete_tag(&delete_params).await.unwrap();
 
     let refs = api.list_repo_refs(&refs_params).await.unwrap();
@@ -664,27 +610,13 @@ async fn test_move_repo() {
         return;
     }
     let whoami = api.whoami().await.unwrap();
-    let original_name = format!(
-        "{}/huggingface-hub-rust-move-src-{}",
-        whoami.username,
-        uuid_v4_short()
-    );
-    let new_name = format!(
-        "{}/huggingface-hub-rust-move-dst-{}",
-        whoami.username,
-        uuid_v4_short()
-    );
+    let original_name = format!("{}/huggingface-hub-rust-move-src-{}", whoami.username, uuid_v4_short());
+    let new_name = format!("{}/huggingface-hub-rust-move-dst-{}", whoami.username, uuid_v4_short());
 
-    let create_params = CreateRepoParams::builder()
-        .repo_id(&original_name)
-        .private(true)
-        .build();
+    let create_params = CreateRepoParams::builder().repo_id(&original_name).private(true).build();
     api.create_repo(&create_params).await.unwrap();
 
-    let move_params = MoveRepoParams::builder()
-        .from_id(&original_name)
-        .to_id(&new_name)
-        .build();
+    let move_params = MoveRepoParams::builder().from_id(&original_name).to_id(&new_name).build();
     api.move_repo(&move_params).await.unwrap();
 
     let exists_new = RepoExistsParams::builder().repo_id(&new_name).build();
@@ -717,11 +649,7 @@ async fn test_duplicate_space() {
         return;
     }
     let whoami = api.whoami().await.unwrap();
-    let to_id = format!(
-        "{}/hub-rust-test-dup-space-{}",
-        whoami.username,
-        uuid_v4_short()
-    );
+    let to_id = format!("{}/hub-rust-test-dup-space-{}", whoami.username, uuid_v4_short());
 
     let params = DuplicateSpaceParams::builder()
         .from_id("huggingface-projects/diffusers-gallery")
@@ -732,10 +660,7 @@ async fn test_duplicate_space() {
     let result = api.duplicate_space(&params).await.unwrap();
     assert!(result.url.contains(&to_id));
 
-    let delete_params = DeleteRepoParams::builder()
-        .repo_id(&to_id)
-        .repo_type(RepoType::Space)
-        .build();
+    let delete_params = DeleteRepoParams::builder().repo_id(&to_id).repo_type(RepoType::Space).build();
     let _ = api.delete_repo(&delete_params).await;
 }
 
@@ -747,11 +672,7 @@ async fn test_space_secrets_and_variables() {
         return;
     }
     let whoami = api.whoami().await.unwrap();
-    let space_id = format!(
-        "{}/hub-rust-test-space-{}",
-        whoami.username,
-        uuid_v4_short()
-    );
+    let space_id = format!("{}/hub-rust-test-space-{}", whoami.username, uuid_v4_short());
 
     let create_params = CreateRepoParams::builder()
         .repo_id(&space_id)
@@ -768,10 +689,7 @@ async fn test_space_secrets_and_variables() {
         .build();
     api.add_space_secret(&add_secret).await.unwrap();
 
-    let del_secret = DeleteSpaceSecretParams::builder()
-        .repo_id(&space_id)
-        .key("TEST_SECRET")
-        .build();
+    let del_secret = DeleteSpaceSecretParams::builder().repo_id(&space_id).key("TEST_SECRET").build();
     api.delete_space_secret(&del_secret).await.unwrap();
 
     let add_var = AddSpaceVariableParams::builder()
@@ -781,10 +699,7 @@ async fn test_space_secrets_and_variables() {
         .build();
     api.add_space_variable(&add_var).await.unwrap();
 
-    let del_var = DeleteSpaceVariableParams::builder()
-        .repo_id(&space_id)
-        .key("TEST_VAR")
-        .build();
+    let del_var = DeleteSpaceVariableParams::builder().repo_id(&space_id).key("TEST_VAR").build();
     api.delete_space_variable(&del_var).await.unwrap();
 
     let delete_params = DeleteRepoParams::builder()
@@ -816,10 +731,7 @@ async fn test_list_inference_endpoints() {
 #[tokio::test]
 async fn test_list_collections() {
     let Some(api) = api() else { return };
-    let params = ListCollectionsParams::builder()
-        .owner("huggingface")
-        .limit(3_usize)
-        .build();
+    let params = ListCollectionsParams::builder().owner("huggingface").limit(3_usize).build();
     let collections = api.list_collections(&params).await.unwrap();
     assert!(!collections.is_empty());
     assert!(collections[0].slug.contains("huggingface"));
@@ -829,16 +741,11 @@ async fn test_list_collections() {
 #[tokio::test]
 async fn test_get_collection() {
     let Some(api) = api() else { return };
-    let list_params = ListCollectionsParams::builder()
-        .owner("huggingface")
-        .limit(1_usize)
-        .build();
+    let list_params = ListCollectionsParams::builder().owner("huggingface").limit(1_usize).build();
     let collections = api.list_collections(&list_params).await.unwrap();
     assert!(!collections.is_empty());
 
-    let params = GetCollectionParams::builder()
-        .slug(&collections[0].slug)
-        .build();
+    let params = GetCollectionParams::builder().slug(&collections[0].slug).build();
     let coll = api.get_collection(&params).await.unwrap();
     assert_eq!(coll.slug, collections[0].slug);
 }
@@ -878,9 +785,7 @@ async fn test_create_update_delete_collection() {
 #[tokio::test]
 async fn test_get_repo_discussions() {
     let Some(api) = api() else { return };
-    let params = GetRepoDiscussionsParams::builder()
-        .repo_id("openai-community/gpt2")
-        .build();
+    let params = GetRepoDiscussionsParams::builder().repo_id("openai-community/gpt2").build();
     let response = api.get_repo_discussions(&params).await.unwrap();
     assert!(!response.discussions.is_empty());
     assert!(response.discussions[0].num > 0);
@@ -909,11 +814,7 @@ async fn test_create_discussion_and_comment() {
     let repo_id = create_test_repo(&api).await;
 
     let disc_response = api
-        .get_repo_discussions(
-            &GetRepoDiscussionsParams::builder()
-                .repo_id(&repo_id)
-                .build(),
-        )
+        .get_repo_discussions(&GetRepoDiscussionsParams::builder().repo_id(&repo_id).build())
         .await
         .unwrap();
     let initial_count = disc_response.discussions.len();
@@ -926,11 +827,7 @@ async fn test_create_discussion_and_comment() {
     let _disc = api.create_discussion(&create_params).await.unwrap();
 
     let disc_response = api
-        .get_repo_discussions(
-            &GetRepoDiscussionsParams::builder()
-                .repo_id(&repo_id)
-                .build(),
-        )
+        .get_repo_discussions(&GetRepoDiscussionsParams::builder().repo_id(&repo_id).build())
         .await
         .unwrap();
     assert!(disc_response.discussions.len() > initial_count);
@@ -955,17 +852,10 @@ async fn test_create_and_merge_pull_request() {
     let _pr = api.create_pull_request(&pr_params).await.unwrap();
 
     let disc_response = api
-        .get_repo_discussions(
-            &GetRepoDiscussionsParams::builder()
-                .repo_id(&repo_id)
-                .build(),
-        )
+        .get_repo_discussions(&GetRepoDiscussionsParams::builder().repo_id(&repo_id).build())
         .await
         .unwrap();
-    assert!(disc_response
-        .discussions
-        .iter()
-        .any(|d| d.is_pull_request == Some(true)));
+    assert!(disc_response.discussions.iter().any(|d| d.is_pull_request == Some(true)));
 
     delete_test_repo(&api, &repo_id).await;
 }
@@ -1000,9 +890,7 @@ async fn test_create_and_delete_webhook() {
     let whoami = api.whoami().await.unwrap();
     let create_params = CreateWebhookParams::builder()
         .url("https://example.com/test-webhook")
-        .watched(vec![
-            serde_json::json!({"type": "user", "name": whoami.username}),
-        ])
+        .watched(vec![serde_json::json!({"type": "user", "name": whoami.username})])
         .domains(vec!["repo".to_string()])
         .build();
     let webhook = api.create_webhook(&create_params).await.unwrap();
@@ -1016,13 +904,10 @@ async fn test_create_and_delete_webhook() {
         let newest = after_create
             .iter()
             .find(|w| {
-                w.url.as_deref() == Some("https://example.com/test-webhook")
-                    && !initial.iter().any(|i| i.id == w.id)
+                w.url.as_deref() == Some("https://example.com/test-webhook") && !initial.iter().any(|i| i.id == w.id)
             })
             .expect("should find newly created webhook");
-        api.delete_webhook(newest.id.as_ref().unwrap())
-            .await
-            .unwrap();
+        api.delete_webhook(newest.id.as_ref().unwrap()).await.unwrap();
     }
 }
 
@@ -1092,15 +977,10 @@ async fn test_list_access_requests_on_gated_repo() {
     }
     let repo_id = create_test_repo(&api).await;
 
-    let update_params = UpdateRepoParams::builder()
-        .repo_id(&repo_id)
-        .gated("auto")
-        .build();
+    let update_params = UpdateRepoParams::builder().repo_id(&repo_id).gated("auto").build();
     api.update_repo_settings(&update_params).await.unwrap();
 
-    let params = ListAccessRequestsParams::builder()
-        .repo_id(&repo_id)
-        .build();
+    let params = ListAccessRequestsParams::builder().repo_id(&repo_id).build();
     let pending = api.list_pending_access_requests(&params).await.unwrap();
     assert!(pending.is_empty());
 
@@ -1122,9 +1002,7 @@ async fn test_list_access_requests_on_gated_repo() {
 #[tokio::test]
 async fn test_list_repo_likers() {
     let Some(api) = api() else { return };
-    let params = ListRepoLikersParams::builder()
-        .repo_id("openai-community/gpt2")
-        .build();
+    let params = ListRepoLikersParams::builder().repo_id("openai-community/gpt2").build();
     let stream = api.list_repo_likers(&params);
     futures::pin_mut!(stream);
 
@@ -1151,9 +1029,7 @@ async fn test_like_and_unlike() {
     }
 
     let whoami = api.whoami().await.unwrap();
-    let list_params = ListLikedReposParams::builder()
-        .username(&whoami.username)
-        .build();
+    let list_params = ListLikedReposParams::builder().username(&whoami.username).build();
     let likes = api.list_liked_repos(&list_params).await.unwrap();
     assert!(likes.iter().any(|l| {
         l.repo
@@ -1184,10 +1060,7 @@ async fn test_paper_info() {
 #[tokio::test]
 async fn test_list_papers() {
     let Some(api) = api() else { return };
-    let params = ListPapersParams::builder()
-        .query("attention")
-        .limit(5_usize)
-        .build();
+    let params = ListPapersParams::builder().query("attention").limit(5_usize).build();
     let results = api.list_papers(&params).await.unwrap();
     assert!(!results.is_empty());
     assert!(results[0].paper.is_some());
@@ -1197,10 +1070,7 @@ async fn test_list_papers() {
 #[tokio::test]
 async fn test_list_daily_papers() {
     let Some(api) = api() else { return };
-    let params = ListDailyPapersParams::builder()
-        .date("2024-10-29")
-        .limit(5_usize)
-        .build();
+    let params = ListDailyPapersParams::builder().date("2024-10-29").limit(5_usize).build();
     let papers = api.list_daily_papers(&params).await.unwrap();
     assert!(!papers.is_empty());
     assert!(papers[0].paper.is_some());

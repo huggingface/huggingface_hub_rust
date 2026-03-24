@@ -3,9 +3,7 @@
 //! Requires HF_TOKEN and the "access_requests" feature.
 //! Run: cargo run -p huggingface-hub --features access_requests --example access_requests
 
-use huggingface_hub::{
-    CreateRepoParams, DeleteRepoParams, HfApi, ListAccessRequestsParams, UpdateRepoParams,
-};
+use huggingface_hub::{CreateRepoParams, DeleteRepoParams, HfApi, ListAccessRequestsParams, UpdateRepoParams};
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
@@ -24,18 +22,11 @@ async fn main() -> huggingface_hub::Result<()> {
     )
     .await?;
 
-    api.update_repo_settings(
-        &UpdateRepoParams::builder()
-            .repo_id(&repo_name)
-            .gated("auto")
-            .build(),
-    )
-    .await?;
+    api.update_repo_settings(&UpdateRepoParams::builder().repo_id(&repo_name).gated("auto").build())
+        .await?;
     println!("Created gated repo: {repo_name}");
 
-    let params = ListAccessRequestsParams::builder()
-        .repo_id(&repo_name)
-        .build();
+    let params = ListAccessRequestsParams::builder().repo_id(&repo_name).build();
 
     let pending = api.list_pending_access_requests(&params).await?;
     println!("Pending requests: {}", pending.len());
@@ -46,13 +37,8 @@ async fn main() -> huggingface_hub::Result<()> {
     let rejected = api.list_rejected_access_requests(&params).await?;
     println!("Rejected requests: {}", rejected.len());
 
-    api.delete_repo(
-        &DeleteRepoParams::builder()
-            .repo_id(&repo_name)
-            .missing_ok(true)
-            .build(),
-    )
-    .await?;
+    api.delete_repo(&DeleteRepoParams::builder().repo_id(&repo_name).missing_ok(true).build())
+        .await?;
     println!("Cleaned up test repo");
 
     Ok(())

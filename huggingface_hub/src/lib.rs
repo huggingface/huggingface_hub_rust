@@ -10,9 +10,7 @@
 //! #[tokio::main]
 //! async fn main() -> huggingface_hub::Result<()> {
 //!     let api = HfApi::new()?;
-//!     let info = api.model_info(
-//!         &ModelInfoParams::builder().repo_id("gpt2").build()
-//!     ).await?;
+//!     let info = api.model_info(&ModelInfoParams::builder().repo_id("gpt2").build()).await?;
 //!     println!("Model: {}", info.id);
 //!     Ok(())
 //! }

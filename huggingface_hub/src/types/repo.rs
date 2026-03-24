@@ -1,6 +1,7 @@
-use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
+
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -31,9 +32,7 @@ impl FromStr for RepoType {
             "dataset" => Ok(RepoType::Dataset),
             "space" => Ok(RepoType::Space),
             "kernel" => Ok(RepoType::Kernel),
-            _ => Err(crate::error::HfError::Other(format!(
-                "Unknown repo type: {s}"
-            ))),
+            _ => Err(crate::error::HfError::Other(format!("Unknown repo type: {s}"))),
         }
     }
 }
@@ -184,7 +183,7 @@ mod tests {
             RepoTreeEntry::File { path, size, .. } => {
                 assert_eq!(path, "test.txt");
                 assert_eq!(size, 100);
-            }
+            },
             _ => panic!("Expected File variant"),
         }
     }
@@ -196,7 +195,7 @@ mod tests {
         match entry {
             RepoTreeEntry::Directory { path, .. } => {
                 assert_eq!(path, "src");
-            }
+            },
             _ => panic!("Expected Directory variant"),
         }
     }
