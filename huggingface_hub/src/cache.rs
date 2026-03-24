@@ -4,6 +4,64 @@ use std::path::{Path, PathBuf};
 
 use crate::types::RepoType;
 
+pub(crate) async fn write_ref(
+    cache_dir: &Path,
+    repo_folder: &str,
+    revision: &str,
+    commit_hash: &str,
+) -> crate::error::Result<()> {
+    let path = ref_path(cache_dir, repo_folder, revision);
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    tokio::fs::write(&path, commit_hash).await?;
+    Ok(())
+}
+
+pub(crate) async fn read_ref(
+    cache_dir: &Path,
+    repo_folder: &str,
+    revision: &str,
+) -> crate::error::Result<Option<String>> {
+    let path = ref_path(cache_dir, repo_folder, revision);
+    match tokio::fs::read_to_string(&path).await {
+        Ok(content) => Ok(Some(content.trim().to_string())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+pub(crate) async fn create_pointer_symlink(
+    cache_dir: &Path,
+    repo_folder: &str,
+    commit_hash: &str,
+    filename: &str,
+    etag: &str,
+) -> crate::error::Result<()> {
+    let pointer = snapshot_path(cache_dir, repo_folder, commit_hash, filename);
+    if let Some(parent) = pointer.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    let blob = blob_path(cache_dir, repo_folder, etag);
+    let pointer_parent = pointer.parent().unwrap();
+    let relative = pathdiff::diff_paths(&blob, pointer_parent).unwrap_or(blob);
+    let _ = tokio::fs::remove_file(&pointer).await;
+
+    #[cfg(not(windows))]
+    {
+        tokio::fs::symlink(&relative, &pointer).await?;
+    }
+    #[cfg(windows)]
+    {
+        tokio::fs::copy(&blob_path(cache_dir, repo_folder, etag), &pointer).await?;
+    }
+    Ok(())
+}
+
+pub(crate) fn is_commit_hash(revision: &str) -> bool {
+    revision.len() == 40 && revision.chars().all(|c| c.is_ascii_hexdigit())
+}
+
 pub(crate) fn repo_folder_name(repo_id: &str, repo_type: Option<RepoType>) -> String {
     let type_str = match repo_type {
         None | Some(RepoType::Model) => "models",
@@ -163,5 +221,86 @@ mod tests {
             ),
             PathBuf::from("/cache/models--gpt2/.no_exist/aaa111/missing.json")
         );
+    }
+
+    #[tokio::test]
+    async fn test_write_and_read_ref() {
+        let dir = tempfile::tempdir().unwrap();
+        write_ref(
+            dir.path(),
+            "models--gpt2",
+            "main",
+            "abc123def456abc123def456abc123def456abcd",
+        )
+        .await
+        .unwrap();
+        let hash = read_ref(dir.path(), "models--gpt2", "main").await.unwrap();
+        assert_eq!(
+            hash,
+            Some("abc123def456abc123def456abc123def456abcd".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_read_ref_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let hash = read_ref(dir.path(), "models--gpt2", "main").await.unwrap();
+        assert_eq!(hash, None);
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn test_create_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path();
+        let blob = blob_path(cache, "models--gpt2", "abc123");
+        tokio::fs::create_dir_all(blob.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&blob, b"file content").await.unwrap();
+        create_pointer_symlink(cache, "models--gpt2", "def456", "config.json", "abc123")
+            .await
+            .unwrap();
+        let pointer = snapshot_path(cache, "models--gpt2", "def456", "config.json");
+        assert!(pointer.exists());
+        assert!(pointer.symlink_metadata().unwrap().file_type().is_symlink());
+        let content = tokio::fs::read_to_string(&pointer).await.unwrap();
+        assert_eq!(content, "file content");
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn test_create_symlink_nested_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path();
+        let blob = blob_path(cache, "models--gpt2", "abc123");
+        tokio::fs::create_dir_all(blob.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&blob, b"nested content").await.unwrap();
+        create_pointer_symlink(
+            cache,
+            "models--gpt2",
+            "def456",
+            "subdir/model.bin",
+            "abc123",
+        )
+        .await
+        .unwrap();
+        let pointer = snapshot_path(cache, "models--gpt2", "def456", "subdir/model.bin");
+        assert!(pointer.exists());
+        assert!(pointer.symlink_metadata().unwrap().file_type().is_symlink());
+        let target = std::fs::read_link(&pointer).unwrap();
+        assert!(target.to_string_lossy().contains("blobs"));
+        let content = tokio::fs::read_to_string(&pointer).await.unwrap();
+        assert_eq!(content, "nested content");
+    }
+
+    #[test]
+    fn test_is_commit_hash() {
+        assert!(is_commit_hash("abc123def456abc123def456abc123def456abcd"));
+        assert!(!is_commit_hash("main"));
+        assert!(!is_commit_hash("abc123"));
+        assert!(!is_commit_hash("xyz123def456abc123def456abc123def456abcd"));
     }
 }
