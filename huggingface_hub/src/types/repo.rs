@@ -8,6 +8,7 @@ pub enum RepoType {
     Model,
     Dataset,
     Space,
+    Kernel,
 }
 
 impl fmt::Display for RepoType {
@@ -16,6 +17,7 @@ impl fmt::Display for RepoType {
             RepoType::Model => write!(f, "model"),
             RepoType::Dataset => write!(f, "dataset"),
             RepoType::Space => write!(f, "space"),
+            RepoType::Kernel => write!(f, "kernel"),
         }
     }
 }
@@ -28,6 +30,7 @@ impl FromStr for RepoType {
             "model" => Ok(RepoType::Model),
             "dataset" => Ok(RepoType::Dataset),
             "space" => Ok(RepoType::Space),
+            "kernel" => Ok(RepoType::Kernel),
             _ => Err(crate::error::HfError::Other(format!(
                 "Unknown repo type: {s}"
             ))),
@@ -159,7 +162,9 @@ mod tests {
         assert_eq!("model".parse::<RepoType>().unwrap(), RepoType::Model);
         assert_eq!("dataset".parse::<RepoType>().unwrap(), RepoType::Dataset);
         assert_eq!("space".parse::<RepoType>().unwrap(), RepoType::Space);
+        assert_eq!("kernel".parse::<RepoType>().unwrap(), RepoType::Kernel);
         assert_eq!("MODEL".parse::<RepoType>().unwrap(), RepoType::Model);
+        assert_eq!("KERNEL".parse::<RepoType>().unwrap(), RepoType::Kernel);
         assert!("invalid".parse::<RepoType>().is_err());
     }
 
@@ -168,6 +173,7 @@ mod tests {
         assert_eq!(RepoType::Model.to_string(), "model");
         assert_eq!(RepoType::Dataset.to_string(), "dataset");
         assert_eq!(RepoType::Space.to_string(), "space");
+        assert_eq!(RepoType::Kernel.to_string(), "kernel");
     }
 
     #[test]
