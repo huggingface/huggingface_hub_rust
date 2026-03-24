@@ -24,6 +24,12 @@ pub enum HfError {
     #[error("Xet feature required but not enabled")]
     XetNotEnabled,
 
+    #[error("File not found in local cache: {path}")]
+    LocalEntryNotFound { path: String },
+
+    #[error("Cache lock timed out: {}", path.display())]
+    CacheLockTimeout { path: std::path::PathBuf },
+
     #[error(transparent)]
     Request(#[from] reqwest::Error),
 
