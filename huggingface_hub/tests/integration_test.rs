@@ -1205,3 +1205,123 @@ async fn test_list_daily_papers() {
     assert!(!papers.is_empty());
     assert!(papers[0].paper.is_some());
 }
+
+// =============================================================================
+// Cache-mode download tests
+// =============================================================================
+
+#[tokio::test]
+async fn test_download_file_to_cache() {
+    let Some(_) = api() else { return };
+    let cache_dir = tempfile::tempdir().unwrap();
+    let api = HfApiBuilder::new()
+        .cache_dir(cache_dir.path())
+        .build()
+        .unwrap();
+
+    let params = DownloadFileParams::builder()
+        .repo_id("gpt2")
+        .filename("config.json")
+        .build();
+    let path = api.download_file(&params).await.unwrap();
+
+    assert!(path.exists());
+    let content = std::fs::read_to_string(&path).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+    assert!(json.get("model_type").is_some());
+    assert!(path.to_string_lossy().contains("snapshots"));
+
+    let repo_folder = std::fs::read_dir(cache_dir.path())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .find(|e| e.file_name().to_string_lossy().contains("gpt2"))
+        .expect("repo folder not found");
+    let blobs_dir = repo_folder.path().join("blobs");
+    assert!(blobs_dir.exists());
+    let blob_count = std::fs::read_dir(&blobs_dir).unwrap().count();
+    assert_eq!(blob_count, 1);
+}
+
+#[tokio::test]
+async fn test_download_file_cache_hit() {
+    let Some(_) = api() else { return };
+    let cache_dir = tempfile::tempdir().unwrap();
+    let api = HfApiBuilder::new()
+        .cache_dir(cache_dir.path())
+        .build()
+        .unwrap();
+
+    let params = DownloadFileParams::builder()
+        .repo_id("gpt2")
+        .filename("config.json")
+        .build();
+    let path1 = api.download_file(&params).await.unwrap();
+    let path2 = api.download_file(&params).await.unwrap();
+    assert_eq!(path1, path2);
+}
+
+#[tokio::test]
+async fn test_download_file_local_files_only_miss() {
+    let cache_dir = tempfile::tempdir().unwrap();
+    let api = HfApiBuilder::new()
+        .cache_dir(cache_dir.path())
+        .build()
+        .unwrap();
+
+    let params = DownloadFileParams::builder()
+        .repo_id("gpt2")
+        .filename("config.json")
+        .local_files_only(true)
+        .build();
+    let result = api.download_file(&params).await;
+    assert!(matches!(
+        result,
+        Err(huggingface_hub::HfError::LocalEntryNotFound { .. })
+    ));
+}
+
+#[tokio::test]
+async fn test_download_file_local_files_only_hit() {
+    let Some(_) = api() else { return };
+    let cache_dir = tempfile::tempdir().unwrap();
+    let api = HfApiBuilder::new()
+        .cache_dir(cache_dir.path())
+        .build()
+        .unwrap();
+
+    let params = DownloadFileParams::builder()
+        .repo_id("gpt2")
+        .filename("config.json")
+        .build();
+    let path1 = api.download_file(&params).await.unwrap();
+
+    let params = DownloadFileParams::builder()
+        .repo_id("gpt2")
+        .filename("config.json")
+        .local_files_only(true)
+        .build();
+    let path2 = api.download_file(&params).await.unwrap();
+    assert_eq!(path1, path2);
+}
+
+#[cfg(not(windows))]
+#[tokio::test]
+async fn test_download_file_cache_symlink_structure() {
+    let Some(_) = api() else { return };
+    let cache_dir = tempfile::tempdir().unwrap();
+    let api = HfApiBuilder::new()
+        .cache_dir(cache_dir.path())
+        .build()
+        .unwrap();
+
+    let params = DownloadFileParams::builder()
+        .repo_id("gpt2")
+        .filename("config.json")
+        .build();
+    let path = api.download_file(&params).await.unwrap();
+
+    let meta = std::fs::symlink_metadata(&path).unwrap();
+    assert!(meta.file_type().is_symlink());
+    let target = std::fs::read_link(&path).unwrap();
+    assert!(target.to_string_lossy().contains("blobs"));
+}
