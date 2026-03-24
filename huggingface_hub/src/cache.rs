@@ -162,11 +162,94 @@ fn parse_repo_folder_name(name: &str) -> Option<(RepoType, String)> {
     Some((repo_type, repo_id))
 }
 
+async fn read_commit_refs(repo_path: &Path) -> std::collections::HashMap<String, Vec<String>> {
+    use std::collections::HashMap;
+    let mut commit_refs: HashMap<String, Vec<String>> = HashMap::new();
+    let refs_dir = repo_path.join("refs");
+    if let Ok(mut ref_entries) = tokio::fs::read_dir(&refs_dir).await {
+        while let Ok(Some(ref_entry)) = ref_entries.next_entry().await {
+            if ref_entry.path().is_file() {
+                if let Ok(content) = tokio::fs::read_to_string(ref_entry.path()).await {
+                    let commit = content.trim().to_string();
+                    let name = ref_entry.file_name().to_string_lossy().to_string();
+                    commit_refs.entry(commit).or_default().push(name);
+                }
+            }
+        }
+    }
+    commit_refs
+}
+
+struct BlobInfo {
+    blob_path: PathBuf,
+    size: u64,
+    accessed: std::time::SystemTime,
+    modified: std::time::SystemTime,
+}
+
+async fn resolve_blob_info(file_path: &Path) -> std::result::Result<BlobInfo, String> {
+    let resolved = tokio::fs::canonicalize(file_path)
+        .await
+        .map_err(|e| format!("Cannot resolve {}: {}", file_path.display(), e))?;
+    let meta = tokio::fs::metadata(&resolved)
+        .await
+        .map_err(|e| format!("Cannot read blob for {}: {}", file_path.display(), e))?;
+    Ok(BlobInfo {
+        blob_path: resolved,
+        size: meta.len(),
+        accessed: meta.accessed().unwrap_or(std::time::SystemTime::UNIX_EPOCH),
+        modified: meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH),
+    })
+}
+
+async fn scan_snapshot(
+    snap_path: &Path,
+    warnings: &mut Vec<String>,
+) -> Vec<crate::types::cache::CachedFileInfo> {
+    use crate::types::cache::CachedFileInfo;
+    let mut files = Vec::new();
+    let mut stack = vec![snap_path.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        if let Ok(mut dir_entries) = tokio::fs::read_dir(&dir).await {
+            while let Ok(Some(file_entry)) = dir_entries.next_entry().await {
+                let file_path = file_entry.path();
+                if file_path.is_dir() {
+                    stack.push(file_path);
+                    continue;
+                }
+
+                let file_name = file_path
+                    .strip_prefix(snap_path)
+                    .unwrap_or(&file_path)
+                    .to_string_lossy()
+                    .to_string();
+
+                let blob = match resolve_blob_info(&file_path).await {
+                    Ok(b) => b,
+                    Err(msg) => {
+                        warnings.push(msg);
+                        continue;
+                    }
+                };
+
+                files.push(CachedFileInfo {
+                    file_name,
+                    file_path: file_path.clone(),
+                    blob_path: blob.blob_path,
+                    size_on_disk: blob.size,
+                    blob_last_accessed: blob.accessed,
+                    blob_last_modified: blob.modified,
+                });
+            }
+        }
+    }
+    files
+}
+
 pub(crate) async fn scan_cache_dir(
     cache_dir: &Path,
 ) -> crate::error::Result<crate::types::cache::HfCacheInfo> {
-    use crate::types::cache::{CachedFileInfo, CachedRepoInfo, CachedRevisionInfo, HfCacheInfo};
-    use std::collections::HashMap;
+    use crate::types::cache::{CachedRepoInfo, CachedRevisionInfo, HfCacheInfo};
     use std::time::SystemTime;
 
     let mut repos = Vec::new();
@@ -188,116 +271,49 @@ pub(crate) async fn scan_cache_dir(
 
     while let Some(entry) = entries.next_entry().await? {
         let folder_name = entry.file_name().to_string_lossy().to_string();
-
         let (repo_type, repo_id) = match parse_repo_folder_name(&folder_name) {
             Some(v) => v,
             None => continue,
         };
 
         let repo_path = entry.path();
+        let commit_refs = read_commit_refs(&repo_path).await;
 
-        let mut commit_refs: HashMap<String, Vec<String>> = HashMap::new();
-        let refs_dir = repo_path.join("refs");
-        if let Ok(mut ref_entries) = tokio::fs::read_dir(&refs_dir).await {
-            while let Ok(Some(ref_entry)) = ref_entries.next_entry().await {
-                if ref_entry.path().is_file() {
-                    if let Ok(content) = tokio::fs::read_to_string(ref_entry.path()).await {
-                        let commit = content.trim().to_string();
-                        let name = ref_entry.file_name().to_string_lossy().to_string();
-                        commit_refs.entry(commit).or_default().push(name);
-                    }
-                }
-            }
-        }
-
-        let snapshots_dir = repo_path.join("snapshots");
         let mut revisions = Vec::new();
         let mut repo_size: u64 = 0;
         let mut repo_nb_files: usize = 0;
         let mut repo_last_accessed = SystemTime::UNIX_EPOCH;
         let mut repo_last_modified = SystemTime::UNIX_EPOCH;
 
+        let snapshots_dir = repo_path.join("snapshots");
         if let Ok(mut snap_entries) = tokio::fs::read_dir(&snapshots_dir).await {
             while let Ok(Some(snap_entry)) = snap_entries.next_entry().await {
-                let commit_hash = snap_entry.file_name().to_string_lossy().to_string();
                 let snap_path = snap_entry.path();
                 if !snap_path.is_dir() {
                     continue;
                 }
 
-                let mut files = Vec::new();
-                let mut rev_size: u64 = 0;
-                let mut rev_last_modified = SystemTime::UNIX_EPOCH;
+                let commit_hash = snap_entry.file_name().to_string_lossy().to_string();
+                let files = scan_snapshot(&snap_path, &mut warnings).await;
 
-                let mut stack = vec![snap_path.clone()];
-                while let Some(dir) = stack.pop() {
-                    if let Ok(mut dir_entries) = tokio::fs::read_dir(&dir).await {
-                        while let Ok(Some(file_entry)) = dir_entries.next_entry().await {
-                            let file_path = file_entry.path();
-                            if file_path.is_dir() {
-                                stack.push(file_path);
-                                continue;
-                            }
+                let rev_size: u64 = files.iter().map(|f| f.size_on_disk).sum();
+                let rev_last_modified = files
+                    .iter()
+                    .map(|f| f.blob_last_modified)
+                    .max()
+                    .unwrap_or(SystemTime::UNIX_EPOCH);
 
-                            let file_name = file_path
-                                .strip_prefix(&snap_path)
-                                .unwrap_or(&file_path)
-                                .to_string_lossy()
-                                .to_string();
-
-                            let (blob_path, blob_meta) =
-                                match tokio::fs::canonicalize(&file_path).await {
-                                    Ok(resolved) => match tokio::fs::metadata(&resolved).await {
-                                        Ok(m) => (resolved, m),
-                                        Err(e) => {
-                                            warnings.push(format!(
-                                                "Cannot read blob for {}: {}",
-                                                file_path.display(),
-                                                e
-                                            ));
-                                            continue;
-                                        }
-                                    },
-                                    Err(e) => {
-                                        warnings.push(format!(
-                                            "Cannot resolve {}: {}",
-                                            file_path.display(),
-                                            e
-                                        ));
-                                        continue;
-                                    }
-                                };
-
-                            let size = blob_meta.len();
-                            let accessed = blob_meta.accessed().unwrap_or(SystemTime::UNIX_EPOCH);
-                            let modified = blob_meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-
-                            if modified > rev_last_modified {
-                                rev_last_modified = modified;
-                            }
-                            if accessed > repo_last_accessed {
-                                repo_last_accessed = accessed;
-                            }
-                            if modified > repo_last_modified {
-                                repo_last_modified = modified;
-                            }
-
-                            rev_size += size;
-                            files.push(CachedFileInfo {
-                                file_name,
-                                file_path: file_path.clone(),
-                                blob_path,
-                                size_on_disk: size,
-                                blob_last_accessed: accessed,
-                                blob_last_modified: modified,
-                            });
-                        }
+                for f in &files {
+                    if f.blob_last_accessed > repo_last_accessed {
+                        repo_last_accessed = f.blob_last_accessed;
+                    }
+                    if f.blob_last_modified > repo_last_modified {
+                        repo_last_modified = f.blob_last_modified;
                     }
                 }
 
                 repo_nb_files += files.len();
                 repo_size += rev_size;
-
                 let refs = commit_refs.get(&commit_hash).cloned().unwrap_or_default();
 
                 revisions.push(CachedRevisionInfo {
