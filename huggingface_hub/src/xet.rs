@@ -127,8 +127,12 @@ pub(crate) async fn xet_download(
         .get_or_init_xet_session("read", &params.repo_id, params.repo_type, revision)
         .await?;
 
-    tokio::fs::create_dir_all(&params.local_dir).await?;
-    let dest_path = params.local_dir.join(&params.filename);
+    let local_dir = params
+        .local_dir
+        .as_ref()
+        .ok_or_else(|| HfError::Other("xet_download requires local_dir".to_string()))?;
+    tokio::fs::create_dir_all(local_dir).await?;
+    let dest_path = local_dir.join(&params.filename);
     if let Some(parent) = dest_path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }

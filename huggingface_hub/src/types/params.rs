@@ -200,11 +200,38 @@ pub struct DownloadFileParams {
     pub repo_id: String,
     #[builder(setter(into))]
     pub filename: String,
-    pub local_dir: PathBuf,
+    #[builder(default, setter(strip_option))]
+    pub local_dir: Option<PathBuf>,
     #[builder(default, setter(into, strip_option))]
     pub repo_type: Option<RepoType>,
     #[builder(default, setter(into, strip_option))]
     pub revision: Option<String>,
+    #[builder(default, setter(strip_option))]
+    pub force_download: Option<bool>,
+    #[builder(default, setter(strip_option))]
+    pub local_files_only: Option<bool>,
+}
+
+#[derive(TypedBuilder)]
+pub struct SnapshotDownloadParams {
+    #[builder(setter(into))]
+    pub repo_id: String,
+    #[builder(default, setter(into, strip_option))]
+    pub repo_type: Option<RepoType>,
+    #[builder(default, setter(into, strip_option))]
+    pub revision: Option<String>,
+    #[builder(default, setter(strip_option))]
+    pub allow_patterns: Option<Vec<String>>,
+    #[builder(default, setter(strip_option))]
+    pub ignore_patterns: Option<Vec<String>>,
+    #[builder(default, setter(strip_option))]
+    pub local_dir: Option<PathBuf>,
+    #[builder(default, setter(strip_option))]
+    pub force_download: Option<bool>,
+    #[builder(default, setter(strip_option))]
+    pub local_files_only: Option<bool>,
+    #[builder(default, setter(strip_option))]
+    pub max_workers: Option<usize>,
 }
 
 #[derive(TypedBuilder)]

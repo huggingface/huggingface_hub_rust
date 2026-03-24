@@ -174,9 +174,13 @@ impl HfApi {
             )
             .await?;
 
-        tokio::fs::create_dir_all(&params.local_dir).await?;
+        let local_dir = params
+            .local_dir
+            .as_ref()
+            .ok_or_else(|| HfError::Other("download_file requires local_dir".to_string()))?;
+        tokio::fs::create_dir_all(local_dir).await?;
 
-        let dest_path = params.local_dir.join(&params.filename);
+        let dest_path = local_dir.join(&params.filename);
         if let Some(parent) = dest_path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
