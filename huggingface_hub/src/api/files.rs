@@ -1,7 +1,8 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use futures::stream::{Stream, StreamExt};
+use futures::TryStreamExt;
 use reqwest::header::IF_NONE_MATCH;
 use url::Url;
 
@@ -299,23 +300,14 @@ impl HfApi {
 
             let status = head_response.status();
             if status == reqwest::StatusCode::NOT_FOUND {
-                let commit_from_header = extract_commit_hash(&head_response);
-                if let Some(ref commit_hash) = commit_from_header {
-                    let no_exist = cache::no_exist_path(
-                        cache_dir,
-                        &repo_folder,
-                        commit_hash,
-                        &params.filename,
-                    );
-                    if let Some(parent) = no_exist.parent() {
-                        tokio::fs::create_dir_all(parent).await?;
-                    }
-                    tokio::fs::write(&no_exist, b"").await?;
-                }
-                return Err(HfError::EntryNotFound {
-                    path: params.filename.clone(),
-                    repo_id: params.repo_id.clone(),
-                });
+                return Err(mark_no_exist_and_return_error(
+                    cache_dir,
+                    &repo_folder,
+                    &head_response,
+                    &params.repo_id,
+                    &params.filename,
+                )
+                .await);
             }
 
             let head_response = self
@@ -372,22 +364,15 @@ impl HfApi {
                     .await?;
                 }
 
-                cache::write_ref(cache_dir, &repo_folder, revision, &commit_hash).await?;
-                cache::create_pointer_symlink(
+                return finalize_cached_file(
                     cache_dir,
                     &repo_folder,
+                    revision,
                     &commit_hash,
                     &params.filename,
                     &etag,
                 )
-                .await?;
-
-                return Ok(cache::snapshot_path(
-                    cache_dir,
-                    &repo_folder,
-                    &commit_hash,
-                    &params.filename,
-                ));
+                .await;
             }
         }
 
@@ -409,19 +394,14 @@ impl HfApi {
         let status = response.status();
 
         if status == reqwest::StatusCode::NOT_FOUND {
-            let commit_from_header = extract_commit_hash(&response);
-            if let Some(ref commit_hash) = commit_from_header {
-                let no_exist =
-                    cache::no_exist_path(cache_dir, &repo_folder, commit_hash, &params.filename);
-                if let Some(parent) = no_exist.parent() {
-                    tokio::fs::create_dir_all(parent).await?;
-                }
-                tokio::fs::write(&no_exist, b"").await?;
-            }
-            return Err(HfError::EntryNotFound {
-                path: params.filename.clone(),
-                repo_id: params.repo_id.clone(),
-            });
+            return Err(mark_no_exist_and_return_error(
+                cache_dir,
+                &repo_folder,
+                &response,
+                &params.repo_id,
+                &params.filename,
+            )
+            .await);
         }
 
         if status == reqwest::StatusCode::NOT_MODIFIED {
@@ -437,21 +417,15 @@ impl HfApi {
                         HfError::Other("Received 304 but no cached commit hash".to_string())
                     })?
             };
-            cache::write_ref(cache_dir, &repo_folder, revision, &commit_hash).await?;
-            cache::create_pointer_symlink(
+            return finalize_cached_file(
                 cache_dir,
                 &repo_folder,
+                revision,
                 &commit_hash,
                 &params.filename,
                 &etag,
             )
-            .await?;
-            return Ok(cache::snapshot_path(
-                cache_dir,
-                &repo_folder,
-                &commit_hash,
-                &params.filename,
-            ));
+            .await;
         }
 
         let response = self
@@ -469,25 +443,18 @@ impl HfApi {
         let commit_hash = extract_commit_hash(&response)
             .ok_or_else(|| HfError::Other("Missing X-Repo-Commit header".to_string()))?;
 
-        cache::write_ref(cache_dir, &repo_folder, revision, &commit_hash).await?;
-
         let blob = cache::blob_path(cache_dir, &repo_folder, &etag);
 
         if blob.exists() && !force_download {
-            cache::create_pointer_symlink(
+            return finalize_cached_file(
                 cache_dir,
                 &repo_folder,
+                revision,
                 &commit_hash,
                 &params.filename,
                 &etag,
             )
-            .await?;
-            return Ok(cache::snapshot_path(
-                cache_dir,
-                &repo_folder,
-                &commit_hash,
-                &params.filename,
-            ));
+            .await;
         }
 
         let _lock = cache::acquire_lock(cache_dir, &repo_folder, &etag).await?;
@@ -499,25 +466,97 @@ impl HfApi {
         stream_response_to_file(response, &incomplete_path).await?;
         tokio::fs::rename(&incomplete_path, &blob).await?;
 
-        cache::create_pointer_symlink(
+        finalize_cached_file(
             cache_dir,
             &repo_folder,
+            revision,
             &commit_hash,
             &params.filename,
             &etag,
         )
-        .await?;
-
-        Ok(cache::snapshot_path(
-            cache_dir,
-            &repo_folder,
-            &commit_hash,
-            &params.filename,
-        ))
+        .await
     }
 }
 
 impl HfApi {
+    async fn resolve_commit_hash(
+        &self,
+        repo_id: &str,
+        repo_type: Option<RepoType>,
+        revision: &str,
+    ) -> Result<String> {
+        if cache::is_commit_hash(revision) {
+            return Ok(revision.to_string());
+        }
+        let sha = match repo_type {
+            Some(RepoType::Dataset) => {
+                let p = DatasetInfoParams::builder()
+                    .repo_id(repo_id)
+                    .revision(revision)
+                    .build();
+                self.dataset_info(&p).await?.sha
+            }
+            Some(RepoType::Space) => {
+                let p = SpaceInfoParams::builder()
+                    .repo_id(repo_id)
+                    .revision(revision)
+                    .build();
+                self.space_info(&p).await?.sha
+            }
+            _ => {
+                let p = ModelInfoParams::builder()
+                    .repo_id(repo_id)
+                    .revision(revision)
+                    .build();
+                self.model_info(&p).await?.sha
+            }
+        };
+        sha.ok_or_else(|| {
+            HfError::Other(format!(
+                "No commit hash returned for {}/{}",
+                repo_id, revision
+            ))
+        })
+    }
+
+    async fn list_filtered_files(
+        &self,
+        repo_id: &str,
+        repo_type: Option<RepoType>,
+        revision: &str,
+        allow_patterns: Option<&Vec<String>>,
+        ignore_patterns: Option<&Vec<String>>,
+    ) -> Result<Vec<String>> {
+        let tree_params = ListRepoTreeParams::builder()
+            .repo_id(repo_id)
+            .recursive(true)
+            .build();
+        let tree_params = ListRepoTreeParams {
+            revision: Some(revision.to_string()),
+            repo_type,
+            ..tree_params
+        };
+        let stream = self.list_repo_tree(&tree_params);
+        futures::pin_mut!(stream);
+
+        let mut filenames: Vec<String> = Vec::new();
+        while let Some(entry) = stream.next().await {
+            let entry = entry?;
+            if let RepoTreeEntry::File { path, .. } = entry {
+                filenames.push(path);
+            }
+        }
+
+        if let Some(allow) = allow_patterns {
+            filenames.retain(|f| matches_any_glob(allow, f));
+        }
+        if let Some(ignore) = ignore_patterns {
+            filenames.retain(|f| !matches_any_glob(ignore, f));
+        }
+
+        Ok(filenames)
+    }
+
     pub async fn snapshot_download(&self, params: &SnapshotDownloadParams) -> Result<PathBuf> {
         let revision = params
             .revision
@@ -549,66 +588,19 @@ impl HfApi {
             });
         }
 
-        let commit_hash = if crate::cache::is_commit_hash(revision) {
-            revision.to_string()
-        } else {
-            let sha = match params.repo_type {
-                Some(RepoType::Dataset) => {
-                    let p = DatasetInfoParams::builder()
-                        .repo_id(&params.repo_id)
-                        .revision(revision)
-                        .build();
-                    self.dataset_info(&p).await?.sha
-                }
-                Some(RepoType::Space) => {
-                    let p = SpaceInfoParams::builder()
-                        .repo_id(&params.repo_id)
-                        .revision(revision)
-                        .build();
-                    self.space_info(&p).await?.sha
-                }
-                _ => {
-                    let p = ModelInfoParams::builder()
-                        .repo_id(&params.repo_id)
-                        .revision(revision)
-                        .build();
-                    self.model_info(&p).await?.sha
-                }
-            };
-            sha.ok_or_else(|| {
-                HfError::Other(format!(
-                    "No commit hash returned for {}/{}",
-                    params.repo_id, revision
-                ))
-            })?
-        };
+        let commit_hash = self
+            .resolve_commit_hash(&params.repo_id, params.repo_type, revision)
+            .await?;
 
-        let tree_params = ListRepoTreeParams::builder()
-            .repo_id(&params.repo_id)
-            .recursive(true)
-            .build();
-        let tree_params = ListRepoTreeParams {
-            revision: Some(commit_hash.clone()),
-            repo_type: params.repo_type,
-            ..tree_params
-        };
-        let stream = self.list_repo_tree(&tree_params);
-        futures::pin_mut!(stream);
-
-        let mut filenames: Vec<String> = Vec::new();
-        while let Some(entry) = stream.next().await {
-            let entry = entry?;
-            if let RepoTreeEntry::File { path, .. } = entry {
-                filenames.push(path);
-            }
-        }
-
-        if let Some(ref allow) = params.allow_patterns {
-            filenames.retain(|f| matches_any_glob(allow, f));
-        }
-        if let Some(ref ignore) = params.ignore_patterns {
-            filenames.retain(|f| !matches_any_glob(ignore, f));
-        }
+        let mut filenames = self
+            .list_filtered_files(
+                &params.repo_id,
+                params.repo_type,
+                &commit_hash,
+                params.allow_patterns.as_ref(),
+                params.ignore_patterns.as_ref(),
+            )
+            .await?;
 
         let force = params.force_download == Some(true);
 
@@ -618,32 +610,17 @@ impl HfApi {
             });
         }
 
-        if params.local_dir.is_some() {
-            let dl_param_list: Vec<DownloadFileParams> = filenames
-                .iter()
-                .map(|filename| {
-                    let builder = DownloadFileParams::builder()
-                        .repo_id(&params.repo_id)
-                        .filename(filename);
-                    let base = builder.local_dir(params.local_dir.clone().unwrap()).build();
-                    DownloadFileParams {
-                        repo_type: params.repo_type,
-                        revision: Some(commit_hash.clone()),
-                        force_download: params.force_download,
-                        ..base
-                    }
-                })
-                .collect();
-
-            {
-                use futures::TryStreamExt;
-                futures::stream::iter(dl_param_list.iter().map(|p| self.download_file(p)))
-                    .buffer_unordered(max_workers)
-                    .try_collect::<Vec<_>>()
-                    .await?;
-            }
-
-            return Ok(params.local_dir.clone().unwrap());
+        if let Some(ref local_dir) = params.local_dir {
+            let dl_params = build_download_params(
+                &params.repo_id,
+                &filenames,
+                params.repo_type,
+                &commit_hash,
+                params.force_download,
+                Some(local_dir.clone()),
+            );
+            download_concurrently(self, &dl_params, max_workers).await?;
+            return Ok(local_dir.clone());
         }
 
         // Cache mode downloads
@@ -698,7 +675,6 @@ impl HfApi {
                 }
             });
 
-            use futures::TryStreamExt;
             let file_metas: Vec<FileMetadataInfo> = futures::stream::iter(head_futs)
                 .buffer_unordered(max_workers)
                 .try_collect()
@@ -760,27 +736,19 @@ impl HfApi {
                 Ok(())
             };
 
-            let non_xet_dl_params: Vec<DownloadFileParams> = non_xet_metas
-                .iter()
-                .map(|m| {
-                    let dl_params = DownloadFileParams::builder()
-                        .repo_id(&params.repo_id)
-                        .filename(&m.filename)
-                        .build();
-                    DownloadFileParams {
-                        repo_type: params.repo_type,
-                        revision: Some(commit_hash.clone()),
-                        force_download: params.force_download,
-                        ..dl_params
-                    }
-                })
-                .collect();
+            let non_xet_filenames: Vec<String> =
+                non_xet_metas.iter().map(|m| m.filename.clone()).collect();
+            let non_xet_dl_params = build_download_params(
+                &params.repo_id,
+                &non_xet_filenames,
+                params.repo_type,
+                &commit_hash,
+                params.force_download,
+                None,
+            );
 
             let non_xet_fut = async {
-                futures::stream::iter(non_xet_dl_params.iter().map(|p| self.download_file(p)))
-                    .buffer_unordered(max_workers)
-                    .try_collect::<Vec<_>>()
-                    .await?;
+                download_concurrently(self, &non_xet_dl_params, max_workers).await?;
                 Ok::<_, HfError>(())
             };
 
@@ -789,26 +757,15 @@ impl HfApi {
 
         #[cfg(not(feature = "xet"))]
         {
-            use futures::TryStreamExt;
-            let dl_param_list: Vec<DownloadFileParams> = filenames
-                .iter()
-                .map(|filename| {
-                    let dl_params = DownloadFileParams::builder()
-                        .repo_id(&params.repo_id)
-                        .filename(filename)
-                        .build();
-                    DownloadFileParams {
-                        repo_type: params.repo_type,
-                        revision: Some(commit_hash.clone()),
-                        force_download: params.force_download,
-                        ..dl_params
-                    }
-                })
-                .collect();
-            futures::stream::iter(dl_param_list.iter().map(|p| self.download_file(p)))
-                .buffer_unordered(max_workers)
-                .try_collect::<Vec<_>>()
-                .await?;
+            let dl_params = build_download_params(
+                &params.repo_id,
+                &filenames,
+                params.repo_type,
+                &commit_hash,
+                params.force_download,
+                None,
+            );
+            download_concurrently(self, &dl_params, max_workers).await?;
         }
 
         if !crate::cache::is_commit_hash(revision) {
@@ -837,6 +794,81 @@ fn extract_commit_hash(response: &reqwest::Response) -> Option<String> {
         .get(constants::HEADER_X_REPO_COMMIT)
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string())
+}
+
+async fn mark_no_exist_and_return_error(
+    cache_dir: &Path,
+    repo_folder: &str,
+    response: &reqwest::Response,
+    repo_id: &str,
+    filename: &str,
+) -> HfError {
+    if let Some(commit_hash) = extract_commit_hash(response) {
+        let no_exist = cache::no_exist_path(cache_dir, repo_folder, &commit_hash, filename);
+        if let Some(parent) = no_exist.parent() {
+            let _ = tokio::fs::create_dir_all(parent).await;
+        }
+        let _ = tokio::fs::write(&no_exist, b"").await;
+    }
+    HfError::EntryNotFound {
+        path: filename.to_string(),
+        repo_id: repo_id.to_string(),
+    }
+}
+
+async fn finalize_cached_file(
+    cache_dir: &Path,
+    repo_folder: &str,
+    revision: &str,
+    commit_hash: &str,
+    filename: &str,
+    etag: &str,
+) -> Result<PathBuf> {
+    if !cache::is_commit_hash(revision) {
+        cache::write_ref(cache_dir, repo_folder, revision, commit_hash).await?;
+    }
+    cache::create_pointer_symlink(cache_dir, repo_folder, commit_hash, filename, etag).await?;
+    Ok(cache::snapshot_path(
+        cache_dir,
+        repo_folder,
+        commit_hash,
+        filename,
+    ))
+}
+
+fn build_download_params(
+    repo_id: &str,
+    filenames: &[String],
+    repo_type: Option<RepoType>,
+    commit_hash: &str,
+    force_download: Option<bool>,
+    local_dir: Option<PathBuf>,
+) -> Vec<DownloadFileParams> {
+    filenames
+        .iter()
+        .map(|filename| {
+            let mut base = DownloadFileParams::builder()
+                .repo_id(repo_id)
+                .filename(filename)
+                .build();
+            base.repo_type = repo_type;
+            base.revision = Some(commit_hash.to_string());
+            base.force_download = force_download;
+            base.local_dir = local_dir.clone();
+            base
+        })
+        .collect()
+}
+
+async fn download_concurrently(
+    api: &HfApi,
+    params: &[DownloadFileParams],
+    max_workers: usize,
+) -> Result<Vec<PathBuf>> {
+    futures::stream::iter(params.iter().map(|p| api.download_file(p)))
+        .buffer_unordered(max_workers)
+        .try_collect()
+        .await
 }
 
 async fn stream_response_to_file(
