@@ -288,7 +288,7 @@ fn resolve_cache_dir() -> std::path::PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::HfApiBuilder;
 
     #[test]
     fn test_builder_cache_dir_explicit() {

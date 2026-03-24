@@ -420,7 +420,13 @@ pub(crate) async fn delete_revisions(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        acquire_lock, blob_path, create_pointer_symlink, delete_revisions, is_commit_hash,
+        lock_path, no_exist_path, parse_repo_folder_name, read_ref, ref_path, repo_folder_name,
+        scan_cache_dir, snapshot_path, write_ref,
+    };
+    use crate::types::RepoType;
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn test_repo_folder_name_model_with_org() {

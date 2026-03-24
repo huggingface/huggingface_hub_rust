@@ -7,7 +7,7 @@
 //! Run: HF_TOKEN=hf_xxx cargo test -p huggingface-hub --test cache_test
 //! Run with xet: HF_TOKEN=hf_xxx cargo test -p huggingface-hub --features xet --test cache_test
 
-use huggingface_hub::types::*;
+use huggingface_hub::types::{DeleteCacheRevision, DownloadFileParams, SnapshotDownloadParams};
 use huggingface_hub::{HfApi, HfApiBuilder};
 
 fn api() -> Option<HfApi> {

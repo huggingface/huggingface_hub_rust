@@ -458,7 +458,7 @@ impl HfApi {
         }
 
         let _lock = cache::acquire_lock(cache_dir, &repo_folder, &etag).await?;
-        let incomplete_path = blob.with_extension("incomplete");
+        let incomplete_path = PathBuf::from(format!("{}.incomplete", blob.display()));
         if let Some(parent) = incomplete_path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
