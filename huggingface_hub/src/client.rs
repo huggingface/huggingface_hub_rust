@@ -22,6 +22,8 @@ pub(crate) struct HfApiInner {
     pub(crate) client: ClientWithMiddleware,
     pub(crate) endpoint: String,
     pub(crate) token: Option<String>,
+    #[allow(dead_code)]
+    pub(crate) cache_dir: std::path::PathBuf,
     #[cfg(feature = "xet")]
     pub(crate) xet_session: std::sync::Mutex<Option<xet::xet_session::XetSession>>,
 }
@@ -32,6 +34,7 @@ pub struct HfApiBuilder {
     user_agent: Option<String>,
     headers: Option<HeaderMap>,
     client: Option<reqwest::Client>,
+    cache_dir: Option<std::path::PathBuf>,
 }
 
 impl HfApiBuilder {
@@ -42,6 +45,7 @@ impl HfApiBuilder {
             user_agent: None,
             headers: None,
             client: None,
+            cache_dir: None,
         }
     }
 
@@ -73,6 +77,11 @@ impl HfApiBuilder {
         self
     }
 
+    pub fn cache_dir(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.cache_dir = Some(path.into());
+        self
+    }
+
     pub fn build(self) -> Result<HfApi> {
         let endpoint = self
             .endpoint
@@ -82,6 +91,21 @@ impl HfApiBuilder {
         let _ = url::Url::parse(&endpoint)?;
 
         let token = self.token.or_else(resolve_token);
+
+        let cache_dir = self
+            .cache_dir
+            .or_else(|| {
+                std::env::var(constants::HF_HUB_CACHE)
+                    .ok()
+                    .map(std::path::PathBuf::from)
+            })
+            .unwrap_or_else(|| {
+                let hf_home = std::env::var(constants::HF_HOME).unwrap_or_else(|_| {
+                    let home = dirs_or_home();
+                    format!("{home}/.cache/huggingface")
+                });
+                std::path::PathBuf::from(hf_home).join("hub")
+            });
 
         let mut default_headers = self.headers.unwrap_or_default();
 
@@ -115,6 +139,7 @@ impl HfApiBuilder {
                 client,
                 endpoint: endpoint.trim_end_matches('/').to_string(),
                 token,
+                cache_dir,
                 #[cfg(feature = "xet")]
                 xet_session: std::sync::Mutex::new(None),
             }),
@@ -260,4 +285,28 @@ fn resolve_token() -> Option<String> {
 
 fn dirs_or_home() -> String {
     std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_builder_cache_dir_explicit() {
+        let api = HfApiBuilder::new()
+            .cache_dir("/tmp/my-cache")
+            .build()
+            .unwrap();
+        assert_eq!(
+            api.inner.cache_dir,
+            std::path::PathBuf::from("/tmp/my-cache")
+        );
+    }
+
+    #[test]
+    fn test_builder_cache_dir_default() {
+        let api = HfApiBuilder::new().build().unwrap();
+        let path_str = api.inner.cache_dir.to_string_lossy();
+        assert!(path_str.contains("huggingface") && path_str.ends_with("hub"));
+    }
 }
