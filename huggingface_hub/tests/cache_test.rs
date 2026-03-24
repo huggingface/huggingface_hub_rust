@@ -2,8 +2,10 @@
 //!
 //! Tests require HF_TOKEN and network access, skip if not set.
 //! Interop tests additionally require python3, skip if not found.
+//! Xet cache tests require --features xet.
 //!
 //! Run: HF_TOKEN=hf_xxx cargo test -p huggingface-hub --test cache_test
+//! Run with xet: HF_TOKEN=hf_xxx cargo test -p huggingface-hub --features xet --test cache_test
 
 use huggingface_hub::types::*;
 use huggingface_hub::{HfApi, HfApiBuilder};
@@ -588,4 +590,97 @@ print("ALL_CHECKS_PASSED")
         stdout.contains("ALL_CHECKS_PASSED"),
         "Python did not complete all checks.\nstdout: {stdout}\nstderr: {stderr}"
     );
+}
+
+// =============================================================================
+// Xet cache tests (require --features xet)
+// =============================================================================
+
+#[cfg(feature = "xet")]
+#[tokio::test]
+async fn test_xet_download_to_cache() {
+    let Some(_) = api() else { return };
+    let cache_dir = tempfile::tempdir().unwrap();
+    let api = HfApiBuilder::new()
+        .cache_dir(cache_dir.path())
+        .build()
+        .unwrap();
+
+    let params = DownloadFileParams::builder()
+        .repo_id("mcpotato/42-xet-test-repo")
+        .filename("large_random.bin")
+        .build();
+
+    let path = match api.download_file(&params).await {
+        Ok(p) => p,
+        Err(e) => {
+            let err_str = e.to_string();
+            if err_str.contains("not found") || err_str.contains("Not Found") {
+                eprintln!("Skipping xet cache test: repo not found");
+                return;
+            }
+            panic!("Unexpected error: {err_str}");
+        }
+    };
+
+    assert!(path.exists());
+    assert!(path.to_string_lossy().contains("snapshots"));
+
+    let file_size = std::fs::metadata(&path).unwrap().len();
+    assert!(
+        file_size > 1_000_000,
+        "Expected large file, got {file_size} bytes"
+    );
+
+    // Blob should exist (LFS files use SHA-256 etag = 64 hex chars)
+    let repo_folder = std::fs::read_dir(cache_dir.path())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .find(|e| e.file_name().to_string_lossy().contains("42-xet-test-repo"))
+        .expect("repo folder not found");
+    let blobs_dir = repo_folder.path().join("blobs");
+    assert!(blobs_dir.exists());
+    let blobs: Vec<_> = std::fs::read_dir(&blobs_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .collect();
+    assert!(!blobs.is_empty());
+
+    // Symlink should point to blob
+    #[cfg(not(windows))]
+    {
+        let meta = std::fs::symlink_metadata(&path).unwrap();
+        assert!(meta.file_type().is_symlink());
+        let target = std::fs::read_link(&path).unwrap();
+        assert!(target.to_string_lossy().contains("blobs"));
+    }
+
+    // Ref should exist
+    let refs_dir = repo_folder.path().join("refs");
+    assert!(refs_dir.exists());
+    let main_ref = refs_dir.join("main");
+    assert!(main_ref.exists());
+
+    // Second download should be a cache hit (same path returned)
+    let path2 = api.download_file(&params).await.unwrap();
+    assert_eq!(path, path2);
+
+    // local_files_only should work
+    let params_local = DownloadFileParams::builder()
+        .repo_id("mcpotato/42-xet-test-repo")
+        .filename("large_random.bin")
+        .local_files_only(true)
+        .build();
+    let path3 = api.download_file(&params_local).await.unwrap();
+    assert_eq!(path, path3);
+
+    // scan_cache should report the file
+    let info = api.scan_cache().await.unwrap();
+    let repo = info
+        .repos
+        .iter()
+        .find(|r| r.repo_id.contains("42-xet-test-repo"))
+        .expect("repo not in scan_cache");
+    assert!(!repo.revisions.is_empty());
+    assert!(repo.size_on_disk >= file_size);
 }
