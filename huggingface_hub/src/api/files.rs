@@ -333,6 +333,9 @@ impl HfApi {
                     .ok_or_else(|| HfError::Other("Missing X-Repo-Commit header".to_string()))?;
 
                 let blob = cache::blob_path(cache_dir, &repo_folder, &etag);
+                // Blob existence is checked before acquiring the lock. This matches the
+                // Python huggingface_hub library's behavior and assumes the cache is not
+                // being deleted while a download is in progress.
                 if !blob.exists() || force_download {
                     if let Some(parent) = blob.parent() {
                         tokio::fs::create_dir_all(parent).await?;
@@ -445,6 +448,9 @@ impl HfApi {
 
         let blob = cache::blob_path(cache_dir, &repo_folder, &etag);
 
+        // Blob existence is checked before acquiring the lock. This matches the Python
+        // huggingface_hub library's behavior and assumes the cache is not being deleted
+        // (e.g., by delete_cache_revisions) while a download is in progress.
         if blob.exists() && !force_download {
             return finalize_cached_file(
                 cache_dir,
