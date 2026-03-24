@@ -25,21 +25,23 @@ pub const HEADER_X_REPO_COMMIT: &str = "x-repo-commit";
 pub const HEADER_X_LINKED_ETAG: &str = "x-linked-etag";
 
 /// URL prefixes for different repo types
-/// Models have no prefix, datasets use "datasets/", spaces use "spaces/"
+/// Models have no prefix, datasets use "datasets/", spaces use "spaces/", kernels use "kernels/"
 pub fn repo_type_url_prefix(repo_type: Option<crate::types::repo::RepoType>) -> &'static str {
     match repo_type {
         None | Some(crate::types::repo::RepoType::Model) => "",
         Some(crate::types::repo::RepoType::Dataset) => "datasets/",
         Some(crate::types::repo::RepoType::Space) => "spaces/",
+        Some(crate::types::repo::RepoType::Kernel) => "kernels/",
     }
 }
 
-/// API path segment for repo types: "models", "datasets", "spaces"
+/// API path segment for repo types: "models", "datasets", "spaces", "kernels"
 pub fn repo_type_api_segment(repo_type: Option<crate::types::repo::RepoType>) -> &'static str {
     match repo_type {
         None | Some(crate::types::repo::RepoType::Model) => "models",
         Some(crate::types::repo::RepoType::Dataset) => "datasets",
         Some(crate::types::repo::RepoType::Space) => "spaces",
+        Some(crate::types::repo::RepoType::Kernel) => "kernels",
     }
 }
 
@@ -54,6 +56,7 @@ mod tests {
         assert_eq!(repo_type_url_prefix(Some(RepoType::Model)), "");
         assert_eq!(repo_type_url_prefix(Some(RepoType::Dataset)), "datasets/");
         assert_eq!(repo_type_url_prefix(Some(RepoType::Space)), "spaces/");
+        assert_eq!(repo_type_url_prefix(Some(RepoType::Kernel)), "kernels/");
     }
 
     #[test]
@@ -62,5 +65,6 @@ mod tests {
         assert_eq!(repo_type_api_segment(Some(RepoType::Model)), "models");
         assert_eq!(repo_type_api_segment(Some(RepoType::Dataset)), "datasets");
         assert_eq!(repo_type_api_segment(Some(RepoType::Space)), "spaces");
+        assert_eq!(repo_type_api_segment(Some(RepoType::Kernel)), "kernels");
     }
 }
