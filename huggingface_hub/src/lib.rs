@@ -74,6 +74,7 @@ macro_rules! sync_api_stream {
 pub mod api;
 #[cfg(feature = "blocking")]
 pub mod blocking;
+pub(crate) mod cache;
 pub mod client;
 pub mod constants;
 pub mod error;
