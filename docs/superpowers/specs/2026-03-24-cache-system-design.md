@@ -80,7 +80,7 @@ pub struct DownloadFileParams {
 }
 ```
 
-When `local_dir` is `None`, the cache is used. When `Some`, files download directly to that directory (no cache involvement).
+When `local_dir` is `None`, the cache is used. When `Some`, files download directly to that directory (no cache involvement). The `local_dir` field uses `#[builder(default)]` so callers using the cache can simply omit it.
 
 ### HfApiBuilder
 
@@ -113,15 +113,17 @@ When `local_dir` is `None`:
 1. Compute repo folder name and cache paths
 2. If revision is a 40-char hex commit hash, check `snapshots/{hash}/{filename}` — if exists and `force_download` is not set, return path immediately
 3. If `local_files_only` is set, also try resolving via `refs/{revision}` → commit hash → snapshot check, then return `LocalEntryNotFound` on miss
-4. Send GET request to `{endpoint}/{prefix}{repo_id}/resolve/{revision}/{filename}`. Extract metadata from **response headers**: `ETag` (or `X-Linked-Etag` for LFS, which takes priority), `X-Repo-Commit` for commit hash. Strip quotes from etag values. If the blob already exists in cache (and `force_download` is not set), discard the response body early.
+4. Send GET request to `{endpoint}/{prefix}{repo_id}/resolve/{revision}/{filename}`. Include `If-None-Match: {cached_etag}` header if a cached etag is known for this file (from a previous download's blob). Extract metadata from **response headers**: `ETag` (or `X-Linked-Etag` for LFS, which takes priority), `X-Repo-Commit` for commit hash. Strip quotes from etag values.
+   - **304 Not Modified**: blob is unchanged. Skip to step 9 using the known etag and commit hash from the response.
+   - **200 OK**: new or changed content. Continue to step 5.
 5. Write commit hash to `refs/{revision}` if revision is not already a commit hash
 6. Check if `blobs/{etag}` exists — if so and `force_download` is not set, skip to step 9
-7. Acquire file lock at `{cache_root}/.locks/{repo_folder}/{etag}.lock` using `fs4`. Lock timeout: 10 seconds (matching Python). `fs4` uses advisory locks (`flock`/`LockFileEx`) which auto-release on process exit, handling crash recovery.
+7. Acquire file lock at `{cache_root}/.locks/{repo_folder}/{etag}.lock` using `fs4`. `fs4` uses advisory locks (`flock`/`LockFileEx`) which auto-release on process exit, handling crash recovery. `fs4` does not provide a native lock timeout — the implementation wraps the lock call in `tokio::time::timeout` with a 10-second default (matching Python).
 8. Stream the response body (from step 4) to `blobs/{etag}.incomplete`, then atomic rename to `blobs/{etag}`. On Unix, `rename(2)` is atomic within the same filesystem. The `.incomplete` and final blob are always in the same directory, guaranteeing same-filesystem.
 9. Create relative symlink: `snapshots/{commit_hash}/{filename}` -> `../../blobs/{etag}`. This happens inside the lock scope to prevent races with concurrent processes creating the same snapshot directory.
 10. Release lock, return the symlink path
 
-This uses a single HTTP request (GET) instead of HEAD+GET. The response headers provide the etag and commit hash needed for cache placement. If the blob already exists (step 6), the response body is discarded without reading it fully.
+This uses a single HTTP request with conditional caching. The `If-None-Match` header allows the server to return 304 (no body) when the cached blob is still valid, avoiding large file transfers on cache hits. On cache miss, the full body arrives in the same request.
 
 When `local_dir` is `Some(path)`: download directly to `path/filename` (current behavior, no cache).
 
@@ -131,7 +133,9 @@ When the GET request returns 404, create `.no_exist/{commit_hash}/{filename}` ma
 
 ### Xet Integration
 
-The existing xet download path (feature-gated behind `xet`) requires a HEAD request to detect the `X-Xet-Hash` header. In cache mode with xet enabled, the flow becomes: send HEAD first, check for `X-Xet-Hash`. If present, use the xet protocol to download directly to `blobs/{etag}.incomplete` (the xet download function must be updated to accept a target blob path instead of `local_dir`), then atomic rename and symlink as normal. If no xet header, proceed with the standard GET flow above. The cache structure is the same regardless of transfer protocol.
+Xet integration only applies when the download flow reaches the network fetch phase (steps 4+). If there is a cache hit at step 2 (snapshot symlink exists), no HTTP request is made and xet is not involved.
+
+When the flow reaches step 4 with the `xet` feature enabled: send a HEAD request first to check for the `X-Xet-Hash` header (and extract etag/commit hash from headers). If `X-Xet-Hash` is present, use the xet protocol to download directly to `blobs/{etag}.incomplete` (the xet download function must be updated to accept a target blob path instead of `local_dir`), then atomic rename and symlink as normal (steps 8-10). If no `X-Xet-Hash` header, proceed with the standard conditional GET flow (step 4 onwards). The cache structure is the same regardless of transfer protocol.
 
 ## Snapshot Download
 
