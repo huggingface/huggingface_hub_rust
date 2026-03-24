@@ -483,3 +483,105 @@ print(path)
         .count();
     assert_eq!(blob_count_before, blob_count_after);
 }
+
+#[tokio::test]
+async fn test_interop_rust_writes_python_validates_cache() {
+    let Some(_) = api() else { return };
+    let base_dir = tempfile::tempdir().unwrap();
+    let cache_dir = base_dir.path().join("cache");
+    std::fs::create_dir_all(&cache_dir).unwrap();
+
+    let Some(venv_dir) = setup_python_venv(base_dir.path()) else {
+        return;
+    };
+    let python = python_bin(&venv_dir);
+    let token = std::env::var("HF_TOKEN").unwrap();
+
+    // Rust snapshot_download: multiple files into cache
+    let api = HfApiBuilder::new().cache_dir(&cache_dir).build().unwrap();
+    let params = SnapshotDownloadParams::builder()
+        .repo_id("gpt2")
+        .allow_patterns(vec!["*.json".to_string(), "*.md".to_string()])
+        .build();
+    let snapshot_dir = api.snapshot_download(&params).await.unwrap();
+    assert!(snapshot_dir.exists());
+
+    // Collect filenames Rust cached
+    let mut rust_files: Vec<String> = Vec::new();
+    let mut stack = vec![snapshot_dir.clone()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                let rel = path.strip_prefix(&snapshot_dir).unwrap();
+                rust_files.push(rel.to_string_lossy().to_string());
+            }
+        }
+    }
+    assert!(
+        rust_files.len() >= 2,
+        "Expected at least 2 cached files, got: {rust_files:?}"
+    );
+
+    // Python validates the cache structure and reads every file
+    let rust_files_json = serde_json::to_string(&rust_files).unwrap();
+    let script = format!(
+        r#"
+import json
+import os
+import sys
+
+os.environ["HF_HUB_CACHE"] = "{cache}"
+os.environ["HF_TOKEN"] = "{token}"
+
+from huggingface_hub import hf_hub_download, scan_cache_dir
+
+# 1. scan_cache_dir must find the repo with correct structure
+cache_info = scan_cache_dir("{cache}")
+repos = [r for r in cache_info.repos if "gpt2" in r.repo_id]
+assert len(repos) == 1, f"Expected 1 gpt2 repo, found {{len(repos)}}"
+repo = repos[0]
+assert len(repo.revisions) >= 1, f"Expected >=1 revision, found {{len(repo.revisions)}}"
+
+revision = repo.revisions[0]
+cached_filenames = {{f.file_name for f in revision.files}}
+rust_files = set(json.loads('{rust_files_json}'))
+assert rust_files.issubset(cached_filenames), (
+    f"Rust files {{rust_files}} not all found in Python scan: {{cached_filenames}}"
+)
+
+# 2. Every file must be readable via hf_hub_download with local_files_only=True
+for filename in rust_files:
+    path = hf_hub_download("gpt2", filename, local_files_only=True)
+    size = os.path.getsize(path)
+    assert size > 0, f"File {{filename}} is empty at {{path}}"
+
+# 3. Verify config.json content is valid JSON with expected field
+config_path = hf_hub_download("gpt2", "config.json", local_files_only=True)
+with open(config_path) as f:
+    config = json.load(f)
+assert "model_type" in config, f"config.json missing model_type: {{list(config.keys())}}"
+
+print("ALL_CHECKS_PASSED")
+"#,
+        cache = cache_dir.display(),
+        token = token,
+        rust_files_json = rust_files_json,
+    );
+    let output = std::process::Command::new(&python)
+        .args(["-c", &script])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "Python validation failed.\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("ALL_CHECKS_PASSED"),
+        "Python did not complete all checks.\nstdout: {stdout}\nstderr: {stderr}"
+    );
+}
