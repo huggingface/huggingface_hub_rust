@@ -1,0 +1,82 @@
+name: "\U0001F41B Bug Report"
+description: Report a bug in huggingface-hub for Rust
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+  - type: textarea
+    id: bug-description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of the bug. If you intend to submit a pull request for this issue, feel free to mention it here.
+      placeholder: Bug description
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Please provide a minimal reproducible example we can copy, paste, and run.
+      placeholder: |
+        use huggingface_hub::HfApi;
+
+        #[tokio::main]
+        async fn main() -> huggingface_hub::Result<()> {
+            // minimal reproduction
+            let api = HfApi::new()?;
+            Ok(())
+        }
+      render: rust
+    validations:
+      required: true
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen instead?
+      placeholder: Expected behavior
+  - type: dropdown
+    id: api-mode
+    attributes:
+      label: Which API are you using?
+      options:
+        - Async API
+        - Blocking API
+        - Both / not sure
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error messages
+      description: Include any relevant compiler errors, runtime errors, HTTP status codes, or backtraces. Please redact tokens and other secrets. If you can, rerun with `RUST_BACKTRACE=1` and include the output.
+      render: shell
+  - type: textarea
+    id: system-info
+    attributes:
+      label: System info
+      description: |
+        Please share the environment details that are relevant to this issue.
+        Redact any secret values before submitting.
+      render: shell
+      placeholder: |
+        - huggingface-hub version:
+        - Enabled Cargo features:
+        - Rust version (`rustc --version --verbose`):
+        - Cargo version (`cargo --version`):
+        - Target triple:
+        - Operating system:
+        - Architecture:
+        - Runtime (for example `tokio` version, if relevant):
+        - Relevant environment variables set (redacted values): HF_ENDPOINT, HF_TOKEN, HF_TOKEN_PATH, HF_HOME, HF_HUB_DISABLE_IMPLICIT_TOKEN, HF_HUB_USER_AGENT_ORIGIN
+        - Are you using a custom endpoint, proxy, or other network middleware?
+    validations:
+      required: true
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add any other context that might help us investigate, such as whether the issue is intermittent, specific repository IDs involved, or whether it reproduces only with certain repo types.
+      placeholder: Additional context
