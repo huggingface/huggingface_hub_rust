@@ -49,6 +49,21 @@ pub enum HfError {
     Other(String),
 }
 
+impl HfError {
+    /// Returns true for errors that indicate transient network/server issues
+    /// where falling back to a cached version is appropriate.
+    pub(crate) fn is_transient(&self) -> bool {
+        match self {
+            HfError::Request(e) => e.is_connect() || e.is_timeout(),
+            HfError::Middleware(e) => e.is_connect() || e.is_timeout(),
+            HfError::Http { status, .. } => {
+                matches!(status.as_u16(), 500 | 502 | 503 | 504)
+            },
+            _ => false,
+        }
+    }
+}
+
 pub type Result<T> = std::result::Result<T, HfError>;
 
 /// Context for mapping HTTP 404 errors to specific HfError variants.

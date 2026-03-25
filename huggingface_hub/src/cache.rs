@@ -59,6 +59,10 @@ pub(crate) async fn read_ref(
     }
 }
 
+/// On Windows, copies the blob instead of creating a symlink because symlinks
+/// require elevated privileges. This means `find_cached_etag` (which uses
+/// `read_link`) cannot determine the cached etag on Windows, effectively
+/// disabling conditional-request (If-None-Match) optimization.
 pub(crate) async fn create_pointer_symlink(
     cache_dir: &Path,
     repo_folder: &str,
@@ -117,6 +121,19 @@ pub(crate) fn lock_path(cache_dir: &Path, repo_folder: &str, etag: &str) -> Path
 
 pub(crate) fn no_exist_path(cache_dir: &Path, repo_folder: &str, commit_hash: &str, filename: &str) -> PathBuf {
     cache_dir.join(repo_folder).join(".no_exist").join(commit_hash).join(filename)
+}
+
+pub(crate) fn check_no_exist(cache_dir: &Path, repo_folder: &str, revision: &str, filename: &str) -> bool {
+    let commit_hash = if is_commit_hash(revision) {
+        Some(revision.to_string())
+    } else {
+        let rp = ref_path(cache_dir, repo_folder, revision);
+        std::fs::read_to_string(&rp).ok().map(|s| s.trim().to_string())
+    };
+    match commit_hash {
+        Some(hash) => no_exist_path(cache_dir, repo_folder, &hash, filename).exists(),
+        None => false,
+    }
 }
 
 fn parse_repo_folder_name(name: &str) -> Option<(RepoType, String)> {

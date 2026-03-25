@@ -187,6 +187,9 @@ impl HfApi {
         })
     }
 
+    /// Resolve the cached etag for a file by reading the symlink target in snapshots/.
+    /// On Windows, where copies are used instead of symlinks, `read_link` will fail
+    /// and this returns `None`, disabling conditional-request (If-None-Match) optimization.
     fn find_cached_etag(&self, repo_folder: &str, revision: &str, filename: &str) -> Option<String> {
         let cache_dir = &self.inner.cache_dir;
 
@@ -220,6 +223,33 @@ impl HfApi {
             return self.resolve_from_cache_only(&repo_folder, revision, &params.filename);
         }
 
+        if !force_download && cache::check_no_exist(cache_dir, &repo_folder, revision, &params.filename) {
+            return Err(HfError::EntryNotFound {
+                path: params.filename.clone(),
+                repo_id: params.repo_id.clone(),
+            });
+        }
+
+        let result = self
+            .download_file_to_cache_network(params, revision, cache_dir, &repo_folder, force_download)
+            .await;
+
+        match &result {
+            Err(e) if e.is_transient() && !force_download => self
+                .resolve_from_cache_only(&repo_folder, revision, &params.filename)
+                .or(result),
+            _ => result,
+        }
+    }
+
+    async fn download_file_to_cache_network(
+        &self,
+        params: &DownloadFileParams,
+        revision: &str,
+        cache_dir: &Path,
+        repo_folder: &str,
+        force_download: bool,
+    ) -> Result<PathBuf> {
         let url = self.download_url(params.repo_type, &params.repo_id, revision, &params.filename);
 
         #[cfg(feature = "xet")]
@@ -230,7 +260,8 @@ impl HfApi {
             if status == reqwest::StatusCode::NOT_FOUND {
                 return Err(mark_no_exist_and_return_error(
                     cache_dir,
-                    &repo_folder,
+                    repo_folder,
+                    revision,
                     &head_response,
                     &params.repo_id,
                     &params.filename,
@@ -256,15 +287,12 @@ impl HfApi {
                 let commit_hash = extract_commit_hash(&head_response)
                     .ok_or_else(|| HfError::Other("Missing X-Repo-Commit header".to_string()))?;
 
-                let blob = cache::blob_path(cache_dir, &repo_folder, &etag);
-                // Blob existence is checked before acquiring the lock. This matches the
-                // Python huggingface_hub library's behavior and assumes the cache is not
-                // being deleted while a download is in progress.
+                let blob = cache::blob_path(cache_dir, repo_folder, &etag);
                 if !blob.exists() || force_download {
                     if let Some(parent) = blob.parent() {
                         tokio::fs::create_dir_all(parent).await?;
                     }
-                    let _lock = cache::acquire_lock(cache_dir, &repo_folder, &etag).await?;
+                    let _lock = cache::acquire_lock(cache_dir, repo_folder, &etag).await?;
 
                     let xet_hash = head_response
                         .headers()
@@ -291,13 +319,13 @@ impl HfApi {
                     .await?;
                 }
 
-                return finalize_cached_file(cache_dir, &repo_folder, revision, &commit_hash, &params.filename, &etag)
+                return finalize_cached_file(cache_dir, repo_folder, revision, &commit_hash, &params.filename, &etag)
                     .await;
             }
         }
 
         let cached_etag = if !force_download {
-            self.find_cached_etag(&repo_folder, revision, &params.filename)
+            self.find_cached_etag(repo_folder, revision, &params.filename)
         } else {
             None
         };
@@ -316,7 +344,8 @@ impl HfApi {
         if status == reqwest::StatusCode::NOT_FOUND {
             return Err(mark_no_exist_and_return_error(
                 cache_dir,
-                &repo_folder,
+                repo_folder,
+                revision,
                 &response,
                 &params.repo_id,
                 &params.filename,
@@ -330,12 +359,11 @@ impl HfApi {
             let commit_hash = if cache::is_commit_hash(revision) {
                 revision.to_string()
             } else {
-                cache::read_ref(cache_dir, &repo_folder, revision)
+                cache::read_ref(cache_dir, repo_folder, revision)
                     .await?
                     .ok_or_else(|| HfError::Other("Received 304 but no cached commit hash".to_string()))?
             };
-            return finalize_cached_file(cache_dir, &repo_folder, revision, &commit_hash, &params.filename, &etag)
-                .await;
+            return finalize_cached_file(cache_dir, repo_folder, revision, &commit_hash, &params.filename, &etag).await;
         }
 
         let response = self
@@ -353,17 +381,13 @@ impl HfApi {
         let commit_hash =
             extract_commit_hash(&response).ok_or_else(|| HfError::Other("Missing X-Repo-Commit header".to_string()))?;
 
-        let blob = cache::blob_path(cache_dir, &repo_folder, &etag);
+        let blob = cache::blob_path(cache_dir, repo_folder, &etag);
 
-        // Blob existence is checked before acquiring the lock. This matches the Python
-        // huggingface_hub library's behavior and assumes the cache is not being deleted
-        // (e.g., by delete_cache_revisions) while a download is in progress.
         if blob.exists() && !force_download {
-            return finalize_cached_file(cache_dir, &repo_folder, revision, &commit_hash, &params.filename, &etag)
-                .await;
+            return finalize_cached_file(cache_dir, repo_folder, revision, &commit_hash, &params.filename, &etag).await;
         }
 
-        let _lock = cache::acquire_lock(cache_dir, &repo_folder, &etag).await?;
+        let _lock = cache::acquire_lock(cache_dir, repo_folder, &etag).await?;
         let incomplete_path = PathBuf::from(format!("{}.incomplete", blob.display()));
         if let Some(parent) = incomplete_path.parent() {
             tokio::fs::create_dir_all(parent).await?;
@@ -372,7 +396,7 @@ impl HfApi {
         stream_response_to_file(response, &incomplete_path).await?;
         tokio::fs::rename(&incomplete_path, &blob).await?;
 
-        finalize_cached_file(cache_dir, &repo_folder, revision, &commit_hash, &params.filename, &etag).await
+        finalize_cached_file(cache_dir, repo_folder, revision, &commit_hash, &params.filename, &etag).await
     }
 }
 
@@ -506,11 +530,19 @@ impl HfApi {
                 let client = &self.inner.client;
                 let auth = self.auth_headers();
                 let filename = filename.clone();
+                let repo_folder_ref = &repo_folder;
                 async move {
                     let resp = client.head(&url).headers(auth).send().await?;
-                    // A HEAD failure on any file aborts the entire snapshot download,
-                    // matching the Python huggingface_hub library's snapshot_download behavior.
-                    if !resp.status().is_success() {
+                    if resp.status() == reqwest::StatusCode::NOT_FOUND {
+                        if let Some(commit) = extract_commit_hash(&resp) {
+                            let no_exist = cache::no_exist_path(cache_dir, repo_folder_ref, &commit, &filename);
+                            if let Some(parent) = no_exist.parent() {
+                                let _ = tokio::fs::create_dir_all(parent).await;
+                            }
+                            let _ = tokio::fs::write(&no_exist, b"").await;
+                        }
+                        return Ok::<_, HfError>(None);
+                    } else if !resp.status().is_success() {
                         return Err(HfError::Http {
                             status: resp.status(),
                             url,
@@ -531,20 +563,23 @@ impl HfApi {
                         .and_then(|v| v.to_str().ok())
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(0);
-                    Ok::<_, HfError>(FileMetadataInfo {
+                    Ok::<_, HfError>(Some(FileMetadataInfo {
                         filename,
                         etag,
                         commit_hash: commit,
                         xet_hash,
                         file_size,
-                    })
+                    }))
                 }
             });
 
             let file_metas: Vec<FileMetadataInfo> = futures::stream::iter(head_futs)
                 .buffer_unordered(max_workers)
-                .try_collect()
-                .await?;
+                .try_collect::<Vec<Option<FileMetadataInfo>>>()
+                .await?
+                .into_iter()
+                .flatten()
+                .collect();
 
             let mut xet_metas = Vec::new();
             let mut non_xet_metas = Vec::new();
@@ -642,7 +677,8 @@ fn extract_etag(response: &reqwest::Response) -> Option<String> {
         .get(constants::HEADER_X_LINKED_ETAG)
         .or_else(|| headers.get(reqwest::header::ETAG))
         .and_then(|v| v.to_str().ok())?;
-    Some(raw.trim_matches('"').to_string())
+    let normalized = raw.strip_prefix("W/").unwrap_or(raw);
+    Some(normalized.trim_matches('"').to_string())
 }
 
 fn extract_commit_hash(response: &reqwest::Response) -> Option<String> {
@@ -656,6 +692,7 @@ fn extract_commit_hash(response: &reqwest::Response) -> Option<String> {
 async fn mark_no_exist_and_return_error(
     cache_dir: &Path,
     repo_folder: &str,
+    revision: &str,
     response: &reqwest::Response,
     repo_id: &str,
     filename: &str,
@@ -666,6 +703,9 @@ async fn mark_no_exist_and_return_error(
             let _ = tokio::fs::create_dir_all(parent).await;
         }
         let _ = tokio::fs::write(&no_exist, b"").await;
+        if !cache::is_commit_hash(revision) {
+            let _ = cache::write_ref(cache_dir, repo_folder, revision, &commit_hash).await;
+        }
     }
     HfError::EntryNotFound {
         path: filename.to_string(),

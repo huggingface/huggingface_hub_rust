@@ -267,11 +267,14 @@ fn resolve_cache_dir() -> std::path::PathBuf {
     if let Ok(cache) = std::env::var(constants::HF_HUB_CACHE) {
         return std::path::PathBuf::from(cache);
     }
-    let hf_home = std::env::var(constants::HF_HOME).unwrap_or_else(|_| {
-        let home = dirs_or_home();
-        format!("{home}/.cache/huggingface")
-    });
-    std::path::PathBuf::from(hf_home).join("hub")
+    if let Ok(hf_home) = std::env::var(constants::HF_HOME) {
+        return std::path::PathBuf::from(hf_home).join("hub");
+    }
+    if let Ok(xdg) = std::env::var(constants::XDG_CACHE_HOME) {
+        return std::path::PathBuf::from(xdg).join("huggingface").join("hub");
+    }
+    let home = dirs_or_home();
+    std::path::PathBuf::from(format!("{home}/.cache/huggingface")).join("hub")
 }
 
 #[cfg(test)]
