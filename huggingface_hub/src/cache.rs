@@ -354,12 +354,18 @@ pub(crate) async fn delete_revisions(
         }
 
         let refs_dir = repo_path.join("refs");
-        if let Ok(mut ref_entries) = tokio::fs::read_dir(&refs_dir).await {
-            while let Ok(Some(entry)) = ref_entries.next_entry().await {
-                if entry.path().is_file() {
-                    if let Ok(content) = tokio::fs::read_to_string(entry.path()).await {
-                        if commits_set.contains(content.trim()) {
-                            let _ = tokio::fs::remove_file(entry.path()).await;
+        let mut ref_stack = vec![refs_dir.clone()];
+        while let Some(dir) = ref_stack.pop() {
+            if let Ok(mut ref_entries) = tokio::fs::read_dir(&dir).await {
+                while let Ok(Some(entry)) = ref_entries.next_entry().await {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        ref_stack.push(path);
+                    } else if path.is_file() {
+                        if let Ok(content) = tokio::fs::read_to_string(&path).await {
+                            if commits_set.contains(content.trim()) {
+                                let _ = tokio::fs::remove_file(&path).await;
+                            }
                         }
                     }
                 }
@@ -680,6 +686,39 @@ mod tests {
         assert!(blob_dir.join("shared_blob").exists());
         assert!(!blob_dir.join("unique_blob").exists());
         assert!(!refs_dir.join("main").exists());
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn test_delete_cache_revision_nested_pr_ref() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path();
+        let repo_folder = "models--gpt2";
+
+        let blob_dir = cache.join(repo_folder).join("blobs");
+        tokio::fs::create_dir_all(&blob_dir).await.unwrap();
+        tokio::fs::write(blob_dir.join("blob1"), b"data").await.unwrap();
+
+        let snap = cache.join(repo_folder).join("snapshots").join("pr_commit");
+        tokio::fs::create_dir_all(&snap).await.unwrap();
+        tokio::fs::symlink("../../blobs/blob1", snap.join("file.txt")).await.unwrap();
+
+        // Create a nested PR ref pointing to this commit
+        let pr_ref_dir = cache.join(repo_folder).join("refs").join("refs").join("pr");
+        tokio::fs::create_dir_all(&pr_ref_dir).await.unwrap();
+        tokio::fs::write(pr_ref_dir.join("1"), "pr_commit").await.unwrap();
+
+        // Delete the revision
+        delete_revisions(cache, &[("gpt2", RepoType::Model, "pr_commit")])
+            .await
+            .unwrap();
+
+        // Snapshot should be gone
+        assert!(!snap.exists());
+        // Nested PR ref should also be cleaned up
+        assert!(!pr_ref_dir.join("1").exists());
+        // Orphaned blob should be deleted
+        assert!(!blob_dir.join("blob1").exists());
     }
 
     #[tokio::test]
