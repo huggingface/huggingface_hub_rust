@@ -573,6 +573,12 @@ impl HfApi {
                 if xet_metas.is_empty() {
                     return Ok::<_, HfError>(());
                 }
+                // Acquire per-blob locks before the batch download to maintain
+                // cross-process safety, matching the single-file download path.
+                let mut locks = Vec::with_capacity(xet_metas.len());
+                for m in &xet_metas {
+                    locks.push(cache::acquire_lock(cache_dir, &repo_folder, &m.etag).await?);
+                }
                 let batch_files: Vec<crate::xet::XetBatchFile> = xet_metas
                     .iter()
                     .map(|m| crate::xet::XetBatchFile {
@@ -587,6 +593,7 @@ impl HfApi {
                     cache::create_pointer_symlink(cache_dir, &repo_folder, &m.commit_hash, &m.filename, &m.etag)
                         .await?;
                 }
+                drop(locks);
                 Ok(())
             };
 
