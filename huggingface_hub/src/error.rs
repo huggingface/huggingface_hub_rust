@@ -55,7 +55,21 @@ impl HfError {
     pub(crate) fn is_transient(&self) -> bool {
         match self {
             HfError::Request(e) => e.is_connect() || e.is_timeout(),
-            HfError::Middleware(e) => e.is_connect() || e.is_timeout(),
+            HfError::Middleware(e) => {
+                if e.is_connect() || e.is_timeout() {
+                    return true;
+                }
+                // reqwest_retry wraps the last error in "Request failed after N retries".
+                // Walk the source chain to find the underlying reqwest error.
+                let mut source = std::error::Error::source(e);
+                while let Some(err) = source {
+                    if let Some(req_err) = err.downcast_ref::<reqwest::Error>() {
+                        return req_err.is_connect() || req_err.is_timeout();
+                    }
+                    source = err.source();
+                }
+                false
+            },
             HfError::Http { status, .. } => {
                 matches!(status.as_u16(), 500 | 502 | 503 | 504)
             },
