@@ -81,11 +81,19 @@ pub(crate) async fn create_pointer_symlink(
 
     #[cfg(not(windows))]
     {
-        tokio::fs::symlink(&relative, &pointer).await?;
+        match tokio::fs::symlink(&relative, &pointer).await {
+            Ok(()) => {},
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {},
+            Err(e) => return Err(e.into()),
+        }
     }
     #[cfg(windows)]
     {
-        tokio::fs::copy(&blob_path(cache_dir, repo_folder, etag), &pointer).await?;
+        match tokio::fs::copy(&blob_path(cache_dir, repo_folder, etag), &pointer).await {
+            Ok(_) => {},
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {},
+            Err(e) => return Err(e.into()),
+        }
     }
     Ok(())
 }

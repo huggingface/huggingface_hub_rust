@@ -59,16 +59,11 @@ impl HfError {
                 if e.is_connect() || e.is_timeout() {
                     return true;
                 }
-                // reqwest_retry wraps the last error in "Request failed after N retries".
-                // Walk the source chain to find the underlying reqwest error.
-                let mut source = std::error::Error::source(e);
-                while let Some(err) = source {
-                    if let Some(req_err) = err.downcast_ref::<reqwest::Error>() {
-                        return req_err.is_connect() || req_err.is_timeout();
-                    }
-                    source = err.source();
-                }
-                false
+                // reqwest_retry wraps exhausted-retry errors as Middleware(anyhow),
+                // which type-erases the underlying reqwest::Error. Check the
+                // alternate Display output for known transient error patterns.
+                let msg = format!("{e:#}");
+                msg.contains("client error (Connect)") || msg.contains("client error (Timeout)")
             },
             HfError::Http { status, .. } => {
                 matches!(status.as_u16(), 500 | 502 | 503 | 504)
