@@ -102,6 +102,9 @@ impl HfApi {
         if params.local_dir.is_some() {
             self.download_file_to_local_dir(params).await
         } else {
+            if !self.inner.cache_enabled {
+                return Err(HfError::CacheNotEnabled);
+            }
             self.download_file_to_cache(params).await
         }
     }
@@ -460,6 +463,9 @@ impl HfApi {
     }
 
     pub async fn snapshot_download(&self, params: &SnapshotDownloadParams) -> Result<PathBuf> {
+        if params.local_dir.is_none() && !self.inner.cache_enabled {
+            return Err(HfError::CacheNotEnabled);
+        }
         let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
         let max_workers = params.max_workers.unwrap_or(8);
         let repo_folder = crate::cache::repo_folder_name(&params.repo_id, params.repo_type);

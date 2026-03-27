@@ -27,6 +27,9 @@ pub enum HfError {
     #[error("File not found in local cache: {path}")]
     LocalEntryNotFound { path: String },
 
+    #[error("Cache is not enabled — set cache_enabled(true) on HfApiBuilder, or provide local_dir in download params")]
+    CacheNotEnabled,
+
     #[error("Cache lock timed out: {}", path.display())]
     CacheLockTimeout { path: std::path::PathBuf },
 

@@ -25,6 +25,7 @@ pub(crate) struct HfApiInner {
     pub(crate) endpoint: String,
     pub(crate) token: Option<String>,
     pub(crate) cache_dir: std::path::PathBuf,
+    pub(crate) cache_enabled: bool,
     #[cfg(feature = "xet")]
     pub(crate) xet_session: std::sync::Mutex<Option<xet::xet_session::XetSession>>,
 }
@@ -36,6 +37,7 @@ pub struct HfApiBuilder {
     headers: Option<HeaderMap>,
     client: Option<reqwest::Client>,
     cache_dir: Option<std::path::PathBuf>,
+    cache_enabled: Option<bool>,
 }
 
 impl HfApiBuilder {
@@ -47,6 +49,7 @@ impl HfApiBuilder {
             headers: None,
             client: None,
             cache_dir: None,
+            cache_enabled: None,
         }
     }
 
@@ -80,6 +83,11 @@ impl HfApiBuilder {
 
     pub fn cache_dir(mut self, path: impl Into<std::path::PathBuf>) -> Self {
         self.cache_dir = Some(path.into());
+        self
+    }
+
+    pub fn cache_enabled(mut self, enabled: bool) -> Self {
+        self.cache_enabled = Some(enabled);
         self
     }
 
@@ -125,6 +133,7 @@ impl HfApiBuilder {
                 endpoint: endpoint.trim_end_matches('/').to_string(),
                 token,
                 cache_dir,
+                cache_enabled: self.cache_enabled.unwrap_or(false),
                 #[cfg(feature = "xet")]
                 xet_session: std::sync::Mutex::new(None),
             }),
