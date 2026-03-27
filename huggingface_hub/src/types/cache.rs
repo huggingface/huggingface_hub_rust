@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::path::PathBuf;
 use std::time::SystemTime;
 
@@ -37,10 +39,4 @@ pub struct HfCacheInfo {
     pub repos: Vec<CachedRepoInfo>,
     pub size_on_disk: u64,
     pub warnings: Vec<String>,
-}
-
-pub struct DeleteCacheRevision {
-    pub repo_id: String,
-    pub repo_type: RepoType,
-    pub commit_hash: String,
 }

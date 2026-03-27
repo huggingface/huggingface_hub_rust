@@ -143,15 +143,15 @@ pub(crate) async fn xet_download_to_blob(
     revision: &str,
     file_hash: &str,
     file_size: u64,
-    blob_path: &std::path::Path,
+    path: &std::path::Path,
 ) -> Result<()> {
     let session = api.get_or_init_xet_session("read", repo_id, repo_type, revision).await?;
 
-    if let Some(parent) = blob_path.parent() {
+    if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
 
-    let incomplete_path = PathBuf::from(format!("{}.incomplete", blob_path.display()));
+    let incomplete_path = PathBuf::from(format!("{}.incomplete", path.display()));
 
     let group = session
         .new_download_group()
@@ -174,14 +174,14 @@ pub(crate) async fn xet_download_to_blob(
         .await
         .map_err(|e| HfError::Other(format!("Xet download failed: {e}")))?;
 
-    tokio::fs::rename(&incomplete_path, blob_path).await?;
+    tokio::fs::rename(&incomplete_path, path).await?;
     Ok(())
 }
 
 pub(crate) struct XetBatchFile {
     pub hash: String,
     pub file_size: u64,
-    pub blob_path: PathBuf,
+    pub path: PathBuf,
 }
 
 pub(crate) async fn xet_download_batch(
@@ -204,11 +204,11 @@ pub(crate) async fn xet_download_batch(
 
     let mut incomplete_paths = Vec::with_capacity(files.len());
     for file in files {
-        if let Some(parent) = file.blob_path.parent() {
+        if let Some(parent) = file.path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        let incomplete = PathBuf::from(format!("{}.incomplete", file.blob_path.display()));
+        let incomplete = PathBuf::from(format!("{}.incomplete", file.path.display()));
 
         let file_info = XetFileInfo {
             hash: file.hash.clone(),
@@ -221,7 +221,7 @@ pub(crate) async fn xet_download_batch(
             .await
             .map_err(|e| HfError::Other(format!("Xet batch download failed: {e}")))?;
 
-        incomplete_paths.push((incomplete, file.blob_path.clone()));
+        incomplete_paths.push((incomplete, file.path.clone()));
     }
 
     group

@@ -262,7 +262,6 @@ pub(crate) async fn scan_cache_dir(cache_dir: &Path) -> crate::error::Result<cra
         let commit_refs = read_commit_refs(&repo_path).await;
 
         let mut revisions = Vec::new();
-        let mut repo_nb_files: usize = 0;
         let mut repo_last_accessed = SystemTime::UNIX_EPOCH;
         let mut repo_last_modified = SystemTime::UNIX_EPOCH;
 
@@ -293,7 +292,6 @@ pub(crate) async fn scan_cache_dir(cache_dir: &Path) -> crate::error::Result<cra
                     }
                 }
 
-                repo_nb_files += files.len();
                 let refs = commit_refs.get(&commit_hash).cloned().unwrap_or_default();
 
                 revisions.push(CachedRevisionInfo {
@@ -321,7 +319,7 @@ pub(crate) async fn scan_cache_dir(cache_dir: &Path) -> crate::error::Result<cra
             repo_type,
             repo_path,
             revisions,
-            nb_files: repo_nb_files,
+            nb_files: unique_blobs.len(),
             size_on_disk: repo_size,
             last_accessed: repo_last_accessed,
             last_modified: repo_last_modified,

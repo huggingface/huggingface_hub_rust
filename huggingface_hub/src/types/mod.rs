@@ -25,7 +25,6 @@ pub mod webhooks;
 
 #[cfg(feature = "access_requests")]
 pub use access_requests::*;
-pub use cache::*;
 #[cfg(feature = "collections")]
 pub use collections::*;
 pub use commit::*;

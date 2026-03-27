@@ -606,7 +606,7 @@ impl HfApi {
                         .map(|m| crate::xet::XetBatchFile {
                             hash: m.xet_hash.as_ref().unwrap().clone(),
                             file_size: m.file_size,
-                            blob_path: local_dir.join(&m.filename),
+                            path: local_dir.join(&m.filename),
                         })
                         .collect();
                     crate::xet::xet_download_batch(self, &params.repo_id, params.repo_type, &commit_hash, &batch_files)
@@ -664,7 +664,7 @@ impl HfApi {
                     .map(|m| crate::xet::XetBatchFile {
                         hash: m.xet_hash.as_ref().unwrap().clone(),
                         file_size: m.file_size,
-                        blob_path: cache::blob_path(cache_dir, &repo_folder, &m.etag),
+                        path: cache::blob_path(cache_dir, &repo_folder, &m.etag),
                     })
                     .collect();
                 crate::xet::xet_download_batch(self, &params.repo_id, params.repo_type, &commit_hash, &batch_files)
