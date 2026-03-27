@@ -1,9 +1,14 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use typed_builder::TypedBuilder;
 
 use super::commit::{AddSource, CommitOperation};
 use super::repo::RepoType;
+
+/// Callback function invoked after each operation is processed during a commit.
+/// The argument is the path of the file that was just processed.
+pub type CommitProgressCallback = Arc<dyn Fn(&str) + Send + Sync>;
 
 #[derive(TypedBuilder)]
 pub struct ModelInfoParams {
@@ -304,6 +309,8 @@ pub struct CreateCommitParams {
     pub create_pr: Option<bool>,
     #[builder(default, setter(into, strip_option))]
     pub parent_commit: Option<String>,
+    #[builder(default, setter(strip_option))]
+    pub progress_callback: Option<CommitProgressCallback>,
 }
 
 #[derive(TypedBuilder)]

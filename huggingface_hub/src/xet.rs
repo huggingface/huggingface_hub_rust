@@ -148,6 +148,7 @@ pub(crate) async fn xet_upload(
     repo_id: &str,
     repo_type: Option<RepoType>,
     revision: &str,
+    progress_callback: Option<&crate::types::CommitProgressCallback>,
 ) -> Result<Vec<XetFileInfo>> {
     let session = api.get_or_init_xet_session("write", repo_id, repo_type, revision).await?;
 
@@ -158,7 +159,7 @@ pub(crate) async fn xet_upload(
 
     let mut task_ids_in_order = Vec::with_capacity(files.len());
 
-    for (_path_in_repo, source) in files {
+    for (path_in_repo, source) in files {
         let handle = match source {
             AddSource::File(path) => commit
                 .upload_from_path(path.clone(), Sha256Policy::Compute)
@@ -170,6 +171,10 @@ pub(crate) async fn xet_upload(
                 .map_err(|e| HfError::Other(format!("Xet upload failed: {e}")))?,
         };
         task_ids_in_order.push(handle.task_id);
+
+        if let Some(callback) = progress_callback {
+            callback(path_in_repo);
+        }
     }
 
     let results = commit

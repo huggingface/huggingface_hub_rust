@@ -171,8 +171,9 @@ impl HfApi {
         // Determine which files should be uploaded via xet (LFS) vs inline
         // (regular). Files uploaded via xet are referenced by their SHA256 OID
         // in the commit NDJSON.
-        let lfs_uploaded: HashMap<String, (String, u64)> =
-            self.preupload_and_upload_lfs_files(params, revision).await?;
+        let lfs_uploaded: HashMap<String, (String, u64)> = self
+            .preupload_and_upload_lfs_files(params, revision, params.progress_callback.as_ref())
+            .await?;
 
         let mut ndjson_lines: Vec<Vec<u8>> = Vec::new();
 
@@ -187,6 +188,11 @@ impl HfApi {
         ndjson_lines.push(serde_json::to_vec(&header_line)?);
 
         for op in &params.operations {
+            let path_in_repo = match op {
+                CommitOperation::Add { path_in_repo, .. } => path_in_repo,
+                CommitOperation::Delete { path_in_repo } => path_in_repo,
+            };
+            let is_lfs = lfs_uploaded.contains_key(path_in_repo);
             let line = match op {
                 CommitOperation::Add { path_in_repo, source } => {
                     if let Some((oid, size)) = lfs_uploaded.get(path_in_repo) {
@@ -211,6 +217,13 @@ impl HfApi {
                 },
             };
             ndjson_lines.push(serde_json::to_vec(&line)?);
+
+            // Call progress callback for non-LFS files (LFS files already triggered callback during upload)
+            if !is_lfs {
+                if let Some(ref callback) = params.progress_callback {
+                    callback(path_in_repo);
+                }
+            }
         }
 
         let body: Vec<u8> = ndjson_lines
@@ -448,6 +461,7 @@ impl HfApi {
         &self,
         params: &CreateCommitParams,
         revision: &str,
+        progress_callback: Option<&crate::types::CommitProgressCallback>,
     ) -> Result<HashMap<String, (String, u64)>> {
         let add_ops: Vec<(&String, &AddSource)> = params
             .operations
@@ -497,12 +511,13 @@ impl HfApi {
         // LFS files require xet upload — fail if the feature is not enabled
         #[cfg(not(feature = "xet"))]
         {
-            let _ = lfs_files;
+            let _ = (lfs_files, progress_callback);
             Err(HfError::XetNotEnabled)
         }
 
         #[cfg(feature = "xet")]
-        self.upload_lfs_files_via_xet(params, revision, &lfs_files).await
+        self.upload_lfs_files_via_xet(params, revision, &lfs_files, progress_callback)
+            .await
     }
 
     /// Call the Hub preupload endpoint to determine upload mode per file.
@@ -558,6 +573,7 @@ impl HfApi {
         params: &CreateCommitParams,
         revision: &str,
         lfs_files: &[&(String, u64, Vec<u8>, &AddSource)],
+        progress_callback: Option<&crate::types::CommitProgressCallback>,
     ) -> Result<HashMap<String, (String, u64)>> {
         // Step 4: Compute SHA256 for LFS files
         let mut lfs_with_sha: Vec<(String, u64, String, &AddSource)> = Vec::new();
@@ -583,7 +599,8 @@ impl HfApi {
             .map(|(path, _, _, source)| (path.clone(), (*source).clone()))
             .collect();
 
-        crate::xet::xet_upload(self, &xet_files, &params.repo_id, params.repo_type, revision).await?;
+        crate::xet::xet_upload(self, &xet_files, &params.repo_id, params.repo_type, revision, progress_callback)
+            .await?;
 
         let result: HashMap<String, (String, u64)> = lfs_with_sha
             .into_iter()
