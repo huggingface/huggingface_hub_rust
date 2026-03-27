@@ -44,6 +44,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tempfile = "3"
 rand = "0.9"
 sha2 = "0.10"
+serial_test = "3"
 
 [[example]]
 name = "repo"

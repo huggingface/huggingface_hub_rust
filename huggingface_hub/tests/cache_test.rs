@@ -11,6 +11,7 @@ use std::path::Path;
 
 use huggingface_hub::types::{DownloadFileParams, RepoType, SnapshotDownloadParams};
 use huggingface_hub::{HfApi, HfApiBuilder, HfError};
+use serial_test::serial;
 
 fn api() -> Option<HfApi> {
     if std::env::var("HF_TOKEN").is_err() {
@@ -863,6 +864,7 @@ async fn test_concurrent_downloads_same_file() {
 // =============================================================================
 
 #[test]
+#[serial]
 fn test_hf_hub_cache_env_var() {
     let dir = tempfile::tempdir().unwrap();
     // Save and set env
@@ -886,6 +888,7 @@ fn test_hf_hub_cache_env_var() {
 }
 
 #[test]
+#[serial]
 fn test_xdg_cache_home_env_var() {
     let dir = tempfile::tempdir().unwrap();
     // Save existing env vars
