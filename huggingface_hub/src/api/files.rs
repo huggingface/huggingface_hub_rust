@@ -508,20 +508,6 @@ impl HfApi {
             filenames.retain(|f| !crate::cache::snapshot_path(cache_dir, &repo_folder, &commit_hash, f).exists());
         }
 
-        if let Some(ref local_dir) = params.local_dir {
-            let dl_params = build_download_params(
-                &params.repo_id,
-                &filenames,
-                params.repo_type,
-                &commit_hash,
-                params.force_download,
-                Some(local_dir.clone()),
-            );
-            download_concurrently(self, &dl_params, max_workers).await?;
-            return Ok(local_dir.clone());
-        }
-
-        // Cache mode downloads
         #[cfg(feature = "xet")]
         {
             struct FileMetadataInfo {
@@ -596,8 +582,55 @@ impl HfApi {
                 .collect();
 
             let mut xet_metas = Vec::new();
-            let mut non_xet_metas = Vec::new();
+            let mut non_xet_filenames = Vec::new();
 
+            if let Some(ref local_dir) = params.local_dir {
+                for meta in file_metas {
+                    let dest = local_dir.join(&meta.filename);
+                    if dest.exists() && !force {
+                        continue;
+                    }
+                    if meta.xet_hash.is_some() {
+                        xet_metas.push(meta);
+                    } else {
+                        non_xet_filenames.push(meta.filename);
+                    }
+                }
+
+                let xet_batch_fut = async {
+                    if xet_metas.is_empty() {
+                        return Ok::<_, HfError>(());
+                    }
+                    let batch_files: Vec<crate::xet::XetBatchFile> = xet_metas
+                        .iter()
+                        .map(|m| crate::xet::XetBatchFile {
+                            hash: m.xet_hash.as_ref().unwrap().clone(),
+                            file_size: m.file_size,
+                            blob_path: local_dir.join(&m.filename),
+                        })
+                        .collect();
+                    crate::xet::xet_download_batch(self, &params.repo_id, params.repo_type, &commit_hash, &batch_files)
+                        .await
+                };
+
+                let non_xet_dl_params = build_download_params(
+                    &params.repo_id,
+                    &non_xet_filenames,
+                    params.repo_type,
+                    &commit_hash,
+                    params.force_download,
+                    Some(local_dir.clone()),
+                );
+                let non_xet_fut = async {
+                    download_concurrently(self, &non_xet_dl_params, max_workers).await?;
+                    Ok::<_, HfError>(())
+                };
+
+                tokio::try_join!(xet_batch_fut, non_xet_fut)?;
+                return Ok(local_dir.clone());
+            }
+
+            // Cache mode
             for meta in file_metas {
                 let blob = cache::blob_path(cache_dir, &repo_folder, &meta.etag);
                 if blob.exists() && !force {
@@ -614,7 +647,7 @@ impl HfApi {
                 if meta.xet_hash.is_some() {
                     xet_metas.push(meta);
                 } else {
-                    non_xet_metas.push(meta);
+                    non_xet_filenames.push(meta.filename);
                 }
             }
 
@@ -622,8 +655,6 @@ impl HfApi {
                 if xet_metas.is_empty() {
                     return Ok::<_, HfError>(());
                 }
-                // Acquire per-blob locks before the batch download to maintain
-                // cross-process safety, matching the single-file download path.
                 let mut locks = Vec::with_capacity(xet_metas.len());
                 for m in &xet_metas {
                     locks.push(cache::acquire_lock(cache_dir, &repo_folder, &m.etag).await?);
@@ -646,7 +677,6 @@ impl HfApi {
                 Ok(())
             };
 
-            let non_xet_filenames: Vec<String> = non_xet_metas.iter().map(|m| m.filename.clone()).collect();
             let non_xet_dl_params = build_download_params(
                 &params.repo_id,
                 &non_xet_filenames,
@@ -655,7 +685,6 @@ impl HfApi {
                 params.force_download,
                 None,
             );
-
             let non_xet_fut = async {
                 download_concurrently(self, &non_xet_dl_params, max_workers).await?;
                 Ok::<_, HfError>(())
@@ -666,6 +695,19 @@ impl HfApi {
 
         #[cfg(not(feature = "xet"))]
         {
+            if let Some(ref local_dir) = params.local_dir {
+                let dl_params = build_download_params(
+                    &params.repo_id,
+                    &filenames,
+                    params.repo_type,
+                    &commit_hash,
+                    params.force_download,
+                    Some(local_dir.clone()),
+                );
+                download_concurrently(self, &dl_params, max_workers).await?;
+                return Ok(local_dir.clone());
+            }
+
             let dl_params = build_download_params(
                 &params.repo_id,
                 &filenames,
