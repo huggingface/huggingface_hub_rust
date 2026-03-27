@@ -165,6 +165,9 @@ impl HfApi {
         Ok(dest_path)
     }
 
+    /// Resolve a file from the local cache without making network requests.
+    /// Matches Python's `try_to_load_from_cache`: checks the snapshot pointer
+    /// first, then consults `.no_exist` markers for negative cache hits.
     fn resolve_from_cache_only(&self, repo_folder: &str, revision: &str, filename: &str) -> Result<PathBuf> {
         let cache_dir = &self.inner.cache_dir;
 
@@ -179,6 +182,12 @@ impl HfApi {
             let snap = cache::snapshot_path(cache_dir, repo_folder, hash, filename);
             if snap.exists() {
                 return Ok(snap);
+            }
+            if cache::no_exist_path(cache_dir, repo_folder, hash, filename).exists() {
+                return Err(HfError::EntryNotFound {
+                    path: filename.to_string(),
+                    repo_id: String::new(),
+                });
             }
         }
 
@@ -221,13 +230,6 @@ impl HfApi {
 
         if params.local_files_only.unwrap_or(false) {
             return self.resolve_from_cache_only(&repo_folder, revision, &params.filename);
-        }
-
-        if !force_download && cache::check_no_exist(cache_dir, &repo_folder, revision, &params.filename) {
-            return Err(HfError::EntryNotFound {
-                path: params.filename.clone(),
-                repo_id: params.repo_id.clone(),
-            });
         }
 
         let result = self
@@ -533,6 +535,12 @@ impl HfApi {
                 let repo_folder_ref = &repo_folder;
                 async move {
                     let resp = client.head(&url).headers(auth).send().await?;
+                    // Per-file 404 resilience: write a .no_exist marker and skip
+                    // the file rather than aborting the entire snapshot download.
+                    // This matches the Python huggingface_hub library behavior.
+                    // Alternative: since the file list comes from list_repo_tree
+                    // on a pinned commit, a 404 here is unexpected and could be
+                    // treated as an error instead.
                     if resp.status() == reqwest::StatusCode::NOT_FOUND {
                         if let Some(commit) = extract_commit_hash(&resp) {
                             let no_exist = cache::no_exist_path(cache_dir, repo_folder_ref, &commit, &filename);

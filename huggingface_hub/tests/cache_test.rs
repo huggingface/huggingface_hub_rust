@@ -237,19 +237,16 @@ async fn test_force_download_ignores_no_exist() {
     let cache_dir = tempfile::tempdir().unwrap();
     let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
-    // Manually create a fake .no_exist marker for a file that actually exists
+    // Create a stale .no_exist marker — network download should succeed
+    // regardless since .no_exist is only consulted via resolve_from_cache_only
     let repo_folder = "models--gpt2";
     let fake_commit = "0000000000000000000000000000000000000000";
     let no_exist_dir = cache_dir.path().join(repo_folder).join(".no_exist").join(fake_commit);
     std::fs::create_dir_all(&no_exist_dir).unwrap();
     std::fs::write(no_exist_dir.join("config.json"), b"").unwrap();
-
-    // Also create a fake ref so check_no_exist resolves
     let refs_dir = cache_dir.path().join(repo_folder).join("refs");
     std::fs::create_dir_all(&refs_dir).unwrap();
     std::fs::write(refs_dir.join("main"), fake_commit).unwrap();
-
-    // force_download should ignore the marker and succeed
     let params = DownloadFileParams::builder()
         .repo_id("gpt2")
         .filename("config.json")
@@ -299,21 +296,17 @@ async fn test_no_exist_marker_prevents_request() {
         .build();
     let _ = api.download_file(&params).await;
 
-    // Second download with a broken endpoint should still return EntryNotFound
-    // instantly because the .no_exist marker is checked before any network call
-    let api_broken = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .endpoint("http://localhost:1")
-        .build()
-        .unwrap();
+    // .no_exist is checked via resolve_from_cache_only (local_files_only or
+    // offline fallback), matching Python's try_to_load_from_cache behavior.
     let params = DownloadFileParams::builder()
         .repo_id("gpt2")
         .filename("nonexistent_file_xyz789.txt")
+        .local_files_only(true)
         .build();
-    let result = api_broken.download_file(&params).await;
+    let result = api.download_file(&params).await;
     assert!(
         matches!(result, Err(HfError::EntryNotFound { .. })),
-        "Should return EntryNotFound from .no_exist marker without network: {result:?}"
+        "Should return EntryNotFound from .no_exist marker via local_files_only: {result:?}"
     );
 }
 
