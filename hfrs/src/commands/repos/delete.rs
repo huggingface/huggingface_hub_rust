@@ -1,13 +1,32 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::HfApi;
+use huggingface_hub::{DeleteRepoParams, HfApi};
 
+use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
 
 /// Delete a repository
 #[derive(ClapArgs)]
-pub struct Args {}
+pub struct Args {
+    /// Repository ID (e.g. username/my-model)
+    pub repo_id: String,
 
-pub async fn execute(_api: &HfApi, _args: Args) -> Result<CommandResult> {
+    /// Repository type
+    #[arg(long, value_enum, default_value = "model")]
+    pub r#type: RepoTypeArg,
+
+    /// Do not fail if the repository does not exist
+    #[arg(long)]
+    pub missing_ok: bool,
+}
+
+pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+    let repo_type: huggingface_hub::RepoType = args.r#type.into();
+    let params = DeleteRepoParams {
+        repo_id: args.repo_id,
+        repo_type: Some(repo_type),
+        missing_ok: args.missing_ok,
+    };
+    api.delete_repo(&params).await?;
     Ok(CommandResult::Silent)
 }

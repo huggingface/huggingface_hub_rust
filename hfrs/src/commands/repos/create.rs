@@ -1,13 +1,42 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::HfApi;
+use huggingface_hub::{CreateRepoParams, HfApi};
 
+use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
 
 /// Create a new repository
 #[derive(ClapArgs)]
-pub struct Args {}
+pub struct Args {
+    /// Repository ID (e.g. username/my-model)
+    pub repo_id: String,
 
-pub async fn execute(_api: &HfApi, _args: Args) -> Result<CommandResult> {
-    Ok(CommandResult::Silent)
+    /// Repository type
+    #[arg(long, value_enum, default_value = "model")]
+    pub r#type: RepoTypeArg,
+
+    /// Make the repository private
+    #[arg(long)]
+    pub private: bool,
+
+    /// Do not fail if the repository already exists
+    #[arg(long)]
+    pub exist_ok: bool,
+
+    /// Space SDK (only for Space repositories)
+    #[arg(long)]
+    pub space_sdk: Option<String>,
+}
+
+pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+    let repo_type: huggingface_hub::RepoType = args.r#type.into();
+    let params = CreateRepoParams {
+        repo_id: args.repo_id,
+        repo_type: Some(repo_type),
+        private: if args.private { Some(true) } else { None },
+        exist_ok: args.exist_ok,
+        space_sdk: args.space_sdk,
+    };
+    let result = api.create_repo(&params).await?;
+    Ok(CommandResult::Raw(result.url))
 }

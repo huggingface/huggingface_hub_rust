@@ -1,13 +1,42 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::HfApi;
+use huggingface_hub::{HfApi, UpdateRepoParams};
 
+use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
 
 /// Update repository settings
 #[derive(ClapArgs)]
-pub struct Args {}
+pub struct Args {
+    /// Repository ID (e.g. username/my-model)
+    pub repo_id: String,
 
-pub async fn execute(_api: &HfApi, _args: Args) -> Result<CommandResult> {
+    /// Repository type
+    #[arg(long, value_enum, default_value = "model")]
+    pub r#type: RepoTypeArg,
+
+    /// Gating strategy (e.g. "auto", "manual", or "false" to disable)
+    #[arg(long)]
+    pub gated: Option<String>,
+
+    /// Set private visibility
+    #[arg(long)]
+    pub private: Option<bool>,
+
+    /// Repository description
+    #[arg(long)]
+    pub description: Option<String>,
+}
+
+pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+    let repo_type: huggingface_hub::RepoType = args.r#type.into();
+    let params = UpdateRepoParams {
+        repo_id: args.repo_id,
+        repo_type: Some(repo_type),
+        private: args.private,
+        gated: args.gated,
+        description: args.description,
+    };
+    api.update_repo_settings(&params).await?;
     Ok(CommandResult::Silent)
 }
