@@ -1,4 +1,3 @@
-# hfrs CLI Design Spec
 
 A Rust CLI tool that mirrors the `hf` CLI provided by the Python `huggingface_hub` library. Built on top of the `huggingface-hub` Rust crate using `clap` with derive macros.
 
@@ -204,6 +203,7 @@ Each command group follows this pattern:
 ```rust
 // commands/repos/mod.rs
 #[derive(Args)]
+#[command(about = "Manage repos on the Hub")]
 pub struct ReposCommand {
     #[command(subcommand)]
     pub command: ReposSubcommand,
@@ -211,15 +211,36 @@ pub struct ReposCommand {
 
 #[derive(Subcommand)]
 pub enum ReposSubcommand {
+    /// Create a new repository on the Hub
     Create(create::CreateArgs),
+    /// Delete a repository from the Hub
     Delete(delete::DeleteArgs),
+    /// Move (rename) a repository
     Move(move_repo::MoveArgs),
+    /// Update repository settings (visibility, gating)
     Settings(settings::SettingsArgs),
+    /// Delete files from a repository via commit
     DeleteFiles(delete_files::DeleteFilesArgs),
+    /// Manage branches
     Branch(branch::BranchCommand),
+    /// Manage tags
     Tag(tag::TagCommand),
 }
 ```
+
+### Help Text Guidelines
+
+Every command and argument must have descriptive help text so that `hfrs --help` and `hfrs <command> --help` are self-documenting. Use clap's derive attributes:
+
+- **Commands and subcommands:** Use `#[command(about = "...")]` for the short description shown in parent help, and `#[command(long_about = "...")]` when a longer explanation is needed in the command's own `--help`.
+- **Positional arguments:** Use `/// doc comment` or `#[arg(help = "...")]` to describe what the argument is. Mark required arguments clearly — clap shows them without brackets by default.
+- **Optional flags:** Use `/// doc comment` to describe the effect of providing the flag. If a flag has a default, state it in the help text (e.g., `"Maximum number of results to return [default: 10]"`).
+- **Boolean flags:** Describe what enabling the flag does (e.g., `"Only print IDs, one per line"`).
+- **Value enums:** Use `#[arg(value_enum)]` so that `--help` lists the allowed values. Add `#[value(help = "...")]` on individual variants when the meaning isn't obvious from the name.
+- **Repeatable flags:** Note in the help text that the flag can be specified multiple times (e.g., `"Filter by tags. Can be specified multiple times"`).
+- **Mutually exclusive or conditional args:** Document constraints in the help text (e.g., `"Required when --repo-type is space"`).
+
+The goal: a user should be able to run `hfrs <command> --help` and understand every argument without consulting external docs.
 
 ### Leaf Command Pattern
 
@@ -227,20 +248,30 @@ Each leaf command is a struct with clap derive fields, plus an `execute` method:
 
 ```rust
 // commands/models/list.rs
+
+/// List models on the Hugging Face Hub.
 #[derive(Args)]
+#[command(about = "List models on the Hub")]
 pub struct ListArgs {
+    /// Filter by search query
     #[arg(long)]
     search: Option<String>,
+    /// Filter by model author or organization
     #[arg(long)]
     author: Option<String>,
+    /// Filter by tags. Can be specified multiple times
     #[arg(long)]
     filter: Vec<String>,
+    /// Sort order for results
     #[arg(long, value_enum, default_value_t = SortOrder::TrendingScore)]
     sort: SortOrder,
+    /// Maximum number of results to return
     #[arg(long, default_value = "10")]
     limit: usize,
+    /// Output format
     #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
     format: OutputFormat,
+    /// Only print model IDs, one per line
     #[arg(short, long)]
     quiet: bool,
 }
