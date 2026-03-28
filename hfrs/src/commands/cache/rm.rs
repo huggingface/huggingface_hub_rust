@@ -6,8 +6,16 @@ use crate::output::CommandResult;
 
 /// Delete cached revisions
 #[derive(ClapArgs)]
-pub struct Args {}
+pub struct Args {
+    /// Cache entries to delete (repo_id or repo_id@revision format)
+    #[arg(required = true)]
+    pub targets: Vec<String>,
+}
 
 pub async fn execute(_api: &HfApi, _args: Args) -> Result<CommandResult> {
-    Ok(CommandResult::Silent)
+    anyhow::bail!(
+        "Cache deletion is not yet supported. \
+        To delete cached files, remove them manually from the HF cache directory \
+        (default: ~/.cache/huggingface/hub)."
+    )
 }
