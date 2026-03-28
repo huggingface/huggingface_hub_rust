@@ -6,8 +6,16 @@ use crate::output::CommandResult;
 
 /// Cancel a running job
 #[derive(ClapArgs)]
-pub struct Args {}
+pub struct Args {
+    /// Job ID
+    pub job_id: String,
 
-pub async fn execute(_api: &HfApi, _args: Args) -> Result<CommandResult> {
+    /// Namespace (user or organization)
+    #[arg(long)]
+    pub namespace: Option<String>,
+}
+
+pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+    api.cancel_job(&args.job_id, args.namespace.as_deref()).await?;
     Ok(CommandResult::Silent)
 }
