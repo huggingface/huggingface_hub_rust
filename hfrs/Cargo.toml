@@ -23,7 +23,8 @@ huggingface-hub = { path = "../huggingface_hub", features = [
     "likes",
     "papers",
 ] }
-clap = { version = "4", features = ["derive", "env"] }
+clap = { version = "4", features = ["derive", "env", "color"] }
+owo-colors = "4"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

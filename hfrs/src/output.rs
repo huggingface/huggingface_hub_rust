@@ -1,5 +1,5 @@
 use anyhow::Result;
-use comfy_table::{Cell, Table};
+use comfy_table::{Cell, ContentArrangement, Table};
 use serde_json::Value;
 
 use crate::cli::OutputFormat;
@@ -68,7 +68,11 @@ pub fn render(result: CommandResult) -> Result<()> {
                     println!("{}", serde_json::to_string_pretty(&output.json_value)?);
                 },
                 OutputFormat::Table => {
+                    if output.rows.is_empty() {
+                        return Ok(());
+                    }
                     let mut table = Table::new();
+                    table.set_content_arrangement(ContentArrangement::Dynamic);
                     if !output.headers.is_empty() {
                         table.set_header(output.headers.iter().map(Cell::new));
                     }

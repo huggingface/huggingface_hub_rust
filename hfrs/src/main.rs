@@ -3,19 +3,23 @@ mod commands;
 mod output;
 mod util;
 
+use std::io::IsTerminal;
 use std::process::ExitCode;
 
 use clap::Parser;
 use cli::{Cli, Command};
 use huggingface_hub::{HfApiBuilder, HfError};
 use output::render;
+use owo_colors::OwoColorize;
 use tracing::{debug, info};
 use util::token::read_active_token;
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    init_logging();
     let cli = Cli::parse();
+
+    let color = should_use_color(cli.no_color);
+    init_logging(color);
 
     let token = cli
         .token
@@ -49,8 +53,7 @@ async fn main() -> ExitCode {
             api
         },
         Err(e) => {
-            let message = format_hf_error(&e);
-            eprintln!("Error: {message}");
+            print_hf_error(&e, color);
             return ExitCode::FAILURE;
         },
     };
@@ -85,33 +88,60 @@ async fn main() -> ExitCode {
             ExitCode::SUCCESS
         },
         Err(e) => {
-            print_anyhow_error(&e);
+            print_anyhow_error(&e, color);
             ExitCode::FAILURE
         },
     }
 }
 
-fn print_anyhow_error(err: &anyhow::Error) {
+fn should_use_color(no_color_flag: bool) -> bool {
+    if no_color_flag {
+        return false;
+    }
+    if std::env::var("NO_COLOR").is_ok() {
+        return false;
+    }
+    std::io::stderr().is_terminal()
+}
+
+fn print_hf_error(err: &HfError, color: bool) {
+    let message = format_hf_error(err);
+    if color {
+        eprintln!("{} {message}", "Error:".red().bold());
+    } else {
+        eprintln!("Error: {message}");
+    }
+}
+
+fn print_anyhow_error(err: &anyhow::Error, color: bool) {
     let message = format_anyhow_error(err);
-    eprintln!("Error: {message}");
+
+    if color {
+        eprintln!("{} {message}", "Error:".red().bold());
+    } else {
+        eprintln!("Error: {message}");
+    }
 
     if std::env::var("HF_DEBUG").is_ok() {
-        // Print the full error chain
         for cause in err.chain().skip(1) {
-            eprintln!("  Caused by: {cause}");
+            if color {
+                eprintln!("  {} {cause}", "Caused by:".dimmed());
+            } else {
+                eprintln!("  Caused by: {cause}");
+            }
         }
+    } else if color {
+        eprintln!("{}", "Set HF_DEBUG=1 for the full error trace.".dimmed());
     } else {
-        eprintln!("\x1b[90mSet HF_DEBUG=1 for the full error trace.\x1b[0m");
+        eprintln!("Set HF_DEBUG=1 for the full error trace.");
     }
 }
 
 fn format_anyhow_error(err: &anyhow::Error) -> String {
-    // Try to downcast to HfError for nice messages
     if let Some(hf_err) = err.downcast_ref::<HfError>() {
         return format_hf_error(hf_err);
     }
 
-    // Walk the chain looking for HfError
     for cause in err.chain() {
         if let Some(hf_err) = cause.downcast_ref::<HfError>() {
             return format_hf_error(hf_err);
@@ -168,7 +198,6 @@ fn format_hf_error(err: &HfError) -> String {
                     if body.is_empty() {
                         format!("{status} {url}")
                     } else {
-                        // Try to extract a clean error message from the JSON body
                         if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
                             if let Some(error_msg) = json.get("error").and_then(|e| e.as_str()) {
                                 return error_msg.to_string();
@@ -223,12 +252,9 @@ fn format_hf_error(err: &HfError) -> String {
     }
 }
 
-fn init_logging() {
+fn init_logging(color: bool) {
     use tracing_subscriber::EnvFilter;
 
-    // Priority: HF_LOG_LEVEL > HF_DEBUG > default (off)
-    // HF_LOG_LEVEL accepts standard tracing directives: error, warn, info, debug, trace
-    // It can also include per-module filters like "hfrs=debug,huggingface_hub=trace"
     let filter = if let Ok(level) = std::env::var("HF_LOG_LEVEL") {
         EnvFilter::try_new(&level).unwrap_or_else(|_| {
             eprintln!("Warning: invalid HF_LOG_LEVEL='{level}'. Valid values: error, warn, info, debug, trace");
@@ -243,6 +269,7 @@ fn init_logging() {
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(true)
+        .with_ansi(color)
         .with_writer(std::io::stderr)
         .init();
 }

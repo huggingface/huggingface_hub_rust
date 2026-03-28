@@ -12,6 +12,10 @@ pub struct Cli {
     #[arg(long, env = "HF_ENDPOINT", global = true)]
     pub endpoint: Option<String>,
 
+    /// Disable colored output
+    #[arg(long, global = true)]
+    pub no_color: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }
