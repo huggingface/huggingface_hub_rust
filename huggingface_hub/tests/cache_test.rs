@@ -1490,3 +1490,343 @@ print("REF_INTEROP_OK")
     assert!(output.status.success(), "Python ref interop failed.\nstdout: {stdout}\nstderr: {stderr}");
     assert!(stdout.contains("REF_INTEROP_OK"));
 }
+
+#[tokio::test]
+async fn test_interop_python_no_exist_rust_reads() {
+    let Some(_) = api() else { return };
+    let base_dir = tempfile::tempdir().unwrap();
+    let cache_dir = base_dir.path().join("cache");
+    std::fs::create_dir_all(&cache_dir).unwrap();
+
+    let Some(venv_dir) = setup_python_venv(base_dir.path()) else {
+        return;
+    };
+    let python = python_bin(&venv_dir);
+    let token = std::env::var("HF_TOKEN").unwrap();
+
+    // Python: trigger 404 to create .no_exist marker
+    let script = format!(
+        r#"
+import os
+os.environ["HF_HUB_CACHE"] = "{cache}"
+os.environ["HF_TOKEN"] = "{token}"
+from huggingface_hub import hf_hub_download
+try:
+    hf_hub_download("gpt2", "python_no_exist_interop_test.txt")
+except Exception:
+    pass
+print("DONE")
+"#,
+        cache = cache_dir.display(),
+        token = token,
+    );
+    let output = std::process::Command::new(&python).args(["-c", &script]).output().unwrap();
+    assert!(output.status.success(), "Python failed: {}", String::from_utf8_lossy(&output.stderr));
+
+    // Rust: local_files_only should find the .no_exist marker via resolve_from_cache_only
+    let api = HfApiBuilder::new().cache_dir(&cache_dir).cache_enabled(true).build().unwrap();
+    let params = DownloadFileParams::builder()
+        .repo_id("gpt2")
+        .filename("python_no_exist_interop_test.txt")
+        .local_files_only(true)
+        .build();
+    let result = api.download_file(&params).await;
+    assert!(
+        matches!(result, Err(HfError::EntryNotFound { .. })),
+        "Rust should recognize Python's .no_exist marker via local_files_only: {result:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_interop_python_ref_rust_local_files_only() {
+    let Some(_) = api() else { return };
+    let base_dir = tempfile::tempdir().unwrap();
+    let cache_dir = base_dir.path().join("cache");
+    std::fs::create_dir_all(&cache_dir).unwrap();
+
+    let Some(venv_dir) = setup_python_venv(base_dir.path()) else {
+        return;
+    };
+    let python = python_bin(&venv_dir);
+    let token = std::env::var("HF_TOKEN").unwrap();
+
+    // Python downloads file (creates refs/main + blob + symlink)
+    let script = format!(
+        r#"
+import os
+os.environ["HF_HUB_CACHE"] = "{cache}"
+os.environ["HF_TOKEN"] = "{token}"
+from huggingface_hub import hf_hub_download
+hf_hub_download("gpt2", "config.json")
+"#,
+        cache = cache_dir.display(),
+        token = token,
+    );
+    let output = std::process::Command::new(&python).args(["-c", &script]).output().unwrap();
+    assert!(output.status.success(), "Python failed: {}", String::from_utf8_lossy(&output.stderr));
+
+    // Rust: local_files_only should find the file via Python's ref
+    let api = HfApiBuilder::new().cache_dir(&cache_dir).cache_enabled(true).build().unwrap();
+    let params = DownloadFileParams::builder()
+        .repo_id("gpt2")
+        .filename("config.json")
+        .local_files_only(true)
+        .build();
+    let path = api.download_file(&params).await.unwrap();
+    assert!(path.exists());
+    let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert!(content.get("model_type").is_some());
+}
+
+#[tokio::test]
+async fn test_interop_rust_snapshot_python_snapshot_reuse() {
+    let Some(_) = api() else { return };
+    let base_dir = tempfile::tempdir().unwrap();
+    let cache_dir = base_dir.path().join("cache");
+    std::fs::create_dir_all(&cache_dir).unwrap();
+
+    let Some(venv_dir) = setup_python_venv(base_dir.path()) else {
+        return;
+    };
+    let python = python_bin(&venv_dir);
+    let token = std::env::var("HF_TOKEN").unwrap();
+
+    // Rust snapshot_download first
+    let api = HfApiBuilder::new().cache_dir(&cache_dir).cache_enabled(true).build().unwrap();
+    let params = SnapshotDownloadParams::builder()
+        .repo_id("gpt2")
+        .allow_patterns(vec!["*.json".to_string()])
+        .build();
+    api.snapshot_download(&params).await.unwrap();
+
+    let repo_folder = find_repo_folder(&cache_dir, "gpt2");
+    let blob_count_before = std::fs::read_dir(repo_folder.join("blobs")).unwrap().count();
+
+    // Python snapshot_download same patterns — should reuse Rust's blobs
+    let script = format!(
+        r#"
+import os
+os.environ["HF_HUB_CACHE"] = "{cache}"
+os.environ["HF_TOKEN"] = "{token}"
+from huggingface_hub import snapshot_download
+snapshot_download("gpt2", allow_patterns=["*.json"])
+print("OK")
+"#,
+        cache = cache_dir.display(),
+        token = token,
+    );
+    let output = std::process::Command::new(&python).args(["-c", &script]).output().unwrap();
+    assert!(output.status.success(), "Python snapshot failed: {}", String::from_utf8_lossy(&output.stderr));
+
+    let blob_count_after = std::fs::read_dir(repo_folder.join("blobs")).unwrap().count();
+    assert_eq!(blob_count_before, blob_count_after, "Python should reuse Rust's blobs");
+}
+
+#[tokio::test]
+async fn test_interop_dataset_repo_type() {
+    let Some(_) = api() else { return };
+    let base_dir = tempfile::tempdir().unwrap();
+    let cache_dir = base_dir.path().join("cache");
+    std::fs::create_dir_all(&cache_dir).unwrap();
+
+    let Some(venv_dir) = setup_python_venv(base_dir.path()) else {
+        return;
+    };
+    let python = python_bin(&venv_dir);
+    let token = std::env::var("HF_TOKEN").unwrap();
+
+    // Rust downloads a dataset file
+    let api = HfApiBuilder::new().cache_dir(&cache_dir).cache_enabled(true).build().unwrap();
+    let params = DownloadFileParams::builder()
+        .repo_id("rajpurkar/squad")
+        .filename("README.md")
+        .repo_type(RepoType::Dataset)
+        .build();
+    api.download_file(&params).await.unwrap();
+
+    // Python reads the same file with local_files_only
+    let script = format!(
+        r#"
+import os
+os.environ["HF_HUB_CACHE"] = "{cache}"
+os.environ["HF_TOKEN"] = "{token}"
+from huggingface_hub import hf_hub_download
+path = hf_hub_download("rajpurkar/squad", "README.md", repo_type="dataset", local_files_only=True)
+assert os.path.exists(path), f"Not found: {{path}}"
+assert os.path.getsize(path) > 0
+print("DATASET_INTEROP_OK")
+"#,
+        cache = cache_dir.display(),
+        token = token,
+    );
+    let output = std::process::Command::new(&python).args(["-c", &script]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "Python dataset interop failed.\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("DATASET_INTEROP_OK"));
+}
+
+#[cfg(not(windows))]
+#[tokio::test]
+async fn test_interop_symlink_target_format() {
+    let Some(_) = api() else { return };
+    let base_dir = tempfile::tempdir().unwrap();
+    let cache_dir = base_dir.path().join("cache");
+    std::fs::create_dir_all(&cache_dir).unwrap();
+
+    let Some(venv_dir) = setup_python_venv(base_dir.path()) else {
+        return;
+    };
+    let python = python_bin(&venv_dir);
+    let token = std::env::var("HF_TOKEN").unwrap();
+
+    // Python downloads file — creates the canonical symlink format
+    let script = format!(
+        r#"
+import os
+os.environ["HF_HUB_CACHE"] = "{cache}"
+os.environ["HF_TOKEN"] = "{token}"
+from huggingface_hub import hf_hub_download
+path = hf_hub_download("gpt2", "config.json")
+link = os.readlink(path)
+print(link)
+"#,
+        cache = cache_dir.display(),
+        token = token,
+    );
+    let output = std::process::Command::new(&python).args(["-c", &script]).output().unwrap();
+    assert!(output.status.success(), "Python failed: {}", String::from_utf8_lossy(&output.stderr));
+    let python_link_target = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    // Rust downloads same file into a fresh cache
+    let cache_dir2 = base_dir.path().join("cache2");
+    std::fs::create_dir_all(&cache_dir2).unwrap();
+    let api = HfApiBuilder::new().cache_dir(&cache_dir2).cache_enabled(true).build().unwrap();
+    let params = DownloadFileParams::builder().repo_id("gpt2").filename("config.json").build();
+    let rust_path = api.download_file(&params).await.unwrap();
+    let rust_link_target = std::fs::read_link(&rust_path).unwrap().to_string_lossy().to_string();
+
+    // Both should use the same relative symlink format (e.g. "../../blobs/<etag>")
+    assert_eq!(python_link_target, rust_link_target, "Symlink target format should match between Python and Rust");
+}
+
+#[tokio::test]
+async fn test_interop_conditional_request_reuse() {
+    let Some(_) = api() else { return };
+    let base_dir = tempfile::tempdir().unwrap();
+    let cache_dir = base_dir.path().join("cache");
+    std::fs::create_dir_all(&cache_dir).unwrap();
+
+    let Some(venv_dir) = setup_python_venv(base_dir.path()) else {
+        return;
+    };
+    let python = python_bin(&venv_dir);
+    let token = std::env::var("HF_TOKEN").unwrap();
+
+    // Python downloads file — creates blob + symlink + ref
+    let script = format!(
+        r#"
+import os
+os.environ["HF_HUB_CACHE"] = "{cache}"
+os.environ["HF_TOKEN"] = "{token}"
+from huggingface_hub import hf_hub_download
+hf_hub_download("gpt2", "config.json")
+"#,
+        cache = cache_dir.display(),
+        token = token,
+    );
+    let output = std::process::Command::new(&python).args(["-c", &script]).output().unwrap();
+    assert!(output.status.success(), "Python failed: {}", String::from_utf8_lossy(&output.stderr));
+
+    // Record blob mtime after Python's download
+    let repo_folder = find_repo_folder(&cache_dir, "gpt2");
+    let blobs_dir = repo_folder.join("blobs");
+    let blob = std::fs::read_dir(&blobs_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .next()
+        .unwrap()
+        .path();
+    let mtime_before = std::fs::metadata(&blob).unwrap().modified().unwrap();
+
+    // Rust downloads same file — should read etag from Python's symlink,
+    // send If-None-Match, get 304, and NOT rewrite the blob
+    let api = HfApiBuilder::new().cache_dir(&cache_dir).cache_enabled(true).build().unwrap();
+    let params = DownloadFileParams::builder().repo_id("gpt2").filename("config.json").build();
+    api.download_file(&params).await.unwrap();
+
+    let mtime_after = std::fs::metadata(&blob).unwrap().modified().unwrap();
+    assert_eq!(mtime_before, mtime_after, "Rust should use conditional request (304) and not rewrite Python's blob");
+}
+
+#[tokio::test]
+async fn test_interop_scan_cache_counts_match() {
+    let Some(_) = api() else { return };
+    let base_dir = tempfile::tempdir().unwrap();
+    let cache_dir = base_dir.path().join("cache");
+    std::fs::create_dir_all(&cache_dir).unwrap();
+
+    let Some(venv_dir) = setup_python_venv(base_dir.path()) else {
+        return;
+    };
+    let python = python_bin(&venv_dir);
+    let token = std::env::var("HF_TOKEN").unwrap();
+
+    // Download multiple files via both libraries to populate the cache
+    let api = HfApiBuilder::new().cache_dir(&cache_dir).cache_enabled(true).build().unwrap();
+    let params = SnapshotDownloadParams::builder()
+        .repo_id("gpt2")
+        .allow_patterns(vec!["*.json".to_string(), "*.md".to_string()])
+        .build();
+    api.snapshot_download(&params).await.unwrap();
+
+    // Python: scan_cache_dir and report metrics
+    let script = format!(
+        r#"
+import json
+import os
+os.environ["HF_HUB_CACHE"] = "{cache}"
+os.environ["HF_TOKEN"] = "{token}"
+from huggingface_hub import scan_cache_dir
+info = scan_cache_dir("{cache}")
+repos = [r for r in info.repos if "gpt2" in r.repo_id]
+assert len(repos) == 1
+repo = repos[0]
+print(json.dumps({{
+    "nb_files": repo.nb_files,
+    "size_on_disk": repo.size_on_disk,
+    "num_revisions": len(repo.revisions),
+    "repo_id": repo.repo_id,
+}}))
+"#,
+        cache = cache_dir.display(),
+        token = token,
+    );
+    let output = std::process::Command::new(&python).args(["-c", &script]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "Python scan failed.\nstdout: {stdout}\nstderr: {stderr}");
+
+    let python_metrics: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+
+    // Count unique blobs and total size from Rust's perspective
+    let repo_folder = find_repo_folder(&cache_dir, "gpt2");
+    let blobs_dir = repo_folder.join("blobs");
+    let mut rust_nb_files = 0usize;
+    let mut rust_size: u64 = 0;
+    for entry in std::fs::read_dir(&blobs_dir).unwrap().filter_map(|e| e.ok()) {
+        rust_nb_files += 1;
+        rust_size += std::fs::metadata(entry.path()).unwrap().len();
+    }
+
+    assert_eq!(
+        rust_nb_files,
+        python_metrics["nb_files"].as_u64().unwrap() as usize,
+        "nb_files should match between Rust blob count and Python scan_cache_dir"
+    );
+    assert_eq!(
+        rust_size,
+        python_metrics["size_on_disk"].as_u64().unwrap(),
+        "size_on_disk should match between Rust and Python"
+    );
+}
