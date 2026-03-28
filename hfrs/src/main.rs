@@ -101,6 +101,9 @@ fn should_use_color(no_color_flag: bool) -> bool {
     if std::env::var("NO_COLOR").is_ok() {
         return false;
     }
+    if std::env::var("CLICOLOR_FORCE").is_ok_and(|v| v != "0") {
+        return true;
+    }
     std::io::stderr().is_terminal()
 }
 
