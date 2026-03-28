@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 huggingface-hub = { path = "../huggingface_hub", features = [
     "blocking",
+    "xet",
     "spaces",
     "inference_endpoints",
     "collections",

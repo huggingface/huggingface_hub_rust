@@ -136,13 +136,12 @@ cargo test -p hfrs
 
 ### Integration Tests
 
-Integration tests run `hfrs` against the live Hub API and optionally compare output with the Python `hf` CLI and the JavaScript `hfjs` CLI.
+Integration tests run `hfrs` against the live Hub API and compare output with the Python `hf` CLI.
 
 Requirements:
 
 - `HF_TOKEN` must be set to a valid Hugging Face token
 - `hf` (Python CLI) must be on `$PATH` for cross-CLI comparison tests
-- `hfjs` (JavaScript CLI) must be on `$PATH` for cross-CLI comparison tests
 
 Run read-only integration tests:
 
