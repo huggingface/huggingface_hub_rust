@@ -103,6 +103,14 @@ impl CliRunner {
         }
         Ok(String::from_utf8(output.stdout)?)
     }
+
+    pub fn run_expecting_failure(&self, args: &[&str]) -> anyhow::Result<(i32, String)> {
+        let cmd = self.build_command(args, &[]);
+        let output = self.run_with_timeout(cmd, args)?;
+        let stderr = String::from_utf8(output.stderr)?;
+        let code = output.status.code().unwrap_or(-1);
+        Ok((code, stderr))
+    }
 }
 
 pub fn require_cli(runner: &CliRunner) {
