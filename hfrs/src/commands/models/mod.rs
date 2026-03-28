@@ -20,6 +20,7 @@ pub enum ModelsCommand {
     /// Show detailed information about a model
     Info(info::Args),
     /// List models on the Hub
+    #[command(alias = "ls")]
     List(list::Args),
 }
 
