@@ -9,10 +9,12 @@ use clap::Parser;
 use cli::{Cli, Command};
 use huggingface_hub::{HfApiBuilder, HfError};
 use output::render;
+use tracing::{debug, info};
 use util::token::read_active_token;
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    init_logging();
     let cli = Cli::parse();
 
     let token = cli
@@ -21,15 +23,31 @@ async fn main() -> ExitCode {
         .or_else(|| std::env::var("HF_TOKEN").ok())
         .or_else(read_active_token);
 
+    debug!(
+        token_source = if cli.token.is_some() {
+            "cli_flag"
+        } else if std::env::var("HF_TOKEN").is_ok() {
+            "env_var"
+        } else {
+            "stored_file"
+        },
+        has_token = token.is_some(),
+        "resolved authentication token"
+    );
+
     let mut builder = HfApiBuilder::new();
     if let Some(t) = token {
         builder = builder.token(t);
     }
-    if let Some(endpoint) = cli.endpoint.clone() {
+    if let Some(ref endpoint) = cli.endpoint {
+        debug!(endpoint = endpoint.as_str(), "using custom API endpoint");
         builder = builder.endpoint(endpoint);
     }
     let api = match builder.build() {
-        Ok(api) => api,
+        Ok(api) => {
+            info!("HfApi client initialized");
+            api
+        },
         Err(e) => {
             let message = format_hf_error(&e);
             eprintln!("Error: {message}");
@@ -203,4 +221,28 @@ fn format_hf_error(err: &HfError) -> String {
         },
         HfError::Other(msg) => msg.clone(),
     }
+}
+
+fn init_logging() {
+    use tracing_subscriber::EnvFilter;
+
+    // Priority: HF_LOG_LEVEL > HF_DEBUG > default (off)
+    // HF_LOG_LEVEL accepts standard tracing directives: error, warn, info, debug, trace
+    // It can also include per-module filters like "hfrs=debug,huggingface_hub=trace"
+    let filter = if let Ok(level) = std::env::var("HF_LOG_LEVEL") {
+        EnvFilter::try_new(&level).unwrap_or_else(|_| {
+            eprintln!("Warning: invalid HF_LOG_LEVEL='{level}'. Valid values: error, warn, info, debug, trace");
+            EnvFilter::new("off")
+        })
+    } else if std::env::var("HF_DEBUG").is_ok() {
+        EnvFilter::new("debug")
+    } else {
+        EnvFilter::new("warn")
+    };
+
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(true)
+        .with_writer(std::io::stderr)
+        .init();
 }
