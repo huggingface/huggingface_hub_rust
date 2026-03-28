@@ -45,10 +45,8 @@ impl HfApi {
 
     pub async fn create_discussion(&self, params: &CreateDiscussionParams) -> Result<DiscussionWithDetails> {
         let url = format!("{}/discussions", self.api_url(params.repo_type, &params.repo_id));
-        let mut body = serde_json::json!({ "title": params.title });
-        if let Some(ref desc) = params.description {
-            body["description"] = serde_json::json!(desc);
-        }
+        let description = params.description.as_deref().unwrap_or("");
+        let body = serde_json::json!({ "title": params.title, "description": description });
         let response = self
             .inner
             .client
@@ -65,13 +63,12 @@ impl HfApi {
 
     pub async fn create_pull_request(&self, params: &CreatePullRequestParams) -> Result<DiscussionWithDetails> {
         let url = format!("{}/discussions", self.api_url(params.repo_type, &params.repo_id));
-        let mut body = serde_json::json!({
+        let description = params.description.as_deref().unwrap_or("");
+        let body = serde_json::json!({
             "title": params.title,
             "pullRequest": true,
+            "description": description,
         });
-        if let Some(ref desc) = params.description {
-            body["description"] = serde_json::json!(desc);
-        }
         let response = self
             .inner
             .client

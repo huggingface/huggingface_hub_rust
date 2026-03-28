@@ -27,6 +27,7 @@ pub struct Discussion {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiscussionWithDetails {
+    #[serde(default)]
     pub num: u64,
     pub author: Option<serde_json::Value>,
     pub title: Option<String>,
