@@ -84,11 +84,7 @@ fn list_files_recursive(dir: &Path) -> Vec<String> {
 async fn test_download_file_to_cache() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = DownloadFileParams::builder().repo_id("gpt2").filename("config.json").build();
     let path = api.download_file(&params).await.unwrap();
@@ -114,11 +110,7 @@ async fn test_download_file_to_cache() {
 async fn test_download_file_cache_hit() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = DownloadFileParams::builder().repo_id("gpt2").filename("config.json").build();
     let path1 = api.download_file(&params).await.unwrap();
@@ -129,11 +121,7 @@ async fn test_download_file_cache_hit() {
 #[tokio::test]
 async fn test_download_file_local_files_only_miss() {
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = DownloadFileParams::builder()
         .repo_id("gpt2")
@@ -148,11 +136,7 @@ async fn test_download_file_local_files_only_miss() {
 async fn test_download_file_local_files_only_hit() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = DownloadFileParams::builder().repo_id("gpt2").filename("config.json").build();
     let path1 = api.download_file(&params).await.unwrap();
@@ -171,11 +155,7 @@ async fn test_download_file_local_files_only_hit() {
 async fn test_download_file_cache_symlink_structure() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = DownloadFileParams::builder().repo_id("gpt2").filename("config.json").build();
     let path = api.download_file(&params).await.unwrap();
@@ -190,11 +170,7 @@ async fn test_download_file_cache_symlink_structure() {
 async fn test_snapshot_download() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = SnapshotDownloadParams::builder()
         .repo_id("gpt2")
@@ -216,11 +192,7 @@ async fn test_snapshot_download() {
 async fn test_cache_hit_no_redownload() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = DownloadFileParams::builder().repo_id("gpt2").filename("config.json").build();
     api.download_file(&params).await.unwrap();
@@ -238,11 +210,7 @@ async fn test_cache_hit_no_redownload() {
 async fn test_force_download_bypasses_cache() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = DownloadFileParams::builder().repo_id("gpt2").filename("config.json").build();
     api.download_file(&params).await.unwrap();
@@ -268,11 +236,7 @@ async fn test_force_download_bypasses_cache() {
 async fn test_force_download_ignores_no_exist() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     // Create a stale .no_exist marker — network download should succeed
     // regardless since .no_exist is only consulted via resolve_from_cache_only
@@ -301,11 +265,7 @@ async fn test_force_download_ignores_no_exist() {
 async fn test_no_exist_marker_on_404() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = DownloadFileParams::builder()
         .repo_id("gpt2")
@@ -328,11 +288,7 @@ async fn test_no_exist_marker_on_404() {
 async fn test_no_exist_marker_prevents_request() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     // First download: 404 creates the .no_exist marker
     let params = DownloadFileParams::builder()
@@ -359,11 +315,7 @@ async fn test_no_exist_marker_prevents_request() {
 async fn test_no_exist_writes_ref_on_404() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = DownloadFileParams::builder()
         .repo_id("gpt2")
@@ -389,11 +341,7 @@ async fn test_no_exist_writes_ref_on_404() {
 async fn test_ref_written_for_branch_download() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = DownloadFileParams::builder().repo_id("gpt2").filename("config.json").build();
     api.download_file(&params).await.unwrap();
@@ -411,11 +359,7 @@ async fn test_ref_written_for_branch_download() {
 async fn test_no_ref_for_commit_hash_download() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     // First get the commit hash via a normal download
     let params = DownloadFileParams::builder().repo_id("gpt2").filename("config.json").build();
@@ -429,11 +373,7 @@ async fn test_no_ref_for_commit_hash_download() {
 
     // Now download in a fresh cache using the commit hash directly
     let cache_dir2 = tempfile::tempdir().unwrap();
-    let api2 = HfApiBuilder::new()
-        .cache_dir(cache_dir2.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api2 = HfApiBuilder::new().cache_dir(cache_dir2.path()).build().unwrap();
 
     let params = DownloadFileParams::builder()
         .repo_id("gpt2")
@@ -455,11 +395,7 @@ async fn test_no_ref_for_commit_hash_download() {
 async fn test_download_by_commit_hash() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     // Get commit hash from a normal download
     let params = DownloadFileParams::builder().repo_id("gpt2").filename("config.json").build();
@@ -472,11 +408,7 @@ async fn test_download_by_commit_hash() {
 
     // Download by commit hash in fresh cache
     let cache_dir2 = tempfile::tempdir().unwrap();
-    let api2 = HfApiBuilder::new()
-        .cache_dir(cache_dir2.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api2 = HfApiBuilder::new().cache_dir(cache_dir2.path()).build().unwrap();
     let params = DownloadFileParams::builder()
         .repo_id("gpt2")
         .filename("config.json")
@@ -500,11 +432,7 @@ async fn test_download_by_commit_hash() {
 async fn test_offline_fallback_with_cached_file() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     // Populate cache
     let params = DownloadFileParams::builder().repo_id("gpt2").filename("config.json").build();
@@ -513,7 +441,6 @@ async fn test_offline_fallback_with_cached_file() {
     // Create API with bogus endpoint (will fail to connect)
     let api_broken = HfApiBuilder::new()
         .cache_dir(cache_dir.path())
-        .cache_enabled(true)
         .endpoint("http://localhost:1")
         .build()
         .unwrap();
@@ -528,7 +455,6 @@ async fn test_offline_fallback_without_cache_propagates_error() {
     let cache_dir = tempfile::tempdir().unwrap();
     let api_broken = HfApiBuilder::new()
         .cache_dir(cache_dir.path())
-        .cache_enabled(true)
         .endpoint("http://localhost:1")
         .build()
         .unwrap();
@@ -551,11 +477,7 @@ async fn test_offline_fallback_without_cache_propagates_error() {
 async fn test_snapshot_download_ignore_patterns() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = SnapshotDownloadParams::builder()
         .repo_id("gpt2")
@@ -573,11 +495,7 @@ async fn test_snapshot_download_ignore_patterns() {
 #[tokio::test]
 async fn test_snapshot_download_local_files_only_miss() {
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = SnapshotDownloadParams::builder().repo_id("gpt2").local_files_only(true).build();
     let result = api.snapshot_download(&params).await;
@@ -588,11 +506,7 @@ async fn test_snapshot_download_local_files_only_miss() {
 async fn test_snapshot_download_local_files_only_hit() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = SnapshotDownloadParams::builder()
         .repo_id("gpt2")
@@ -609,11 +523,7 @@ async fn test_snapshot_download_local_files_only_hit() {
 async fn test_snapshot_download_by_commit_hash() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     // First get the commit hash
     let params = DownloadFileParams::builder().repo_id("gpt2").filename("config.json").build();
@@ -626,11 +536,7 @@ async fn test_snapshot_download_by_commit_hash() {
 
     // Snapshot download in fresh cache by commit hash
     let cache_dir2 = tempfile::tempdir().unwrap();
-    let api2 = HfApiBuilder::new()
-        .cache_dir(cache_dir2.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api2 = HfApiBuilder::new().cache_dir(cache_dir2.path()).build().unwrap();
     let params = SnapshotDownloadParams::builder()
         .repo_id("gpt2")
         .revision(&commit_hash)
@@ -654,11 +560,7 @@ async fn test_snapshot_download_by_commit_hash() {
 async fn test_snapshot_download_force_download() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = SnapshotDownloadParams::builder()
         .repo_id("gpt2")
@@ -686,11 +588,7 @@ async fn test_snapshot_download_force_download() {
 async fn test_snapshot_download_returns_correct_path() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = SnapshotDownloadParams::builder()
         .repo_id("gpt2")
@@ -711,11 +609,7 @@ async fn test_snapshot_download_returns_correct_path() {
 async fn test_cache_directory_layout() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = DownloadFileParams::builder().repo_id("gpt2").filename("config.json").build();
     api.download_file(&params).await.unwrap();
@@ -740,11 +634,7 @@ async fn test_cache_directory_layout() {
 async fn test_blob_deduplication_across_downloads() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     // Download same file via single file download
     let params = DownloadFileParams::builder().repo_id("gpt2").filename("config.json").build();
@@ -768,11 +658,7 @@ async fn test_blob_deduplication_across_downloads() {
 async fn test_dataset_repo_type_cache_folder() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = DownloadFileParams::builder()
         .repo_id("rajpurkar/squad")
@@ -791,11 +677,7 @@ async fn test_download_to_local_dir_no_cache() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
     let local_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = DownloadFileParams::builder()
         .repo_id("gpt2")
@@ -824,11 +706,7 @@ async fn test_download_to_local_dir_no_cache() {
 async fn test_concurrent_downloads_same_file() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let mut handles = Vec::new();
     for _ in 0..4 {
@@ -991,7 +869,7 @@ print(path)
         .unwrap();
     let blob_count_before = std::fs::read_dir(repo_folder.path().join("blobs")).unwrap().count();
 
-    let api = HfApiBuilder::new().cache_dir(&cache_dir).cache_enabled(true).build().unwrap();
+    let api = HfApiBuilder::new().cache_dir(&cache_dir).build().unwrap();
     let params = DownloadFileParams::builder().repo_id("gpt2").filename("config.json").build();
     let path = api.download_file(&params).await.unwrap();
     assert!(path.exists());
@@ -1013,7 +891,7 @@ async fn test_interop_rust_downloads_first() {
     let python = python_bin(&venv_dir);
     let token = std::env::var("HF_TOKEN").unwrap();
 
-    let api = HfApiBuilder::new().cache_dir(&cache_dir).cache_enabled(true).build().unwrap();
+    let api = HfApiBuilder::new().cache_dir(&cache_dir).build().unwrap();
     let params = DownloadFileParams::builder().repo_id("gpt2").filename("config.json").build();
     api.download_file(&params).await.unwrap();
 
@@ -1064,7 +942,7 @@ hf_hub_download("gpt2", "README.md")
     let output = std::process::Command::new(&python).args(["-c", &script]).output().unwrap();
     assert!(output.status.success());
 
-    let api = HfApiBuilder::new().cache_dir(&cache_dir).cache_enabled(true).build().unwrap();
+    let api = HfApiBuilder::new().cache_dir(&cache_dir).build().unwrap();
     let params = DownloadFileParams::builder().repo_id("gpt2").filename("config.json").build();
     api.download_file(&params).await.unwrap();
 
@@ -1135,7 +1013,7 @@ print(path)
         .unwrap();
     let blob_count_before = std::fs::read_dir(repo_folder.path().join("blobs")).unwrap().count();
 
-    let api = HfApiBuilder::new().cache_dir(&cache_dir).cache_enabled(true).build().unwrap();
+    let api = HfApiBuilder::new().cache_dir(&cache_dir).build().unwrap();
     let params = SnapshotDownloadParams::builder()
         .repo_id("gpt2")
         .allow_patterns(vec!["*.json".to_string()])
@@ -1161,7 +1039,7 @@ async fn test_interop_rust_writes_python_validates_cache() {
     let token = std::env::var("HF_TOKEN").unwrap();
 
     // Rust snapshot_download: multiple files into cache
-    let api = HfApiBuilder::new().cache_dir(&cache_dir).cache_enabled(true).build().unwrap();
+    let api = HfApiBuilder::new().cache_dir(&cache_dir).build().unwrap();
     let params = SnapshotDownloadParams::builder()
         .repo_id("gpt2")
         .allow_patterns(vec!["*.json".to_string(), "*.md".to_string()])
@@ -1253,11 +1131,7 @@ print("ALL_CHECKS_PASSED")
 async fn test_xet_download_to_cache() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = DownloadFileParams::builder()
         .repo_id("mcpotato/42-xet-test-repo")
@@ -1327,11 +1201,7 @@ async fn test_xet_download_to_cache() {
 async fn test_xet_snapshot_download_to_cache() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = SnapshotDownloadParams::builder().repo_id("mcpotato/42-xet-test-repo").build();
 
@@ -1363,11 +1233,7 @@ async fn test_xet_snapshot_download_to_cache() {
 async fn test_xet_cache_hit_second_download() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HfApiBuilder::new()
-        .cache_dir(cache_dir.path())
-        .cache_enabled(true)
-        .build()
-        .unwrap();
+    let api = HfApiBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
 
     let params = DownloadFileParams::builder()
         .repo_id("mcpotato/42-xet-test-repo")
@@ -1415,7 +1281,7 @@ async fn test_interop_rust_no_exist_python_reads() {
     let token = std::env::var("HF_TOKEN").unwrap();
 
     // Rust: trigger a 404 to create a .no_exist marker
-    let api = HfApiBuilder::new().cache_dir(&cache_dir).cache_enabled(true).build().unwrap();
+    let api = HfApiBuilder::new().cache_dir(&cache_dir).build().unwrap();
     let params = DownloadFileParams::builder()
         .repo_id("gpt2")
         .filename("interop_no_exist_test_file.txt")
@@ -1466,7 +1332,7 @@ async fn test_interop_rust_ref_python_reads() {
     let token = std::env::var("HF_TOKEN").unwrap();
 
     // Rust: download to create refs/main
-    let api = HfApiBuilder::new().cache_dir(&cache_dir).cache_enabled(true).build().unwrap();
+    let api = HfApiBuilder::new().cache_dir(&cache_dir).build().unwrap();
     let params = DownloadFileParams::builder().repo_id("gpt2").filename("config.json").build();
     api.download_file(&params).await.unwrap();
 
@@ -1524,7 +1390,7 @@ print("DONE")
     assert!(output.status.success(), "Python failed: {}", String::from_utf8_lossy(&output.stderr));
 
     // Rust: local_files_only should find the .no_exist marker via resolve_from_cache_only
-    let api = HfApiBuilder::new().cache_dir(&cache_dir).cache_enabled(true).build().unwrap();
+    let api = HfApiBuilder::new().cache_dir(&cache_dir).build().unwrap();
     let params = DownloadFileParams::builder()
         .repo_id("gpt2")
         .filename("python_no_exist_interop_test.txt")
@@ -1566,7 +1432,7 @@ hf_hub_download("gpt2", "config.json")
     assert!(output.status.success(), "Python failed: {}", String::from_utf8_lossy(&output.stderr));
 
     // Rust: local_files_only should find the file via Python's ref
-    let api = HfApiBuilder::new().cache_dir(&cache_dir).cache_enabled(true).build().unwrap();
+    let api = HfApiBuilder::new().cache_dir(&cache_dir).build().unwrap();
     let params = DownloadFileParams::builder()
         .repo_id("gpt2")
         .filename("config.json")
@@ -1592,7 +1458,7 @@ async fn test_interop_rust_snapshot_python_snapshot_reuse() {
     let token = std::env::var("HF_TOKEN").unwrap();
 
     // Rust snapshot_download first
-    let api = HfApiBuilder::new().cache_dir(&cache_dir).cache_enabled(true).build().unwrap();
+    let api = HfApiBuilder::new().cache_dir(&cache_dir).build().unwrap();
     let params = SnapshotDownloadParams::builder()
         .repo_id("gpt2")
         .allow_patterns(vec!["*.json".to_string()])
@@ -1636,7 +1502,7 @@ async fn test_interop_dataset_repo_type() {
     let token = std::env::var("HF_TOKEN").unwrap();
 
     // Rust downloads a dataset file
-    let api = HfApiBuilder::new().cache_dir(&cache_dir).cache_enabled(true).build().unwrap();
+    let api = HfApiBuilder::new().cache_dir(&cache_dir).build().unwrap();
     let params = DownloadFileParams::builder()
         .repo_id("rajpurkar/squad")
         .filename("README.md")
@@ -1701,7 +1567,7 @@ print(link)
     // Rust downloads same file into a fresh cache
     let cache_dir2 = base_dir.path().join("cache2");
     std::fs::create_dir_all(&cache_dir2).unwrap();
-    let api = HfApiBuilder::new().cache_dir(&cache_dir2).cache_enabled(true).build().unwrap();
+    let api = HfApiBuilder::new().cache_dir(&cache_dir2).build().unwrap();
     let params = DownloadFileParams::builder().repo_id("gpt2").filename("config.json").build();
     let rust_path = api.download_file(&params).await.unwrap();
     let rust_link_target = std::fs::read_link(&rust_path).unwrap().to_string_lossy().to_string();
@@ -1751,7 +1617,7 @@ hf_hub_download("gpt2", "config.json")
 
     // Rust downloads same file — should read etag from Python's symlink,
     // send If-None-Match, get 304, and NOT rewrite the blob
-    let api = HfApiBuilder::new().cache_dir(&cache_dir).cache_enabled(true).build().unwrap();
+    let api = HfApiBuilder::new().cache_dir(&cache_dir).build().unwrap();
     let params = DownloadFileParams::builder().repo_id("gpt2").filename("config.json").build();
     api.download_file(&params).await.unwrap();
 
@@ -1773,7 +1639,7 @@ async fn test_interop_scan_cache_counts_match() {
     let token = std::env::var("HF_TOKEN").unwrap();
 
     // Download multiple files via both libraries to populate the cache
-    let api = HfApiBuilder::new().cache_dir(&cache_dir).cache_enabled(true).build().unwrap();
+    let api = HfApiBuilder::new().cache_dir(&cache_dir).build().unwrap();
     let params = SnapshotDownloadParams::builder()
         .repo_id("gpt2")
         .allow_patterns(vec!["*.json".to_string(), "*.md".to_string()])

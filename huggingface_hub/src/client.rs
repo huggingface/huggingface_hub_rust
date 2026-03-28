@@ -133,7 +133,7 @@ impl HfApiBuilder {
                 endpoint: endpoint.trim_end_matches('/').to_string(),
                 token,
                 cache_dir,
-                cache_enabled: self.cache_enabled.unwrap_or(false),
+                cache_enabled: self.cache_enabled.unwrap_or(true),
                 #[cfg(feature = "xet")]
                 xet_session: std::sync::Mutex::new(None),
             }),
