@@ -61,6 +61,9 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     let mut spaces = Vec::new();
     while let Some(item) = stream.next().await {
         spaces.push(item?);
+        if spaces.len() >= args.limit {
+            break;
+        }
     }
 
     let headers = vec![

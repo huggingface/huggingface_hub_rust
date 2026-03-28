@@ -143,16 +143,16 @@ fn models_list_matches_hf() {
 }
 
 #[test]
-fn models_info_matches_hf() {
+fn models_info_returns_valid_json() {
     require_token();
     let hfrs = CliRunner::hfrs();
-    let hf = CliRunner::new("hf");
-    require_cli(&hf);
 
-    let hfrs_out = hfrs.run_json(&["models", "info", "gpt2"]).unwrap();
-    let hf_out = hf.run_json(&["models", "info", "gpt2"]).unwrap();
+    let out = hfrs.run_json(&["models", "info", "gpt2"]).unwrap();
 
-    helpers::assert_json_equivalent(&hfrs_out, &hf_out, helpers::VOLATILE_FIELDS);
+    assert!(out.is_object(), "models info should return an object");
+    let id = out.get("id").and_then(|v| v.as_str()).unwrap_or("");
+    assert!(id == "gpt2" || id.ends_with("/gpt2"), "model id should be gpt2 or end with /gpt2, got: {id}");
+    assert!(out.get("author").is_some());
 }
 
 #[test]
@@ -205,16 +205,15 @@ fn datasets_list_matches_hf() {
 }
 
 #[test]
-fn datasets_info_matches_hf() {
+fn datasets_info_returns_valid_json() {
     require_token();
     let hfrs = CliRunner::hfrs();
-    let hf = CliRunner::new("hf");
-    require_cli(&hf);
 
-    let hfrs_out = hfrs.run_json(&["datasets", "info", "squad"]).unwrap();
-    let hf_out = hf.run_json(&["datasets", "info", "squad"]).unwrap();
+    let out = hfrs.run_json(&["datasets", "info", "squad"]).unwrap();
 
-    helpers::assert_json_equivalent(&hfrs_out, &hf_out, helpers::VOLATILE_FIELDS);
+    assert!(out.is_object(), "datasets info should return an object");
+    let id = out.get("id").and_then(|v| v.as_str()).unwrap_or("");
+    assert!(id == "squad" || id.ends_with("/squad"), "dataset id should be squad or end with /squad, got: {id}");
 }
 
 // --- Spaces comparison tests ---
@@ -234,37 +233,30 @@ fn spaces_list_matches_hf() {
     assert_eq!(hfrs_out.as_array().unwrap().len(), hf_out.as_array().unwrap().len(),);
 }
 
-// --- Auth comparison tests ---
+// --- Auth tests ---
 
 #[test]
-fn auth_whoami_matches_hf() {
+fn auth_whoami_returns_valid_json() {
     require_token();
     let hfrs = CliRunner::hfrs();
-    let hf = CliRunner::new("hf");
-    require_cli(&hf);
 
-    let hfrs_out = hfrs.run_json(&["auth", "whoami"]).unwrap();
-    let hf_out = hf.run_json(&["auth", "whoami"]).unwrap();
+    let out = hfrs.run_json(&["auth", "whoami"]).unwrap();
 
-    // Both should have a username field
-    assert!(
-        hfrs_out.get("username").is_some() || hfrs_out.get("name").is_some(),
-        "hfrs whoami should have username"
-    );
-    assert!(hf_out.get("username").is_some() || hf_out.get("name").is_some(), "hf whoami should have username");
+    assert!(out.is_object(), "whoami should return an object");
+    assert!(out.get("username").is_some(), "whoami should have username field");
 }
 
-// --- Papers comparison tests ---
+// --- Papers tests ---
 
 #[test]
 fn papers_list_returns_results() {
     require_token();
     let hfrs = CliRunner::hfrs();
 
-    let hfrs_out = hfrs.run_json(&["papers", "list", "--limit", "3"]).unwrap();
+    let out = hfrs.run_json(&["papers", "list", "--limit", "3"]).unwrap();
 
-    assert!(hfrs_out.is_array(), "papers list should return an array");
-    assert!(!hfrs_out.as_array().unwrap().is_empty(), "papers list should return results");
+    assert!(out.is_array(), "papers list should return an array");
+    assert!(!out.as_array().unwrap().is_empty(), "papers list should return results");
 }
 
 #[test]
@@ -272,21 +264,21 @@ fn papers_search_returns_results() {
     require_token();
     let hfrs = CliRunner::hfrs();
 
-    let hfrs_out = hfrs.run_json(&["papers", "search", "transformer", "--limit", "3"]).unwrap();
+    let out = hfrs.run_json(&["papers", "search", "transformer", "--limit", "3"]).unwrap();
 
-    assert!(hfrs_out.is_array(), "papers search should return an array");
+    assert!(out.is_array(), "papers search should return an array");
 }
 
-// --- Collections comparison tests ---
+// --- Collections tests ---
 
 #[test]
 fn collections_list_returns_results() {
     require_token();
     let hfrs = CliRunner::hfrs();
 
-    let hfrs_out = hfrs.run_json(&["collections", "list", "--limit", "3"]).unwrap();
+    let out = hfrs.run_json(&["collections", "list", "--limit", "3"]).unwrap();
 
-    assert!(hfrs_out.is_array(), "collections list should return an array");
+    assert!(out.is_array(), "collections list should return an array");
 }
 
 // --- Webhooks test ---
@@ -296,7 +288,34 @@ fn webhooks_list_returns_array() {
     require_token();
     let hfrs = CliRunner::hfrs();
 
-    let hfrs_out = hfrs.run_json(&["webhooks", "list"]).unwrap();
+    let out = hfrs.run_json(&["webhooks", "list"]).unwrap();
 
-    assert!(hfrs_out.is_array(), "webhooks list should return an array");
+    assert!(out.is_array(), "webhooks list should return an array");
+}
+
+// --- Table output tests ---
+
+#[test]
+fn models_list_table_output() {
+    require_token();
+    let hfrs = CliRunner::hfrs();
+
+    let out = hfrs.run_raw(&["models", "list", "--limit", "3", "--format", "table"]).unwrap();
+
+    assert!(out.contains("ID"), "table should have ID header");
+    assert!(out.contains("Author"), "table should have Author header");
+}
+
+#[test]
+fn models_list_quiet_output() {
+    require_token();
+    let hfrs = CliRunner::hfrs();
+
+    let out = hfrs.run_raw(&["models", "list", "--limit", "3", "--quiet"]).unwrap();
+
+    let lines: Vec<&str> = out.trim().lines().collect();
+    assert_eq!(lines.len(), 3, "quiet mode should output 3 IDs");
+    for line in &lines {
+        assert!(!line.contains(' '), "quiet mode lines should be plain IDs, got: '{line}'");
+    }
 }

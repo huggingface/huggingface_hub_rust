@@ -64,6 +64,9 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     let mut models = Vec::new();
     while let Some(item) = stream.next().await {
         models.push(item?);
+        if models.len() >= args.limit {
+            break;
+        }
     }
 
     let headers = vec![

@@ -1,4 +1,5 @@
 use std::process::Command;
+use std::time::Duration;
 
 pub struct CliRunner {
     bin: String,
@@ -46,15 +47,44 @@ impl CliRunner {
             .unwrap_or(false)
     }
 
-    pub fn run_json(&self, args: &[&str]) -> anyhow::Result<serde_json::Value> {
+    fn build_command(&self, args: &[&str], extra_args: &[&str]) -> Command {
         let bin = self.bin_path.as_deref().unwrap_or(&self.bin);
         let mut cmd = Command::new(bin);
         cmd.args(args);
-        cmd.arg("--format").arg("json");
+        cmd.args(extra_args);
         if let Some(ref token) = self.token {
-            cmd.arg("--token").arg(token);
+            cmd.env("HF_TOKEN", token);
         }
-        let output = cmd.output()?;
+        cmd
+    }
+
+    fn run_with_timeout(&self, mut cmd: Command, args: &[&str]) -> anyhow::Result<std::process::Output> {
+        let mut child = cmd
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+
+        let timeout = Duration::from_secs(60);
+        let start = std::time::Instant::now();
+        loop {
+            match child.try_wait()? {
+                Some(_status) => {
+                    return Ok(child.wait_with_output()?);
+                },
+                None => {
+                    if start.elapsed() > timeout {
+                        let _ = child.kill();
+                        anyhow::bail!("{} {:?} timed out after {}s", self.bin, args, timeout.as_secs());
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                },
+            }
+        }
+    }
+
+    pub fn run_json(&self, args: &[&str]) -> anyhow::Result<serde_json::Value> {
+        let cmd = self.build_command(args, &["--format", "json"]);
+        let output = self.run_with_timeout(cmd, args)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             anyhow::bail!("{} {:?} failed (exit {}): {}", self.bin, args, output.status, stderr);
@@ -62,6 +92,16 @@ impl CliRunner {
         let stdout = String::from_utf8(output.stdout)?;
         let value: serde_json::Value = serde_json::from_str(&stdout)?;
         Ok(value)
+    }
+
+    pub fn run_raw(&self, args: &[&str]) -> anyhow::Result<String> {
+        let cmd = self.build_command(args, &[]);
+        let output = self.run_with_timeout(cmd, args)?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("{} {:?} failed (exit {}): {}", self.bin, args, output.status, stderr);
+        }
+        Ok(String::from_utf8(output.stdout)?)
     }
 }
 
