@@ -9,6 +9,7 @@ pub const HF_TOKEN: &str = "HF_TOKEN";
 pub const HF_TOKEN_PATH: &str = "HF_TOKEN_PATH";
 pub const HF_HOME: &str = "HF_HOME";
 pub const HF_HUB_CACHE: &str = "HF_HUB_CACHE";
+pub const XDG_CACHE_HOME: &str = "XDG_CACHE_HOME";
 pub const HF_HUB_DISABLE_IMPLICIT_TOKEN: &str = "HF_HUB_DISABLE_IMPLICIT_TOKEN";
 pub const HF_HUB_USER_AGENT_ORIGIN: &str = "HF_HUB_USER_AGENT_ORIGIN";
 
@@ -19,6 +20,10 @@ pub const DEFAULT_HF_HOME: &str = "~/.cache/huggingface";
 pub const TOKEN_FILENAME: &str = "token";
 
 pub const HEADER_X_XET_HASH: &str = "x-xet-hash";
+
+pub const CACHE_LOCK_TIMEOUT_SECS: u64 = 10;
+pub const HEADER_X_REPO_COMMIT: &str = "x-repo-commit";
+pub const HEADER_X_LINKED_ETAG: &str = "x-linked-etag";
 
 /// URL prefixes for different repo types
 /// Models have no prefix, datasets use "datasets/", spaces use "spaces/", kernels use "kernels/"

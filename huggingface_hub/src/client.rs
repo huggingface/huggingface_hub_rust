@@ -24,6 +24,8 @@ pub(crate) struct HfApiInner {
     pub(crate) client: ClientWithMiddleware,
     pub(crate) endpoint: String,
     pub(crate) token: Option<String>,
+    pub(crate) cache_dir: std::path::PathBuf,
+    pub(crate) cache_enabled: bool,
     #[cfg(feature = "xet")]
     pub(crate) xet_session: std::sync::Mutex<Option<xet::xet_session::XetSession>>,
 }
@@ -34,6 +36,8 @@ pub struct HfApiBuilder {
     user_agent: Option<String>,
     headers: Option<HeaderMap>,
     client: Option<reqwest::Client>,
+    cache_dir: Option<std::path::PathBuf>,
+    cache_enabled: Option<bool>,
 }
 
 impl HfApiBuilder {
@@ -44,6 +48,8 @@ impl HfApiBuilder {
             user_agent: None,
             headers: None,
             client: None,
+            cache_dir: None,
+            cache_enabled: None,
         }
     }
 
@@ -75,6 +81,16 @@ impl HfApiBuilder {
         self
     }
 
+    pub fn cache_dir(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.cache_dir = Some(path.into());
+        self
+    }
+
+    pub fn cache_enabled(mut self, enabled: bool) -> Self {
+        self.cache_enabled = Some(enabled);
+        self
+    }
+
     pub fn build(self) -> Result<HfApi> {
         let endpoint = self
             .endpoint
@@ -84,6 +100,8 @@ impl HfApiBuilder {
         let _ = url::Url::parse(&endpoint)?;
 
         let token = self.token.or_else(resolve_token);
+
+        let cache_dir = self.cache_dir.unwrap_or_else(resolve_cache_dir);
 
         let mut default_headers = self.headers.unwrap_or_default();
 
@@ -114,6 +132,8 @@ impl HfApiBuilder {
                 client,
                 endpoint: endpoint.trim_end_matches('/').to_string(),
                 token,
+                cache_dir,
+                cache_enabled: self.cache_enabled.unwrap_or(true),
                 #[cfg(feature = "xet")]
                 xet_session: std::sync::Mutex::new(None),
             }),
@@ -248,4 +268,38 @@ fn resolve_token() -> Option<String> {
 
 fn dirs_or_home() -> String {
     std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string())
+}
+
+/// Resolve cache directory from environment.
+/// Priority: HF_HUB_CACHE env → $HF_HOME/hub → ~/.cache/huggingface/hub.
+fn resolve_cache_dir() -> std::path::PathBuf {
+    if let Ok(cache) = std::env::var(constants::HF_HUB_CACHE) {
+        return std::path::PathBuf::from(cache);
+    }
+    if let Ok(hf_home) = std::env::var(constants::HF_HOME) {
+        return std::path::PathBuf::from(hf_home).join("hub");
+    }
+    if let Ok(xdg) = std::env::var(constants::XDG_CACHE_HOME) {
+        return std::path::PathBuf::from(xdg).join("huggingface").join("hub");
+    }
+    let home = dirs_or_home();
+    std::path::PathBuf::from(format!("{home}/.cache/huggingface")).join("hub")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HfApiBuilder;
+
+    #[test]
+    fn test_builder_cache_dir_explicit() {
+        let api = HfApiBuilder::new().cache_dir("/tmp/my-cache").build().unwrap();
+        assert_eq!(api.inner.cache_dir, std::path::PathBuf::from("/tmp/my-cache"));
+    }
+
+    #[test]
+    fn test_builder_cache_dir_default() {
+        let api = HfApiBuilder::new().build().unwrap();
+        let path_str = api.inner.cache_dir.to_string_lossy();
+        assert!(path_str.contains("huggingface") && path_str.ends_with("hub"));
+    }
 }

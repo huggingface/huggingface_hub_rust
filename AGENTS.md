@@ -88,9 +88,11 @@ huggingface_hub_rust/
 │   │   ├── constants.rs            # Env var names, default URLs, repo type helpers
 │   │   ├── error.rs                # HfError enum, Result alias, NotFoundContext
 │   │   ├── pagination.rs           # Generic paginate<T>() with Link header parsing
+│   │   ├── cache.rs                # Cache path computation, locking, ref read/write, symlink, scan, delete
 │   │   ├── xet.rs                  # Xet high-performance transfer stubs (behind "xet" feature)
 │   │   ├── types/
 │   │   │   ├── mod.rs              # Module declarations, re-exports
+│   │   │   ├── cache.rs            # CachedFileInfo, CachedRepoInfo, HfCacheInfo, DeleteCacheRevision
 │   │   │   ├── repo.rs             # RepoType, ModelInfo, DatasetInfo, SpaceInfo, RepoTreeEntry
 │   │   │   ├── user.rs             # User, Organization, OrgMembership
 │   │   │   ├── commit.rs           # CommitInfo, GitCommitInfo, GitRefs, CommitOperation, AddSource
@@ -107,7 +109,8 @@ huggingface_hub_rust/
 │   │   └── api/
 │   │       ├── mod.rs              # Module declarations
 │   │       ├── repo.rs             # Repo info, listing, existence checks, create/delete/update/move
-│   │       ├── files.rs            # File listing, download, upload, create_commit, folder ops
+│   │       ├── cache.rs            # scan_cache, delete_cache_revisions
+│   │       ├── files.rs            # File listing, download, upload, create_commit, snapshot_download
 │   │       ├── commits.rs          # Commit listing, diffs, branch/tag management
 │   │       ├── users.rs            # whoami, auth_check, user/org info, followers
 │   │       ├── spaces.rs           # Space runtime, secrets, variables, hardware, pause/restart

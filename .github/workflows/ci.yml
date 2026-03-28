@@ -52,7 +52,14 @@ jobs:
       - name: Doc tests
         run: cargo test -p huggingface-hub --doc
       - name: Integration tests (read-only)
-        if: env.HF_TOKEN != ''
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: cargo test -p huggingface-hub --test integration_test
+      - name: Set up Python for cache interop tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Cache tests
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: cargo test -p huggingface-hub --features xet --test cache_test

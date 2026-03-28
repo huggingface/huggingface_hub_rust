@@ -24,6 +24,15 @@ pub enum HfError {
     #[error("Xet feature required but not enabled")]
     XetNotEnabled,
 
+    #[error("File not found in local cache: {path}")]
+    LocalEntryNotFound { path: String },
+
+    #[error("Cache is not enabled — set cache_enabled(true) on HfApiBuilder, or provide local_dir in download params")]
+    CacheNotEnabled,
+
+    #[error("Cache lock timed out: {}", path.display())]
+    CacheLockTimeout { path: std::path::PathBuf },
+
     #[error(transparent)]
     Request(#[from] reqwest::Error),
 
@@ -41,6 +50,30 @@ pub enum HfError {
 
     #[error("{0}")]
     Other(String),
+}
+
+impl HfError {
+    /// Returns true for errors that indicate transient network/server issues
+    /// where falling back to a cached version is appropriate.
+    pub(crate) fn is_transient(&self) -> bool {
+        match self {
+            HfError::Request(e) => e.is_connect() || e.is_timeout(),
+            HfError::Middleware(e) => {
+                if e.is_connect() || e.is_timeout() {
+                    return true;
+                }
+                // reqwest_retry wraps exhausted-retry errors as Middleware(anyhow),
+                // which type-erases the underlying reqwest::Error. Check the
+                // alternate Display output for known transient error patterns.
+                let msg = format!("{e:#}");
+                msg.contains("client error (Connect)") || msg.contains("client error (Timeout)")
+            },
+            HfError::Http { status, .. } => {
+                matches!(status.as_u16(), 500 | 502 | 503 | 504)
+            },
+            _ => false,
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, HfError>;

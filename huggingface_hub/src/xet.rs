@@ -14,7 +14,7 @@ use xet_client::cas_client::auth::{AuthError, TokenRefresher};
 use crate::client::HfApi;
 use crate::constants;
 use crate::error::{HfError, Result};
-use crate::types::{AddSource, DownloadFileParams, GetXetTokenParams, RepoType};
+use crate::types::{AddSource, GetXetTokenParams, RepoType};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -81,12 +81,13 @@ async fn fetch_xet_connection_info(
     })
 }
 
-/// Download a file using the xet protocol.
-/// Extracts the file hash and size from the HEAD response headers,
-/// fetches a read token, and uses xet-session's DownloadGroup.
-pub(crate) async fn xet_download(
+pub(crate) async fn xet_download_to_local_dir(
     api: &HfApi,
-    params: &DownloadFileParams,
+    repo_id: &str,
+    repo_type: Option<RepoType>,
+    revision: &str,
+    filename: &str,
+    local_dir: &std::path::Path,
     head_response: &reqwest::Response,
 ) -> Result<PathBuf> {
     let headers = head_response.headers();
@@ -103,14 +104,10 @@ pub(crate) async fn xet_download(
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
 
-    let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
+    let session = api.get_or_init_xet_session("read", repo_id, repo_type, revision).await?;
 
-    let session = api
-        .get_or_init_xet_session("read", &params.repo_id, params.repo_type, revision)
-        .await?;
-
-    tokio::fs::create_dir_all(&params.local_dir).await?;
-    let dest_path = params.local_dir.join(&params.filename);
+    tokio::fs::create_dir_all(local_dir).await?;
+    let dest_path = local_dir.join(filename);
     if let Some(parent) = dest_path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
@@ -137,6 +134,106 @@ pub(crate) async fn xet_download(
         .map_err(|e| HfError::Other(format!("Xet download failed: {e}")))?;
 
     Ok(dest_path)
+}
+
+pub(crate) async fn xet_download_to_blob(
+    api: &HfApi,
+    repo_id: &str,
+    repo_type: Option<RepoType>,
+    revision: &str,
+    file_hash: &str,
+    file_size: u64,
+    path: &std::path::Path,
+) -> Result<()> {
+    let session = api.get_or_init_xet_session("read", repo_id, repo_type, revision).await?;
+
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+
+    let incomplete_path = PathBuf::from(format!("{}.incomplete", path.display()));
+
+    let group = session
+        .new_download_group()
+        .await
+        .map_err(|e| HfError::Other(format!("Xet download failed: {e}")))?;
+
+    let file_info = XetFileInfo {
+        hash: file_hash.to_string(),
+        file_size,
+        sha256: None,
+    };
+
+    group
+        .download_file_to_path(file_info, incomplete_path.clone())
+        .await
+        .map_err(|e| HfError::Other(format!("Xet download failed: {e}")))?;
+
+    group
+        .finish()
+        .await
+        .map_err(|e| HfError::Other(format!("Xet download failed: {e}")))?;
+
+    tokio::fs::rename(&incomplete_path, path).await?;
+    Ok(())
+}
+
+pub(crate) struct XetBatchFile {
+    pub hash: String,
+    pub file_size: u64,
+    pub path: PathBuf,
+}
+
+pub(crate) async fn xet_download_batch(
+    api: &HfApi,
+    repo_id: &str,
+    repo_type: Option<RepoType>,
+    revision: &str,
+    files: &[XetBatchFile],
+) -> Result<()> {
+    if files.is_empty() {
+        return Ok(());
+    }
+
+    let session = api.get_or_init_xet_session("read", repo_id, repo_type, revision).await?;
+
+    let group = session
+        .new_download_group()
+        .await
+        .map_err(|e| HfError::Other(format!("Xet batch download failed: {e}")))?;
+
+    let mut incomplete_paths = Vec::with_capacity(files.len());
+    for file in files {
+        if let Some(parent) = file.path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+
+        let incomplete = PathBuf::from(format!("{}.incomplete", file.path.display()));
+
+        let file_info = XetFileInfo {
+            hash: file.hash.clone(),
+            file_size: file.file_size,
+            sha256: None,
+        };
+
+        group
+            .download_file_to_path(file_info, incomplete.clone())
+            .await
+            .map_err(|e| HfError::Other(format!("Xet batch download failed: {e}")))?;
+
+        incomplete_paths.push((incomplete, file.path.clone()));
+    }
+
+    group
+        .finish()
+        .await
+        .map_err(|e| HfError::Other(format!("Xet batch download failed: {e}")))?;
+
+    for (incomplete, final_path) in &incomplete_paths {
+        tokio::fs::rename(incomplete, final_path).await?;
+    }
+
+    Ok(())
 }
 
 /// Upload files using the xet protocol.

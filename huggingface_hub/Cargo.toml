@@ -18,6 +18,8 @@ futures = "0.3"
 typed-builder = "0.20"
 globset = "0.4"
 base64 = "0.22"
+fs4 = { version = "0.13", features = ["tokio"] }
+pathdiff = "0.2"
 async-trait = { version = "0.1", optional = true }
 hf-xet = { git = "https://github.com/huggingface/xet-core.git", rev = "749c28b", optional = true }
 xet-client = { git = "https://github.com/huggingface/xet-core.git", rev = "749c28b", optional = true }
@@ -42,6 +44,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tempfile = "3"
 rand = "0.9"
 sha2 = "0.10"
+serial_test = "3"
 
 [[example]]
 name = "repo"
