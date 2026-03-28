@@ -20,6 +20,7 @@ pub enum DatasetsCommand {
     /// Show detailed information about a dataset
     Info(info::Args),
     /// List datasets on the Hub
+    #[command(alias = "ls")]
     List(list::Args),
 }
 
