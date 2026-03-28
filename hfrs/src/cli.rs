@@ -1,8 +1,17 @@
+use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{Parser, Subcommand, ValueEnum};
 use huggingface_hub::RepoType;
 
+const STYLES: Styles = Styles::styled()
+    .header(AnsiColor::Yellow.on_default().effects(Effects::BOLD))
+    .usage(AnsiColor::Yellow.on_default().effects(Effects::BOLD))
+    .literal(AnsiColor::Green.on_default().effects(Effects::BOLD))
+    .placeholder(AnsiColor::Cyan.on_default())
+    .valid(AnsiColor::Green.on_default())
+    .invalid(AnsiColor::Red.on_default());
+
 #[derive(Parser)]
-#[command(name = "hfrs", about = "Hugging Face Hub CLI (Rust)", version)]
+#[command(name = "hfrs", about = "Hugging Face Hub CLI (Rust)", version, styles = STYLES)]
 pub struct Cli {
     /// Authentication token (overrides HF_TOKEN env var and stored credentials)
     #[arg(long, env = "HF_TOKEN", global = true, hide_env_values = true)]
