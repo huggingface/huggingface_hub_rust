@@ -593,11 +593,13 @@ fn models_info_nonexistent_fails() {
     require_token();
     let hfrs = CliRunner::hfrs();
 
-    let (code, _stderr) = hfrs
+    let (code, stderr) = hfrs
         .run_expecting_failure(&["models", "info", "nonexistent-model-xyz-12345"])
         .unwrap();
 
     assert_ne!(code, 0, "models info on nonexistent model should exit with non-zero code");
+    assert!(stderr.contains("not found"), "error should mention 'not found', got: {stderr}");
+    assert!(stderr.contains("authenticated"), "error should suggest authentication, got: {stderr}");
 }
 
 // --- Write tests ---
