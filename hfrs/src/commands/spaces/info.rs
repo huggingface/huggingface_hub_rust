@@ -1,13 +1,48 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::HfApi;
+use huggingface_hub::{HfApi, SpaceInfoParams};
+use serde_json::json;
 
-use crate::output::CommandResult;
+use crate::cli::OutputFormat;
+use crate::output::{CommandOutput, CommandResult};
 
 /// Show detailed information about a Space
 #[derive(ClapArgs)]
-pub struct Args {}
+pub struct Args {
+    /// Space ID (e.g. gradio/hello_world)
+    pub space_id: String,
 
-pub async fn execute(_api: &HfApi, _args: Args) -> Result<CommandResult> {
-    Ok(CommandResult::Silent)
+    /// Git revision (branch, tag, or commit SHA)
+    #[arg(long)]
+    pub revision: Option<String>,
+
+    /// Output format
+    #[arg(long, value_enum, default_value = "table")]
+    pub format: OutputFormat,
+}
+
+pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+    let params = SpaceInfoParams {
+        repo_id: args.space_id,
+        revision: args.revision,
+    };
+    let info = api.space_info(&params).await?;
+    let json_value = json!({
+        "id": info.id,
+        "author": info.author,
+        "sha": info.sha,
+        "private": info.private,
+        "sdk": info.sdk,
+        "likes": info.likes,
+        "tags": info.tags,
+        "created_at": info.created_at,
+        "last_modified": info.last_modified,
+        "trending_score": info.trending_score,
+    });
+    let output = CommandOutput::single_item(json_value);
+    Ok(CommandResult::Formatted {
+        output,
+        format: args.format,
+        quiet: false,
+    })
 }

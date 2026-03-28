@@ -20,6 +20,7 @@ pub enum SpacesCommand {
     /// Show detailed information about a Space
     Info(info::Args),
     /// List Spaces on the Hub
+    #[command(alias = "ls")]
     List(list::Args),
 }
 
