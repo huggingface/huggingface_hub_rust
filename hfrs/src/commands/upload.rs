@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Result};
 use clap::Args as ClapArgs;
-use huggingface_hub::{AddSource, HfApi, UploadFileParams, UploadFolderParams};
+use huggingface_hub::{AddSource, CreateRepoParams, HfApi, RepoExistsParams, UploadFileParams, UploadFolderParams};
+use tracing::info;
 
 use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
@@ -26,6 +27,10 @@ pub struct Args {
     /// Git revision (branch, tag, or commit SHA)
     #[arg(long)]
     pub revision: Option<String>,
+
+    /// Create the repo as private if it does not exist yet
+    #[arg(long)]
+    pub private: bool,
 
     /// Include patterns for folder upload (can be specified multiple times)
     #[arg(long)]
@@ -59,6 +64,23 @@ pub struct Args {
 pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
     let local_path = args.local_path.unwrap_or_else(|| PathBuf::from("."));
+
+    // Ensure the repo exists, creating it if necessary
+    let exists_params = RepoExistsParams {
+        repo_id: args.repo_id.clone(),
+        repo_type: Some(repo_type),
+    };
+    if !api.repo_exists(&exists_params).await? {
+        info!(repo_id = args.repo_id.as_str(), private = args.private, "creating repository");
+        let create_params = CreateRepoParams {
+            repo_id: args.repo_id.clone(),
+            repo_type: Some(repo_type),
+            private: if args.private { Some(true) } else { None },
+            exist_ok: true,
+            space_sdk: None,
+        };
+        api.create_repo(&create_params).await?;
+    }
 
     let commit_info = if local_path.is_file() {
         let path_in_repo = args.path_in_repo.unwrap_or_else(|| {

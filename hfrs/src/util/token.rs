@@ -128,18 +128,10 @@ pub fn delete_token(name: &str) -> anyhow::Result<()> {
     stored.tokens.remove(name);
     if stored.active.as_deref() == Some(name) {
         stored.active = stored.tokens.keys().next().cloned();
-        match &stored.active {
-            Some(active_name) => {
-                if let Some(entry) = stored.tokens.get(active_name) {
-                    write_active_token_file(&entry.token)?;
-                }
-            },
-            None => {
-                let path = token_file_path();
-                if path.exists() {
-                    fs::remove_file(&path)?;
-                }
-            },
+        if let Some(ref active_name) = stored.active {
+            if let Some(entry) = stored.tokens.get(active_name) {
+                write_active_token_file(&entry.token)?;
+            }
         }
     }
     write_stored_tokens(&stored)?;
