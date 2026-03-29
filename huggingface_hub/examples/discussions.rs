@@ -28,7 +28,7 @@ async fn main() -> huggingface_hub::Result<()> {
                     .build(),
             )
             .await?;
-        println!("Discussion #{}: {:?} (status: {:?})", details.num, details.title, details.status);
+        println!("Discussion #{:?}: {:?} (status: {:?})", details.num, details.title, details.status);
     }
 
     // --- Write operations ---
@@ -56,13 +56,14 @@ async fn main() -> huggingface_hub::Result<()> {
                 .build(),
         )
         .await?;
-    println!("Created discussion #{}", discussion.num);
+    let discussion_num = discussion.num.expect("created discussion should have a num");
+    println!("Created discussion #{discussion_num}");
 
     let comment = api
         .comment_discussion(
             &CommentDiscussionParams::builder()
                 .repo_id(&repo_name)
-                .discussion_num(discussion.num)
+                .discussion_num(discussion_num)
                 .comment("This is a test comment")
                 .build(),
         )
@@ -74,7 +75,7 @@ async fn main() -> huggingface_hub::Result<()> {
         .edit_discussion_comment(
             &EditDiscussionCommentParams::builder()
                 .repo_id(&repo_name)
-                .discussion_num(discussion.num)
+                .discussion_num(discussion_num)
                 .comment_id(&comment_id)
                 .new_content("Edited test comment")
                 .build(),
@@ -86,7 +87,7 @@ async fn main() -> huggingface_hub::Result<()> {
         .rename_discussion(
             &RenameDiscussionParams::builder()
                 .repo_id(&repo_name)
-                .discussion_num(discussion.num)
+                .discussion_num(discussion_num)
                 .new_title("Renamed Example Discussion")
                 .build(),
         )
@@ -96,7 +97,7 @@ async fn main() -> huggingface_hub::Result<()> {
     api.change_discussion_status(
         &ChangeDiscussionStatusParams::builder()
             .repo_id(&repo_name)
-            .discussion_num(discussion.num)
+            .discussion_num(discussion_num)
             .new_status("closed")
             .build(),
     )
