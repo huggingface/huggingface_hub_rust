@@ -602,6 +602,70 @@ fn models_info_nonexistent_fails() {
     assert!(stderr.contains("authenticated"), "error should suggest authentication, got: {stderr}");
 }
 
+// --- Cache dir tests ---
+
+#[test]
+fn download_cache_dir_is_respected() {
+    require_token();
+    let hfrs = CliRunner::hfrs();
+
+    let tmp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let cache_dir = tmp_dir.path();
+
+    let result = hfrs.run_raw(&[
+        "download",
+        "gpt2",
+        "config.json",
+        "--cache-dir",
+        cache_dir.to_str().unwrap(),
+    ]);
+    assert!(result.is_ok(), "download with --cache-dir should succeed: {:?}", result.err());
+
+    let output_path = result.unwrap();
+    let output_path = output_path.trim();
+
+    // The downloaded file should be under the specified cache dir, not the default
+    assert!(
+        output_path.starts_with(cache_dir.to_str().unwrap()),
+        "downloaded file should be under --cache-dir ({})  but got: {output_path}",
+        cache_dir.display()
+    );
+
+    // The file should actually exist
+    assert!(std::path::Path::new(output_path).exists(), "downloaded file should exist at: {output_path}");
+}
+
+#[test]
+fn download_default_cache_dir_not_used_when_overridden() {
+    require_token();
+    let hfrs = CliRunner::hfrs();
+
+    let tmp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let cache_dir = tmp_dir.path();
+
+    // Download to custom cache dir
+    let result = hfrs.run_raw(&[
+        "download",
+        "gpt2",
+        "config.json",
+        "--cache-dir",
+        cache_dir.to_str().unwrap(),
+    ]);
+    assert!(result.is_ok());
+
+    // Verify the models--gpt2 repo folder was created inside our custom cache dir
+    let entries: Vec<_> = std::fs::read_dir(cache_dir)
+        .expect("should be able to read cache dir")
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+
+    assert!(
+        entries.iter().any(|name| name.contains("gpt2")),
+        "cache dir should contain a gpt2 repo folder, found: {entries:?}"
+    );
+}
+
 // --- Write tests ---
 
 #[test]
