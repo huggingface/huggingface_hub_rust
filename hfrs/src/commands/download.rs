@@ -61,6 +61,7 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
             revision: args.revision,
             force_download: if args.force_download { Some(true) } else { None },
             local_files_only: None,
+            cache_dir: args.cache_dir,
         };
         api.download_file(&params).await?
     } else {
@@ -86,6 +87,7 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
             force_download: if args.force_download { Some(true) } else { None },
             local_files_only: None,
             max_workers: None,
+            cache_dir: args.cache_dir,
         };
         api.snapshot_download(&params).await?
     };

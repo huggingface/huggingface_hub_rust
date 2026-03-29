@@ -39,11 +39,6 @@ async fn main() -> ExitCode {
         "resolved authentication token"
     );
 
-    let cache_dir = match &cli.command {
-        Command::Download(args) => args.cache_dir.clone(),
-        _ => None,
-    };
-
     let mut builder = HfApiBuilder::new();
     if let Some(t) = token {
         builder = builder.token(t);
@@ -51,10 +46,6 @@ async fn main() -> ExitCode {
     if let Some(ref endpoint) = cli.endpoint {
         debug!(endpoint = endpoint.as_str(), "using custom API endpoint");
         builder = builder.endpoint(endpoint);
-    }
-    if let Some(ref dir) = cache_dir {
-        debug!(cache_dir = %dir.display(), "using custom cache directory");
-        builder = builder.cache_dir(dir);
     }
     let api = match builder.build() {
         Ok(api) => {

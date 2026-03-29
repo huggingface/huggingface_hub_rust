@@ -220,7 +220,8 @@ impl HfApi {
 
     async fn download_file_to_cache(&self, params: &DownloadFileParams) -> Result<PathBuf> {
         let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
-        let cache_dir = &self.inner.cache_dir;
+        let default_cache_dir = &self.inner.cache_dir;
+        let cache_dir = params.cache_dir.as_deref().unwrap_or(default_cache_dir);
         let repo_folder = cache::repo_folder_name(&params.repo_id, params.repo_type);
         let force_download = params.force_download.unwrap_or(false);
 
@@ -469,7 +470,8 @@ impl HfApi {
         let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
         let max_workers = params.max_workers.unwrap_or(8);
         let repo_folder = crate::cache::repo_folder_name(&params.repo_id, params.repo_type);
-        let cache_dir = &self.inner.cache_dir;
+        let default_cache_dir = &self.inner.cache_dir;
+        let cache_dir = params.cache_dir.as_deref().unwrap_or(default_cache_dir);
 
         if params.local_files_only == Some(true) {
             let commit_hash = if crate::cache::is_commit_hash(revision) {
