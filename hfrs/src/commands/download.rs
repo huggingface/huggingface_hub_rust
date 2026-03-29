@@ -32,10 +32,6 @@ pub struct Args {
     #[arg(long)]
     pub exclude: Vec<String>,
 
-    /// Local cache directory
-    #[arg(long)]
-    pub cache_dir: Option<PathBuf>,
-
     /// Local directory to save files into (bypasses cache)
     #[arg(long)]
     pub local_dir: Option<PathBuf>,

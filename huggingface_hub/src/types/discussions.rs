@@ -27,8 +27,7 @@ pub struct Discussion {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiscussionWithDetails {
-    #[serde(default)]
-    pub num: u64,
+    pub num: Option<u64>,
     pub author: Option<serde_json::Value>,
     pub title: Option<String>,
     pub status: Option<String>,
@@ -112,7 +111,7 @@ mod tests {
             "targetBranch": "refs/heads/main"
         }"#;
         let disc: DiscussionWithDetails = serde_json::from_str(json).unwrap();
-        assert_eq!(disc.num, 3);
+        assert_eq!(disc.num, Some(3));
         assert_eq!(disc.events.len(), 1);
     }
 }

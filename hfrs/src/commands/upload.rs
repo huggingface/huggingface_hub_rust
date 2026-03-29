@@ -27,10 +27,6 @@ pub struct Args {
     #[arg(long)]
     pub revision: Option<String>,
 
-    /// Make the repository private (if it does not exist yet)
-    #[arg(long)]
-    pub private: bool,
-
     /// Include patterns for folder upload (can be specified multiple times)
     #[arg(long)]
     pub include: Vec<String>,
