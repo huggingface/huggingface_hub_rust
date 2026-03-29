@@ -212,6 +212,8 @@ pub struct DownloadFileParams {
     pub force_download: Option<bool>,
     #[builder(default, setter(strip_option))]
     pub local_files_only: Option<bool>,
+    #[builder(default, setter(strip_option))]
+    pub cache_dir: Option<PathBuf>,
 }
 
 #[derive(TypedBuilder)]
@@ -234,6 +236,8 @@ pub struct SnapshotDownloadParams {
     pub local_files_only: Option<bool>,
     #[builder(default, setter(strip_option))]
     pub max_workers: Option<usize>,
+    #[builder(default, setter(strip_option))]
+    pub cache_dir: Option<PathBuf>,
 }
 
 #[derive(TypedBuilder)]

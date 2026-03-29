@@ -800,7 +800,7 @@ async fn test_get_discussion_details() {
         .discussion_num(1_u64)
         .build();
     let details = api.get_discussion_details(&params).await.unwrap();
-    assert_eq!(details.num, 1);
+    assert_eq!(details.num, Some(1));
     assert!(details.title.is_some());
 }
 
