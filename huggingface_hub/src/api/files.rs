@@ -171,8 +171,14 @@ impl HfApi {
     /// Resolve a file from the local cache without making network requests.
     /// Matches Python's `try_to_load_from_cache`: checks the snapshot pointer
     /// first, then consults `.no_exist` markers for negative cache hits.
-    fn resolve_from_cache_only(&self, repo_folder: &str, revision: &str, filename: &str) -> Result<PathBuf> {
-        let cache_dir = &self.inner.cache_dir;
+    fn resolve_from_cache_only(
+        &self,
+        cache_dir: &Path,
+        repo_folder: &str,
+        revision: &str,
+        filename: &str,
+    ) -> Result<PathBuf> {
+        let cache_dir: &Path = cache_dir;
 
         let commit_hash = if cache::is_commit_hash(revision) {
             Some(revision.to_string())
@@ -202,8 +208,8 @@ impl HfApi {
     /// Resolve the cached etag for a file by reading the symlink target in snapshots/.
     /// On Windows, where copies are used instead of symlinks, `read_link` will fail
     /// and this returns `None`, disabling conditional-request (If-None-Match) optimization.
-    fn find_cached_etag(&self, repo_folder: &str, revision: &str, filename: &str) -> Option<String> {
-        let cache_dir = &self.inner.cache_dir;
+    fn find_cached_etag(&self, cache_dir: &Path, repo_folder: &str, revision: &str, filename: &str) -> Option<String> {
+        let cache_dir: &Path = cache_dir;
 
         let commit_hash = if cache::is_commit_hash(revision) {
             Some(revision.to_string())
@@ -233,7 +239,7 @@ impl HfApi {
         }
 
         if params.local_files_only.unwrap_or(false) {
-            return self.resolve_from_cache_only(&repo_folder, revision, &params.filename);
+            return self.resolve_from_cache_only(cache_dir, &repo_folder, revision, &params.filename);
         }
 
         let result = self
@@ -242,7 +248,7 @@ impl HfApi {
 
         match &result {
             Err(e) if e.is_transient() && !force_download => self
-                .resolve_from_cache_only(&repo_folder, revision, &params.filename)
+                .resolve_from_cache_only(cache_dir, &repo_folder, revision, &params.filename)
                 .or(result),
             _ => result,
         }
@@ -331,7 +337,7 @@ impl HfApi {
         }
 
         let cached_etag = if !force_download {
-            self.find_cached_etag(repo_folder, revision, &params.filename)
+            self.find_cached_etag(cache_dir, repo_folder, revision, &params.filename)
         } else {
             None
         };
