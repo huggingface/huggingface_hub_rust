@@ -5,6 +5,8 @@ pub struct CliRunner {
     bin: String,
     bin_path: Option<String>,
     token: Option<String>,
+    extra_env: Vec<(String, String)>,
+    env_remove: Vec<String>,
 }
 
 pub const VOLATILE_FIELDS: &[&str] = &[
@@ -25,6 +27,8 @@ impl CliRunner {
             bin: bin.to_string(),
             bin_path: None,
             token: std::env::var("HF_TOKEN").ok(),
+            extra_env: Vec::new(),
+            env_remove: Vec::new(),
         }
     }
 
@@ -33,7 +37,32 @@ impl CliRunner {
             bin: "hfrs".to_string(),
             bin_path: Some(env!("CARGO_BIN_EXE_hfrs").to_string()),
             token: std::env::var("HF_TOKEN").ok(),
+            extra_env: Vec::new(),
+            env_remove: Vec::new(),
         }
+    }
+
+    /// Create a runner with no token and HF_HOME set to a custom path.
+    /// HF_TOKEN is explicitly removed from the subprocess environment.
+    pub fn hfrs_isolated(hf_home: &str) -> Self {
+        Self {
+            bin: "hfrs".to_string(),
+            bin_path: Some(env!("CARGO_BIN_EXE_hfrs").to_string()),
+            token: None,
+            extra_env: vec![("HF_HOME".to_string(), hf_home.to_string())],
+            env_remove: vec!["HF_TOKEN".to_string()],
+        }
+    }
+
+    pub fn with_env(mut self, key: &str, value: &str) -> Self {
+        self.extra_env.push((key.to_string(), value.to_string()));
+        self
+    }
+
+    pub fn without_token(mut self) -> Self {
+        self.token = None;
+        self.env_remove.push("HF_TOKEN".to_string());
+        self
     }
 
     pub fn is_available(&self) -> bool {
@@ -52,8 +81,15 @@ impl CliRunner {
         let mut cmd = Command::new(bin);
         cmd.args(args);
         cmd.args(extra_args);
+        for (key, value) in &self.extra_env {
+            cmd.env(key, value);
+        }
         if let Some(ref token) = self.token {
             cmd.env("HF_TOKEN", token);
+        }
+        // env_remove applied last so it overrides everything
+        for key in &self.env_remove {
+            cmd.env_remove(key);
         }
         cmd
     }
@@ -110,6 +146,16 @@ impl CliRunner {
         let stderr = String::from_utf8(output.stderr)?;
         let code = output.status.code().unwrap_or(-1);
         Ok((code, stderr))
+    }
+
+    /// Run command and return (exit_code, stdout, stderr)
+    pub fn run_full(&self, args: &[&str]) -> anyhow::Result<(i32, String, String)> {
+        let cmd = self.build_command(args, &[]);
+        let output = self.run_with_timeout(cmd, args)?;
+        let code = output.status.code().unwrap_or(-1);
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+        Ok((code, stdout, stderr))
     }
 }
 
