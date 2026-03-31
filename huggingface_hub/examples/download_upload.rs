@@ -1,6 +1,7 @@
 //! Download and upload files from/to the Hugging Face Hub.
 //!
 //! Demonstrates:
+//! - Downloading a file to the HF cache
 //! - Downloading a file to a local directory
 //! - Downloading a file as a byte stream
 //! - Uploading a file from bytes
@@ -21,32 +22,44 @@ async fn main() -> huggingface_hub::Result<()> {
     let api = HfApi::new()?;
     let tmp_dir = tempfile::tempdir().expect("failed to create tempdir");
 
-    // --- Download to file ---
+    // --- Download to HF cache ---
 
-    let path = api
+    let cached_path = api
         .download_file(
             &DownloadFileParams::builder()
-                .repo_id("gpt2")
+                .repo_id("openai-community/gpt2")
+                .filename("config.json")
+                .build(),
+        )
+        .await?;
+    println!("Downloaded to cache: {}", cached_path.display());
+
+    // --- Download to local directory ---
+
+    let local_path = api
+        .download_file(
+            &DownloadFileParams::builder()
+                .repo_id("openai-community/gpt2")
                 .filename("config.json")
                 .local_dir(tmp_dir.path().to_path_buf())
                 .build(),
         )
         .await?;
-    let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-    println!("Downloaded gpt2/config.json to {} ({size} bytes)", path.display());
+    let size = std::fs::metadata(&local_path).map(|m| m.len()).unwrap_or(0);
+    println!("Downloaded to local dir: {} ({size} bytes)", local_path.display());
 
     // --- Download as stream ---
 
     let (content_length, mut stream) = api
         .download_file_stream(
             &DownloadFileStreamParams::builder()
-                .repo_id("gpt2")
+                .repo_id("openai-community/gpt2")
                 .filename("config.json")
                 .build(),
         )
         .await?;
     println!(
-        "Streaming gpt2/config.json (content-length: {})",
+        "Streaming config.json (content-length: {})",
         content_length.map_or("unknown".to_string(), |n| format!("{n}"))
     );
 
