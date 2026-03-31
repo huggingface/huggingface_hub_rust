@@ -215,6 +215,18 @@ pub struct DownloadFileParams {
 }
 
 #[derive(TypedBuilder)]
+pub struct DownloadFileStreamParams {
+    #[builder(setter(into))]
+    pub repo_id: String,
+    #[builder(setter(into))]
+    pub filename: String,
+    #[builder(default, setter(into, strip_option))]
+    pub repo_type: Option<RepoType>,
+    #[builder(default, setter(into, strip_option))]
+    pub revision: Option<String>,
+}
+
+#[derive(TypedBuilder)]
 pub struct SnapshotDownloadParams {
     #[builder(setter(into))]
     pub repo_id: String,
