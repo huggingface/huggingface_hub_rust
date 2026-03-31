@@ -39,6 +39,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build -p huggingface-hub --release
+      - run: cargo build -p huggingface-hub --all-features --examples
 
   test:
     name: Test
