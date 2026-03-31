@@ -13,7 +13,7 @@
 use futures::StreamExt;
 use huggingface_hub::{
     AddSource, CreateRepoParams, DeleteRepoParams, DownloadFileParams, DownloadFileStreamParams, HfApi,
-    SnapshotDownloadParams, UploadFileParams,
+    SnapshotDownloadParams, UploadFileParams, UploadFolderParams,
 };
 use tokio::io::AsyncWriteExt;
 
@@ -159,6 +159,24 @@ async fn main() -> huggingface_hub::Result<()> {
         )
         .await?;
     println!("Uploaded data/local_data.txt: {:?}", commit.commit_url);
+
+    // Upload a folder
+    let upload_dir = tmp_dir.path().join("my_folder");
+    std::fs::create_dir_all(upload_dir.join("subdir")).expect("failed to create dirs");
+    std::fs::write(upload_dir.join("root.txt"), "root file").expect("failed to write");
+    std::fs::write(upload_dir.join("subdir/nested.txt"), "nested file").expect("failed to write");
+
+    let commit = api
+        .upload_folder(
+            &UploadFolderParams::builder()
+                .repo_id(&repo_name)
+                .folder_path(upload_dir)
+                .path_in_repo("uploaded")
+                .commit_message("Upload folder with nested files")
+                .build(),
+        )
+        .await?;
+    println!("Uploaded folder: {:?}", commit.commit_url);
 
     // Cleanup
     api.delete_repo(&DeleteRepoParams::builder().repo_id(&repo_name).missing_ok(true).build())
