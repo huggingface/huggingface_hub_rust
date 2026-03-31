@@ -27,13 +27,7 @@ pub(crate) struct HfApiInner {
     pub(crate) cache_dir: std::path::PathBuf,
     pub(crate) cache_enabled: bool,
     #[cfg(feature = "xet")]
-    pub(crate) xet_session: std::sync::Mutex<Option<CachedXetSession>>,
-}
-
-#[cfg(feature = "xet")]
-pub(crate) struct CachedXetSession {
-    pub(crate) endpoint: String,
-    pub(crate) session: xet::xet_session::XetSession,
+    pub(crate) xet_session: std::sync::Mutex<Option<xet::xet_session::XetSession>>,
 }
 
 pub struct HfApiBuilder {
