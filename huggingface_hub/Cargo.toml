@@ -6,6 +6,7 @@ description = "Rust client for the Hugging Face Hub API"
 license = "Apache-2.0"
 
 [dependencies]
+bytes = "1"
 reqwest = { version = "0.13", features = ["json", "stream", "multipart"] }
 reqwest-middleware = { version = "0.5", features = ["json", "multipart", "query"] }
 reqwest-retry = "0.9"
@@ -106,6 +107,10 @@ required-features = ["likes"]
 name = "papers"
 path = "examples/papers.rs"
 required-features = ["papers"]
+
+[[example]]
+name = "download_upload"
+path = "examples/download_upload.rs"
 
 [[example]]
 name = "blocking_read"

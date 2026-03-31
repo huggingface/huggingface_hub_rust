@@ -10,9 +10,9 @@ use crate::client::HfApi;
 use crate::error::{HfError, Result};
 use crate::types::{
     AddSource, CommitInfo, CommitOperation, CreateCommitParams, DatasetInfoParams, DeleteFileParams,
-    DeleteFolderParams, DownloadFileParams, GetPathsInfoParams, ListRepoFilesParams, ListRepoTreeParams,
-    ModelInfoParams, RepoTreeEntry, RepoType, SnapshotDownloadParams, SpaceInfoParams, UploadFileParams,
-    UploadFolderParams,
+    DeleteFolderParams, DownloadFileParams, DownloadFileStreamParams, GetPathsInfoParams, ListRepoFilesParams,
+    ListRepoTreeParams, ModelInfoParams, RepoTreeEntry, RepoType, SnapshotDownloadParams, SpaceInfoParams,
+    UploadFileParams, UploadFolderParams,
 };
 use crate::{cache, constants};
 
@@ -107,6 +107,34 @@ impl HfApi {
             }
             self.download_file_to_cache(params).await
         }
+    }
+
+    /// Download a file and return a byte stream instead of writing to disk.
+    ///
+    /// Returns a `(content_length, stream)` tuple. `content_length` is `Some`
+    /// when the server provides a `Content-Length` header.
+    ///
+    /// Endpoint: GET {endpoint}/{prefix}{repo_id}/resolve/{revision}/{filename}
+    pub async fn download_file_stream(
+        &self,
+        params: &DownloadFileStreamParams,
+    ) -> Result<(Option<u64>, impl Stream<Item = std::result::Result<bytes::Bytes, reqwest::Error>>)> {
+        let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
+        let url = self.download_url(params.repo_type, &params.repo_id, revision, &params.filename);
+
+        let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;
+        let response = self
+            .check_response(
+                response,
+                Some(&params.repo_id),
+                crate::error::NotFoundContext::Entry {
+                    path: params.filename.clone(),
+                },
+            )
+            .await?;
+
+        let content_length = response.content_length();
+        Ok((content_length, response.bytes_stream()))
     }
 
     async fn download_file_to_local_dir(&self, params: &DownloadFileParams) -> Result<PathBuf> {
