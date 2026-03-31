@@ -74,6 +74,25 @@ async fn main() -> huggingface_hub::Result<()> {
     file.flush().await?;
     println!("Streamed {total} bytes to {}", stream_dest.display());
 
+    // --- Download as stream and process in memory ---
+
+    let (_content_length, mut stream) = api
+        .download_file_stream(
+            &DownloadFileStreamParams::builder()
+                .repo_id("openai-community/gpt2")
+                .filename("config.json")
+                .build(),
+        )
+        .await?;
+
+    let mut buf = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        buf.extend_from_slice(&chunk?);
+    }
+
+    let config: serde_json::Value = serde_json::from_slice(&buf)?;
+    println!("Parsed config in memory: model_type={}, vocab_size={}", config["model_type"], config["vocab_size"]);
+
     // --- Upload (requires HF_TOKEN and HF_TEST_WRITE=1) ---
 
     if std::env::var("HF_TOKEN").is_err() || std::env::var("HF_TEST_WRITE").is_err() {
