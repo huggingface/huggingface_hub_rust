@@ -266,7 +266,13 @@ impl HfApi {
 
         #[cfg(feature = "xet")]
         {
-            let head_response = self.inner.client.head(&url).headers(self.auth_headers()).send().await?;
+            let head_response = self
+                .inner
+                .no_redirect_client
+                .head(&url)
+                .headers(self.auth_headers())
+                .send()
+                .await?;
 
             let status = head_response.status();
             if status == reqwest::StatusCode::NOT_FOUND {
@@ -281,15 +287,18 @@ impl HfApi {
                 .await);
             }
 
-            let head_response = self
-                .check_response(
+            let head_response = if status.is_client_error() || status.is_server_error() {
+                self.check_response(
                     head_response,
                     Some(&params.repo_id),
                     crate::error::NotFoundContext::Entry {
                         path: params.filename.clone(),
                     },
                 )
-                .await?;
+                .await?
+            } else {
+                head_response
+            };
 
             let has_xet_hash = head_response.headers().get(constants::HEADER_X_XET_HASH).is_some();
 
@@ -529,18 +538,12 @@ impl HfApi {
             let commit_hash_ref = &commit_hash;
             let head_futs = filenames.iter().map(|filename| {
                 let url = self.download_url(params.repo_type, &params.repo_id, commit_hash_ref, filename);
-                let client = &self.inner.client;
+                let client = &self.inner.no_redirect_client;
                 let auth = self.auth_headers();
                 let filename = filename.clone();
                 let repo_folder_ref = &repo_folder;
                 async move {
                     let resp = client.head(&url).headers(auth).send().await?;
-                    // Per-file 404 resilience: write a .no_exist marker and skip
-                    // the file rather than aborting the entire snapshot download.
-                    // This matches the Python huggingface_hub library behavior.
-                    // Alternative: since the file list comes from list_repo_tree
-                    // on a pinned commit, a 404 here is unexpected and could be
-                    // treated as an error instead.
                     if resp.status() == reqwest::StatusCode::NOT_FOUND {
                         if let Some(commit) = extract_commit_hash(&resp) {
                             let no_exist = cache::no_exist_path(cache_dir, repo_folder_ref, &commit, &filename);
@@ -550,7 +553,7 @@ impl HfApi {
                             let _ = tokio::fs::write(&no_exist, b"").await;
                         }
                         return Ok::<_, HfError>(None);
-                    } else if !resp.status().is_success() {
+                    } else if resp.status().is_client_error() || resp.status().is_server_error() {
                         return Err(HfError::Http {
                             status: resp.status(),
                             url,

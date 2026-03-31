@@ -35,7 +35,7 @@ pub struct BranchCreateArgs {
     pub revision: Option<String>,
 
     /// Repository type
-    #[arg(long, value_enum, default_value = "model")]
+    #[arg(long, visible_alias = "repo-type", value_enum, default_value = "model")]
     pub r#type: RepoTypeArg,
 }
 
@@ -49,7 +49,7 @@ pub struct BranchDeleteArgs {
     pub branch: String,
 
     /// Repository type
-    #[arg(long, value_enum, default_value = "model")]
+    #[arg(long, visible_alias = "repo-type", value_enum, default_value = "model")]
     pub r#type: RepoTypeArg,
 }
 

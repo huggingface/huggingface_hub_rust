@@ -12,7 +12,7 @@ pub struct Args {
     pub repo_id: String,
 
     /// Repository type
-    #[arg(long, value_enum, default_value = "model")]
+    #[arg(long, visible_alias = "repo-type", value_enum, default_value = "model")]
     pub r#type: RepoTypeArg,
 
     /// Make the repository private

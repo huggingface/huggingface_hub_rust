@@ -16,7 +16,7 @@ pub struct Args {
     pub patterns: Vec<String>,
 
     /// Repository type
-    #[arg(long, value_enum, default_value = "model")]
+    #[arg(long, visible_alias = "repo-type", value_enum, default_value = "model")]
     pub r#type: RepoTypeArg,
 
     /// Git revision to target

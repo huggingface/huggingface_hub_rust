@@ -27,6 +27,8 @@ pub(crate) struct HfApiInner {
     pub(crate) cache_dir: std::path::PathBuf,
     pub(crate) cache_enabled: bool,
     #[cfg(feature = "xet")]
+    pub(crate) no_redirect_client: ClientWithMiddleware,
+    #[cfg(feature = "xet")]
     pub(crate) xet_session: std::sync::Mutex<Option<xet::xet_session::XetSession>>,
 }
 
@@ -119,13 +121,25 @@ impl HfApiBuilder {
 
         let raw_client = match self.client {
             Some(c) => c,
-            None => reqwest::Client::builder().default_headers(default_headers).build()?,
+            None => reqwest::Client::builder().default_headers(default_headers.clone()).build()?,
         };
 
         let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
         let client = reqwest_middleware::ClientBuilder::new(raw_client)
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build();
+
+        #[cfg(feature = "xet")]
+        let no_redirect_client = {
+            let raw = reqwest::Client::builder()
+                .default_headers(default_headers)
+                .redirect(reqwest::redirect::Policy::none())
+                .build()?;
+            let retry = ExponentialBackoff::builder().build_with_max_retries(3);
+            reqwest_middleware::ClientBuilder::new(raw)
+                .with(RetryTransientMiddleware::new_with_policy(retry))
+                .build()
+        };
 
         Ok(HfApi {
             inner: Arc::new(HfApiInner {
@@ -134,6 +148,8 @@ impl HfApiBuilder {
                 token,
                 cache_dir,
                 cache_enabled: self.cache_enabled.unwrap_or(true),
+                #[cfg(feature = "xet")]
+                no_redirect_client,
                 #[cfg(feature = "xet")]
                 xet_session: std::sync::Mutex::new(None),
             }),

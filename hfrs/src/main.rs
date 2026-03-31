@@ -255,19 +255,29 @@ fn format_hf_error(err: &HfError) -> String {
     }
 }
 
+const XET_CRATES: &[&str] = &["hf_xet", "xet_client", "xet_core_structures", "xet_data", "xet_runtime"];
+
 fn init_logging(color: bool) {
     use tracing_subscriber::EnvFilter;
 
-    let filter = if let Ok(level) = std::env::var("HF_LOG_LEVEL") {
-        EnvFilter::try_new(&level).unwrap_or_else(|_| {
-            eprintln!("Warning: invalid HF_LOG_LEVEL='{level}'. Valid values: error, warn, info, debug, trace");
-            EnvFilter::new("off")
-        })
+    let mut filter_str = if let Ok(level) = std::env::var("HF_LOG_LEVEL") {
+        level
     } else if std::env::var("HF_DEBUG").is_ok() {
-        EnvFilter::new("debug")
+        "debug,h2=off,hyper_util=off,hyper=off".to_string()
     } else {
-        EnvFilter::new("warn")
+        "warn".to_string()
     };
+
+    if let Ok(xet_level) = std::env::var("HF_XET_LOG_LEVEL") {
+        for crate_name in XET_CRATES {
+            filter_str.push_str(&format!(",{crate_name}={xet_level}"));
+        }
+    }
+
+    let filter = EnvFilter::try_new(&filter_str).unwrap_or_else(|_| {
+        eprintln!("Warning: invalid log filter '{filter_str}'. Valid levels: error, warn, info, debug, trace");
+        EnvFilter::new("off")
+    });
 
     tracing_subscriber::fmt()
         .with_env_filter(filter)

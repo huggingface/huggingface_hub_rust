@@ -42,7 +42,7 @@ pub struct TagCreateArgs {
     pub revision: Option<String>,
 
     /// Repository type
-    #[arg(long, value_enum, default_value = "model")]
+    #[arg(long, visible_alias = "repo-type", value_enum, default_value = "model")]
     pub r#type: RepoTypeArg,
 }
 
@@ -56,7 +56,7 @@ pub struct TagDeleteArgs {
     pub tag: String,
 
     /// Repository type
-    #[arg(long, value_enum, default_value = "model")]
+    #[arg(long, visible_alias = "repo-type", value_enum, default_value = "model")]
     pub r#type: RepoTypeArg,
 }
 
@@ -67,7 +67,7 @@ pub struct TagListArgs {
     pub repo_id: String,
 
     /// Repository type
-    #[arg(long, value_enum, default_value = "model")]
+    #[arg(long, visible_alias = "repo-type", value_enum, default_value = "model")]
     pub r#type: RepoTypeArg,
 
     /// Output format

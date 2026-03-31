@@ -17,7 +17,7 @@ pub struct Args {
     pub filenames: Vec<String>,
 
     /// Repository type
-    #[arg(long, value_enum, default_value = "model")]
+    #[arg(long, visible_alias = "repo-type", value_enum, default_value = "model")]
     pub r#type: RepoTypeArg,
 
     /// Git revision (branch, tag, or commit SHA)
