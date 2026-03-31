@@ -13,7 +13,7 @@
 use futures::StreamExt;
 use huggingface_hub::{
     AddSource, CreateRepoParams, DeleteRepoParams, DownloadFileParams, DownloadFileStreamParams, HfApi,
-    UploadFileParams,
+    SnapshotDownloadParams, UploadFileParams,
 };
 use tokio::io::AsyncWriteExt;
 
@@ -92,6 +92,24 @@ async fn main() -> huggingface_hub::Result<()> {
 
     let config: serde_json::Value = serde_json::from_slice(&buf)?;
     println!("Parsed config in memory: model_type={}, vocab_size={}", config["model_type"], config["vocab_size"]);
+
+    // --- Download a folder (snapshot) ---
+
+    let snapshot_dir = tmp_dir.path().join("snapshot");
+    let snapshot_path = api
+        .snapshot_download(
+            &SnapshotDownloadParams::builder()
+                .repo_id("openai-community/gpt2")
+                .local_dir(snapshot_dir)
+                .allow_patterns(vec!["*.json".to_string()])
+                .build(),
+        )
+        .await?;
+    println!("Downloaded snapshot to: {}", snapshot_path.display());
+    for entry in std::fs::read_dir(&snapshot_path)? {
+        let entry = entry?;
+        println!("  {}", entry.file_name().to_string_lossy());
+    }
 
     // --- Upload (requires HF_TOKEN and HF_TEST_WRITE=1) ---
 
