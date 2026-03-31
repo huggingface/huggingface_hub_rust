@@ -34,6 +34,20 @@ async fn main() -> huggingface_hub::Result<()> {
         .await?;
     println!("Downloaded to cache: {}", cached_path.display());
 
+    // --- Download a large xet-backed file to local directory ---
+
+    let xet_path = api
+        .download_file(
+            &DownloadFileParams::builder()
+                .repo_id("Lightricks/LTX-2.3")
+                .filename("ltx-2.3-spatial-upscaler-x1.5-1.0.safetensors")
+                .local_dir(tmp_dir.path().to_path_buf())
+                .build(),
+        )
+        .await?;
+    let xet_size = std::fs::metadata(&xet_path).map(|m| m.len()).unwrap_or(0);
+    println!("Downloaded xet file to: {} ({xet_size} bytes)", xet_path.display());
+
     // --- Download to local directory ---
 
     let local_path = api
