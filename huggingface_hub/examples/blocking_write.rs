@@ -1,4 +1,4 @@
-//! Synchronous write operations using HfApiSync.
+//! Synchronous write operations using HFClientSync.
 //!
 //! Creates a temporary repo, uploads files, manages branches, and cleans up.
 //!
@@ -8,11 +8,11 @@
 use huggingface_hub::{
     AddSource, CommitOperation, CreateBranchParams, CreateCommitParams, CreateRepoParams, CreateTagParams,
     DeleteBranchParams, DeleteFileParams, DeleteRepoParams, DeleteTagParams, DownloadFileParams, FileExistsParams,
-    HfApiSync, ListRepoFilesParams, ListRepoRefsParams, UploadFileParams, UploadFolderParams,
+    HFClientSync, ListRepoFilesParams, ListRepoRefsParams, UploadFileParams, UploadFolderParams,
 };
 
 fn main() -> huggingface_hub::Result<()> {
-    let api = HfApiSync::new()?;
+    let api = HFClientSync::new()?;
     let user = api.whoami()?;
     let unique = std::process::id();
     let repo_name = format!("{}/sync-example-{unique}", user.username);
@@ -33,7 +33,7 @@ fn main() -> huggingface_hub::Result<()> {
     let commit = api.upload_file(
         &UploadFileParams::builder()
             .repo_id(&repo_name)
-            .source(AddSource::Bytes(b"Hello from HfApiSync!".to_vec()))
+            .source(AddSource::Bytes(b"Hello from HFClientSync!".to_vec()))
             .path_in_repo("hello.txt")
             .commit_message("Add hello.txt")
             .build(),

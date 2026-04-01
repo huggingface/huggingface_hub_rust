@@ -4,11 +4,11 @@
 //! Run: cargo run -p huggingface-hub --example users
 
 use futures::StreamExt;
-use huggingface_hub::HfApi;
+use huggingface_hub::HFClient;
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
-    let api = HfApi::new()?;
+    let api = HFClient::new()?;
 
     api.auth_check().await?;
     println!("Token is valid");

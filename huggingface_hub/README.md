@@ -82,15 +82,15 @@ async fn main() -> huggingface_hub::Result<()> {
 ### Check if a file exists
 
 ```rust,no_run
-use huggingface_hub::{FileExistsParams, HFClient};
+use huggingface_hub::{HFClient, RepoFileExistsParams};
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
     let api = HFClient::new()?;
+    let repo = api.model("openai-community", "gpt2");
 
-    let exists = api.file_exists(
-        &FileExistsParams::builder()
-            .repo_id("gpt2")
+    let exists = repo.file_exists(
+        &RepoFileExistsParams::builder()
             .filename("config.json")
             .build()
     ).await?;
@@ -104,15 +104,15 @@ async fn main() -> huggingface_hub::Result<()> {
 
 ```rust,no_run
 use std::path::PathBuf;
-use huggingface_hub::{DownloadFileParams, HFClient};
+use huggingface_hub::{HFClient, RepoDownloadFileParams};
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
     let api = HFClient::new()?;
+    let repo = api.model("openai-community", "gpt2");
 
-    let path = api.download_file(
-        &DownloadFileParams::builder()
-            .repo_id("gpt2")
+    let path = repo.download_file(
+        &RepoDownloadFileParams::builder()
             .filename("config.json")
             .local_dir(PathBuf::from("/tmp/hf-downloads"))
             .build()
@@ -154,15 +154,15 @@ async fn main() -> huggingface_hub::Result<()> {
 ### Upload a file
 
 ```rust,no_run
-use huggingface_hub::{AddSource, HFClient, UploadFileParams};
+use huggingface_hub::{AddSource, HFClient, RepoUploadFileParams};
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
     let api = HFClient::new()?;
+    let repo = api.model("your-username", "your-repo");
 
-    let commit = api.upload_file(
-        &UploadFileParams::builder()
-            .repo_id("your-username/your-repo")
+    let commit = repo.upload_file(
+        &RepoUploadFileParams::builder()
             .source(AddSource::Bytes(b"Hello, world!".to_vec()))
             .path_in_repo("greeting.txt")
             .commit_message("Add greeting file")

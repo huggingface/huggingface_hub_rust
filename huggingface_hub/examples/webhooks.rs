@@ -3,11 +3,11 @@
 //! Requires HF_TOKEN and the "webhooks" feature.
 //! Run: cargo run -p huggingface-hub --features webhooks --example webhooks
 
-use huggingface_hub::{CreateWebhookParams, HfApi, UpdateWebhookParams};
+use huggingface_hub::{CreateWebhookParams, HFClient, UpdateWebhookParams};
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
-    let api = HfApi::new()?;
+    let api = HFClient::new()?;
 
     // --- Read operations ---
 

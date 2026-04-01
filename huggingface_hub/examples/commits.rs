@@ -5,17 +5,18 @@
 
 use futures::StreamExt;
 use huggingface_hub::{
-    CreateBranchParams, CreateRepoParams, CreateTagParams, DeleteBranchParams, DeleteRepoParams, DeleteTagParams,
-    GetCommitDiffParams, GetRawDiffParams, HfApi, ListRepoCommitsParams, ListRepoRefsParams,
+    CreateRepoParams, DeleteRepoParams, HFClient, RepoCreateBranchParams, RepoCreateTagParams, RepoDeleteBranchParams,
+    RepoDeleteTagParams, RepoGetCommitDiffParams, RepoGetRawDiffParams, RepoListCommitsParams, RepoListRefsParams,
 };
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
-    let api = HfApi::new()?;
+    let api = HFClient::new()?;
 
     // --- Read operations ---
 
-    let commits_stream = api.list_repo_commits(&ListRepoCommitsParams::builder().repo_id("gpt2").build());
+    let repo = api.model("openai-community", "gpt2");
+    let commits_stream = repo.list_commits(&RepoListCommitsParams::default());
     futures::pin_mut!(commits_stream);
     println!("Recent commits in gpt2:");
     let mut first_two_ids: Vec<String> = Vec::new();
@@ -31,9 +32,7 @@ async fn main() -> huggingface_hub::Result<()> {
         }
     }
 
-    let refs = api
-        .list_repo_refs(&ListRepoRefsParams::builder().repo_id("gpt2").build())
-        .await?;
+    let refs = repo.list_refs(&RepoListRefsParams::default()).await?;
     println!("\nBranches:");
     for b in &refs.branches {
         println!("  {} -> {}", b.name, &b.target_commit[..8]);
@@ -45,14 +44,14 @@ async fn main() -> huggingface_hub::Result<()> {
 
     if first_two_ids.len() == 2 {
         let compare = format!("{}..{}", first_two_ids[1], first_two_ids[0]);
-        let diff = api
-            .get_commit_diff(&GetCommitDiffParams::builder().repo_id("gpt2").compare(&compare).build())
+        let diff = repo
+            .get_commit_diff(&RepoGetCommitDiffParams::builder().compare(&compare).build())
             .await?;
         println!("\nDiff ({compare}):");
         println!("  {} chars", diff.len());
 
-        let raw_diff = api
-            .get_raw_diff(&GetRawDiffParams::builder().repo_id("gpt2").compare(&compare).build())
+        let raw_diff = repo
+            .get_raw_diff(&RepoGetRawDiffParams::builder().compare(&compare).build())
             .await?;
         println!("Raw diff: {} chars", raw_diff.len());
     }
@@ -61,51 +60,34 @@ async fn main() -> huggingface_hub::Result<()> {
 
     let user = api.whoami().await?;
     let unique = std::process::id();
-    let repo_name = format!("{}/example-commits-{unique}", user.username);
+    let repo = api.model(&user.username, format!("example-commits-{unique}"));
 
     api.create_repo(
         &CreateRepoParams::builder()
-            .repo_id(&repo_name)
+            .repo_id(repo.repo_path())
             .private(true)
             .exist_ok(true)
             .build(),
     )
     .await?;
-    println!("\nCreated test repo: {repo_name}");
+    println!("\nCreated test repo: {}", repo.repo_path());
 
-    api.create_branch(
-        &CreateBranchParams::builder()
-            .repo_id(&repo_name)
-            .branch("feature-branch")
-            .build(),
-    )
-    .await?;
+    repo.create_branch(&RepoCreateBranchParams::builder().branch("feature-branch").build())
+        .await?;
     println!("Created branch: feature-branch");
 
-    api.delete_branch(
-        &DeleteBranchParams::builder()
-            .repo_id(&repo_name)
-            .branch("feature-branch")
-            .build(),
-    )
-    .await?;
+    repo.delete_branch(&RepoDeleteBranchParams::builder().branch("feature-branch").build())
+        .await?;
     println!("Deleted branch: feature-branch");
 
-    api.create_tag(
-        &CreateTagParams::builder()
-            .repo_id(&repo_name)
-            .tag("v0.1.0")
-            .message("Initial release")
-            .build(),
-    )
-    .await?;
+    repo.create_tag(&RepoCreateTagParams::builder().tag("v0.1.0").message("Initial release").build())
+        .await?;
     println!("Created tag: v0.1.0");
 
-    api.delete_tag(&DeleteTagParams::builder().repo_id(&repo_name).tag("v0.1.0").build())
-        .await?;
+    repo.delete_tag(&RepoDeleteTagParams::builder().tag("v0.1.0").build()).await?;
     println!("Deleted tag: v0.1.0");
 
-    api.delete_repo(&DeleteRepoParams::builder().repo_id(&repo_name).missing_ok(true).build())
+    api.delete_repo(&DeleteRepoParams::builder().repo_id(repo.repo_path()).missing_ok(true).build())
         .await?;
     println!("Cleaned up test repo");
 

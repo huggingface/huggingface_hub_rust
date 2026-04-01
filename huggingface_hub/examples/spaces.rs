@@ -4,34 +4,29 @@
 //! Run: cargo run -p huggingface-hub --features spaces --example spaces
 
 use huggingface_hub::{
-    AddSpaceSecretParams, AddSpaceVariableParams, CreateRepoParams, DeleteRepoParams, DeleteSpaceSecretParams,
-    DeleteSpaceVariableParams, GetSpaceRuntimeParams, HfApi, PauseSpaceParams, RepoType, RestartSpaceParams,
+    CreateRepoParams, DeleteRepoParams, HFClient, RepoType, SpaceSecretDeleteParams, SpaceSecretParams,
+    SpaceVariableDeleteParams, SpaceVariableParams,
 };
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
-    let api = HfApi::new()?;
+    let api = HFClient::new()?;
 
     // --- Read operations ---
 
-    let runtime = api
-        .get_space_runtime(
-            &GetSpaceRuntimeParams::builder()
-                .repo_id("huggingface/transformers-benchmarks")
-                .build(),
-        )
-        .await?;
+    let reference_space = api.space("huggingface", "transformers-benchmarks");
+    let runtime = reference_space.runtime().await?;
     println!("Space runtime: {runtime:?}");
 
     // --- Write operations (creates real resources on the Hub) ---
 
     let user = api.whoami().await?;
     let unique = std::process::id();
-    let space_name = format!("{}/example-space-{unique}", user.username);
+    let space = api.space(&user.username, format!("example-space-{unique}"));
 
     api.create_repo(
         &CreateRepoParams::builder()
-            .repo_id(&space_name)
+            .repo_id(space.repo_path())
             .repo_type(RepoType::Space)
             .private(true)
             .space_sdk("static")
@@ -39,59 +34,37 @@ async fn main() -> huggingface_hub::Result<()> {
             .build(),
     )
     .await?;
-    println!("\nCreated test space: {space_name}");
+    println!("\nCreated test space: {}", space.repo_path());
 
-    api.add_space_secret(
-        &AddSpaceSecretParams::builder()
-            .repo_id(&space_name)
-            .key("EXAMPLE_SECRET")
-            .value("secret-value")
-            .build(),
-    )
-    .await?;
+    space
+        .add_secret(&SpaceSecretParams::builder().key("EXAMPLE_SECRET").value("secret-value").build())
+        .await?;
     println!("Added secret: EXAMPLE_SECRET");
 
-    api.delete_space_secret(
-        &DeleteSpaceSecretParams::builder()
-            .repo_id(&space_name)
-            .key("EXAMPLE_SECRET")
-            .build(),
-    )
-    .await?;
+    space
+        .delete_secret(&SpaceSecretDeleteParams::builder().key("EXAMPLE_SECRET").build())
+        .await?;
     println!("Deleted secret: EXAMPLE_SECRET");
 
-    api.add_space_variable(
-        &AddSpaceVariableParams::builder()
-            .repo_id(&space_name)
-            .key("EXAMPLE_VAR")
-            .value("var-value")
-            .build(),
-    )
-    .await?;
+    space
+        .add_variable(&SpaceVariableParams::builder().key("EXAMPLE_VAR").value("var-value").build())
+        .await?;
     println!("Added variable: EXAMPLE_VAR");
 
-    api.delete_space_variable(
-        &DeleteSpaceVariableParams::builder()
-            .repo_id(&space_name)
-            .key("EXAMPLE_VAR")
-            .build(),
-    )
-    .await?;
+    space
+        .delete_variable(&SpaceVariableDeleteParams::builder().key("EXAMPLE_VAR").build())
+        .await?;
     println!("Deleted variable: EXAMPLE_VAR");
 
-    let paused = api
-        .pause_space(&PauseSpaceParams::builder().repo_id(&space_name).build())
-        .await?;
+    let paused = space.pause().await?;
     println!("Paused space: {paused:?}");
 
-    let restarted = api
-        .restart_space(&RestartSpaceParams::builder().repo_id(&space_name).build())
-        .await?;
+    let restarted = space.restart().await?;
     println!("Restarted space: {restarted:?}");
 
     api.delete_repo(
         &DeleteRepoParams::builder()
-            .repo_id(&space_name)
+            .repo_id(space.repo_path())
             .repo_type(RepoType::Space)
             .missing_ok(true)
             .build(),

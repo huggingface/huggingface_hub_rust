@@ -5,12 +5,12 @@
 
 use huggingface_hub::{
     AddCollectionItemParams, CreateCollectionParams, DeleteCollectionItemParams, DeleteCollectionParams,
-    GetCollectionParams, HfApi, ListCollectionsParams, UpdateCollectionItemParams, UpdateCollectionMetadataParams,
+    GetCollectionParams, HFClient, ListCollectionsParams, UpdateCollectionItemParams, UpdateCollectionMetadataParams,
 };
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
-    let api = HfApi::new()?;
+    let api = HFClient::new()?;
 
     // --- Read operations ---
 

@@ -3,11 +3,11 @@
 //! Requires HF_TOKEN and the "papers" feature.
 //! Run: cargo run -p huggingface-hub --features papers --example papers
 
-use huggingface_hub::{HfApi, ListDailyPapersParams, ListPapersParams, PaperInfoParams};
+use huggingface_hub::{HFClient, ListDailyPapersParams, ListPapersParams, PaperInfoParams};
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
-    let api = HfApi::new()?;
+    let api = HFClient::new()?;
 
     let results = api
         .list_papers(&ListPapersParams::builder().query("transformers").limit(3_usize).build())

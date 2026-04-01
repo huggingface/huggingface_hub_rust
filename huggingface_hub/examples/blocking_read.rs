@@ -1,4 +1,4 @@
-//! Synchronous read operations using HfApiSync.
+//! Synchronous read operations using HFClientSync.
 //!
 //! Demonstrates repo info, file listing, downloads, user info, and
 //! paginated endpoints — all without an async runtime.
@@ -7,13 +7,13 @@
 //! Run: cargo run -p huggingface-hub --features blocking --example blocking_read
 
 use huggingface_hub::{
-    DatasetInfoParams, DownloadFileParams, GetPathsInfoParams, HfApiSync, ListDatasetsParams, ListModelsParams,
+    DatasetInfoParams, DownloadFileParams, GetPathsInfoParams, HFClientSync, ListDatasetsParams, ListModelsParams,
     ListRepoCommitsParams, ListRepoFilesParams, ListRepoTreeParams, ModelInfoParams, RepoExistsParams, RepoTreeEntry,
     SpaceInfoParams,
 };
 
 fn main() -> huggingface_hub::Result<()> {
-    let api = HfApiSync::new()?;
+    let api = HFClientSync::new()?;
 
     // --- Repo info ---
 

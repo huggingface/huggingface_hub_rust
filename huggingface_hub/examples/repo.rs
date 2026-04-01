@@ -5,44 +5,44 @@
 
 use futures::StreamExt;
 use huggingface_hub::{
-    CreateRepoParams, DatasetInfoParams, DeleteRepoParams, FileExistsParams, HfApi, ListDatasetsParams,
-    ListModelsParams, ListSpacesParams, ModelInfoParams, MoveRepoParams, RepoExistsParams, RevisionExistsParams,
-    SpaceInfoParams, UpdateRepoParams,
+    CreateRepoParams, DeleteRepoParams, HFClient, ListDatasetsParams, ListModelsParams, ListSpacesParams,
+    MoveRepoParams, RepoFileExistsParams, RepoInfo, RepoInfoParams, RepoRevisionExistsParams, RepoUpdateSettingsParams,
 };
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
-    let api = HfApi::new()?;
+    let api = HFClient::new()?;
 
     // --- Read operations ---
 
-    let model = api.model_info(&ModelInfoParams::builder().repo_id("gpt2").build()).await?;
-    println!("Model: {} (downloads: {:?})", model.id, model.downloads);
+    let model = api.model("openai-community", "gpt2");
+    match model.info(&RepoInfoParams::default()).await? {
+        RepoInfo::Model(info) => println!("Model: {} (downloads: {:?})", info.id, info.downloads),
+        _ => unreachable!(),
+    }
 
-    let dataset = api
-        .dataset_info(&DatasetInfoParams::builder().repo_id("rajpurkar/squad").build())
-        .await?;
-    println!("Dataset: {} (downloads: {:?})", dataset.id, dataset.downloads);
+    let dataset = api.dataset("rajpurkar", "squad");
+    match dataset.info(&RepoInfoParams::default()).await? {
+        RepoInfo::Dataset(info) => println!("Dataset: {} (downloads: {:?})", info.id, info.downloads),
+        _ => unreachable!(),
+    }
 
-    let space = api
-        .space_info(
-            &SpaceInfoParams::builder()
-                .repo_id("huggingface/transformers-benchmarks")
-                .build(),
-        )
-        .await?;
-    println!("Space: {} (sdk: {:?})", space.id, space.sdk);
+    let space = api.space("huggingface", "transformers-benchmarks");
+    match space.info(&RepoInfoParams::default()).await? {
+        RepoInfo::Space(info) => println!("Space: {} (sdk: {:?})", info.id, info.sdk),
+        _ => unreachable!(),
+    }
 
-    let exists = api.repo_exists(&RepoExistsParams::builder().repo_id("gpt2").build()).await?;
+    let exists = model.exists().await?;
     println!("gpt2 exists: {exists}");
 
-    let rev_exists = api
-        .revision_exists(&RevisionExistsParams::builder().repo_id("gpt2").revision("main").build())
+    let rev_exists = model
+        .revision_exists(&RepoRevisionExistsParams::builder().revision("main").build())
         .await?;
     println!("gpt2@main exists: {rev_exists}");
 
-    let file_exists = api
-        .file_exists(&FileExistsParams::builder().repo_id("gpt2").filename("config.json").build())
+    let file_exists = model
+        .file_exists(&RepoFileExistsParams::builder().filename("config.json").build())
         .await?;
     println!("gpt2/config.json exists: {file_exists}");
 
@@ -86,12 +86,12 @@ async fn main() -> huggingface_hub::Result<()> {
 
     let user = api.whoami().await?;
     let unique = std::process::id();
-    let repo_name = format!("{}/example-repo-{unique}", user.username);
+    let repo = api.model(&user.username, format!("example-repo-{unique}"));
 
     let repo_url = api
         .create_repo(
             &CreateRepoParams::builder()
-                .repo_id(&repo_name)
+                .repo_id(repo.repo_path())
                 .private(true)
                 .exist_ok(true)
                 .build(),
@@ -99,9 +99,8 @@ async fn main() -> huggingface_hub::Result<()> {
         .await?;
     println!("\nCreated repo: {}", repo_url.url);
 
-    api.update_repo_settings(
-        &UpdateRepoParams::builder()
-            .repo_id(&repo_name)
+    repo.update_settings(
+        &RepoUpdateSettingsParams::builder()
             .description("Temporary example repo")
             .build(),
     )
@@ -110,7 +109,7 @@ async fn main() -> huggingface_hub::Result<()> {
 
     let new_name = format!("{}/example-repo-renamed-{unique}", user.username);
     let moved = api
-        .move_repo(&MoveRepoParams::builder().from_id(&repo_name).to_id(&new_name).build())
+        .move_repo(&MoveRepoParams::builder().from_id(repo.repo_path()).to_id(&new_name).build())
         .await?;
     println!("Moved repo to: {}", moved.url);
 
