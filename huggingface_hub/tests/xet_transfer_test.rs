@@ -24,6 +24,9 @@ use huggingface_hub::types::{
 use huggingface_hub::{HFClient, HFClientBuilder};
 use rand::Rng;
 use sha2::{Digest, Sha256};
+use tokio::sync::OnceCell;
+
+static WHOAMI_USERNAME: OnceCell<String> = OnceCell::const_new();
 
 fn api() -> Option<HFClient> {
     if std::env::var("HF_TOKEN").is_err() {
@@ -45,8 +48,10 @@ fn unique_suffix() -> String {
 }
 
 async fn create_test_repo(api: &HFClient, suffix: &str) -> String {
-    let whoami = api.whoami().await.expect("whoami failed");
-    let repo_id = format!("{}/hf-hub-xet-test-{suffix}", whoami.username);
+    let username = WHOAMI_USERNAME
+        .get_or_init(|| async { api.whoami().await.expect("whoami failed").username })
+        .await;
+    let repo_id = format!("{}/hf-hub-xet-test-{suffix}", username);
     let params = CreateRepoParams::builder()
         .repo_id(&repo_id)
         .private(true)

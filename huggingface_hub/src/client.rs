@@ -26,8 +26,6 @@ pub(crate) struct HFClientInner {
     pub(crate) token: Option<String>,
     pub(crate) cache_dir: std::path::PathBuf,
     pub(crate) cache_enabled: bool,
-    #[cfg(feature = "xet")]
-    pub(crate) xet_session: std::sync::Mutex<Option<xet::xet_session::XetSession>>,
 }
 
 pub struct HFClientBuilder {
@@ -134,8 +132,6 @@ impl HFClientBuilder {
                 token,
                 cache_dir,
                 cache_enabled: self.cache_enabled.unwrap_or(true),
-                #[cfg(feature = "xet")]
-                xet_session: std::sync::Mutex::new(None),
             }),
         })
     }

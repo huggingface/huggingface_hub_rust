@@ -22,8 +22,8 @@ base64 = "0.22"
 fs4 = { version = "0.13", features = ["tokio"] }
 pathdiff = "0.2"
 async-trait = { version = "0.1", optional = true }
-hf-xet = { git = "https://github.com/huggingface/xet-core.git", rev = "749c28b", optional = true }
-xet-client = { git = "https://github.com/huggingface/xet-core.git", rev = "749c28b", optional = true }
+hf-xet = { git = "https://github.com/huggingface/xet-core.git", rev = "3d377bd", optional = true }
+xet-client = { git = "https://github.com/huggingface/xet-core.git", rev = "3d377bd", optional = true }
 sha2 = { version = "0.10", optional = true }
 
 [features]

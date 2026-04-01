@@ -246,9 +246,7 @@ fn test_sync_get_commit_diff() {
 // --- Write operations ---
 
 fn uuid_v4_short() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-    format!("{:x}{:x}", t.as_secs(), t.subsec_nanos())
+    format!("{:016x}", rand::random::<u64>())
 }
 
 fn create_test_repo(api: &HFClientSync) -> String {

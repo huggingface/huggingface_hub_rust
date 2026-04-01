@@ -426,9 +426,7 @@ async fn test_create_and_delete_repo() {
 }
 
 fn uuid_v4_short() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-    format!("{:x}{:x}", t.as_secs(), t.subsec_nanos())
+    format!("{:016x}", rand::random::<u64>())
 }
 
 async fn create_test_repo(api: &HFClient) -> String {
