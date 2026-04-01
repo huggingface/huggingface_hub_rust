@@ -6,7 +6,7 @@ use futures::TryStreamExt;
 use reqwest::header::IF_NONE_MATCH;
 use url::Url;
 
-use crate::client::HfApi;
+use crate::client::HFClient;
 use crate::error::{HfError, Result};
 use crate::types::{
     AddSource, CommitInfo, CommitOperation, CreateCommitParams, DatasetInfoParams, DeleteFileParams,
@@ -16,7 +16,7 @@ use crate::types::{
 };
 use crate::{cache, constants};
 
-impl HfApi {
+impl HFClient {
     /// List file paths in a repository (convenience wrapper over list_repo_tree).
     /// Returns all file paths recursively.
     pub async fn list_repo_files(&self, params: &ListRepoFilesParams) -> Result<Vec<String>> {
@@ -90,7 +90,7 @@ impl HfApi {
     }
 }
 
-impl HfApi {
+impl HFClient {
     /// Download a single file from a repository.
     ///
     /// When `local_dir` is `Some`, the file is downloaded directly to that directory
@@ -433,7 +433,7 @@ impl HfApi {
     }
 }
 
-impl HfApi {
+impl HFClient {
     async fn resolve_commit_hash(&self, repo_id: &str, repo_type: Option<RepoType>, revision: &str) -> Result<String> {
         if cache::is_commit_hash(revision) {
             return Ok(revision.to_string());
@@ -833,7 +833,11 @@ fn build_download_params(
         .collect()
 }
 
-async fn download_concurrently(api: &HfApi, params: &[DownloadFileParams], max_workers: usize) -> Result<Vec<PathBuf>> {
+async fn download_concurrently(
+    api: &HFClient,
+    params: &[DownloadFileParams],
+    max_workers: usize,
+) -> Result<Vec<PathBuf>> {
     futures::stream::iter(params.iter().map(|p| api.download_file(p)))
         .buffer_unordered(max_workers)
         .try_collect()
@@ -852,7 +856,7 @@ async fn stream_response_to_file(response: reqwest::Response, dest: &std::path::
     Ok(())
 }
 
-impl HfApi {
+impl HFClient {
     /// Create a commit with multiple operations.
     ///
     /// Files are checked against the Hub's preupload endpoint to determine
@@ -1135,7 +1139,7 @@ struct LfsBatchResponse {
     transfer: Option<String>,
 }
 
-impl HfApi {
+impl HFClient {
     /// Check upload modes for all files and upload LFS files via xet.
     ///
     /// Always calls the preupload endpoint to determine upload mode per file.
@@ -1251,7 +1255,7 @@ impl HfApi {
 }
 
 #[cfg(feature = "xet")]
-impl HfApi {
+impl HFClient {
     /// Compute SHA256, negotiate LFS batch transfer, and upload via xet.
     async fn upload_lfs_files_via_xet(
         &self,

@@ -8,19 +8,19 @@ use reqwest_retry::RetryTransientMiddleware;
 use crate::constants;
 use crate::error::{HfError, Result};
 
-pub struct HfApi {
-    pub(crate) inner: Arc<HfApiInner>,
+pub struct HFClient {
+    pub(crate) inner: Arc<HFClientInner>,
 }
 
-impl Clone for HfApi {
+impl Clone for HFClient {
     fn clone(&self) -> Self {
-        HfApi {
+        Self {
             inner: Arc::clone(&self.inner),
         }
     }
 }
 
-pub(crate) struct HfApiInner {
+pub(crate) struct HFClientInner {
     pub(crate) client: ClientWithMiddleware,
     pub(crate) endpoint: String,
     pub(crate) token: Option<String>,
@@ -30,7 +30,7 @@ pub(crate) struct HfApiInner {
     pub(crate) xet_session: std::sync::Mutex<Option<xet::xet_session::XetSession>>,
 }
 
-pub struct HfApiBuilder {
+pub struct HFClientBuilder {
     endpoint: Option<String>,
     token: Option<String>,
     user_agent: Option<String>,
@@ -40,7 +40,7 @@ pub struct HfApiBuilder {
     cache_enabled: Option<bool>,
 }
 
-impl HfApiBuilder {
+impl HFClientBuilder {
     pub fn new() -> Self {
         Self {
             endpoint: None,
@@ -91,7 +91,7 @@ impl HfApiBuilder {
         self
     }
 
-    pub fn build(self) -> Result<HfApi> {
+    pub fn build(self) -> Result<HFClient> {
         let endpoint = self
             .endpoint
             .or_else(|| std::env::var(constants::HF_ENDPOINT).ok())
@@ -127,8 +127,8 @@ impl HfApiBuilder {
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build();
 
-        Ok(HfApi {
-            inner: Arc::new(HfApiInner {
+        Ok(HFClient {
+            inner: Arc::new(HFClientInner {
                 client,
                 endpoint: endpoint.trim_end_matches('/').to_string(),
                 token,
@@ -141,19 +141,19 @@ impl HfApiBuilder {
     }
 }
 
-impl Default for HfApiBuilder {
+impl Default for HFClientBuilder {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl HfApi {
+impl HFClient {
     pub fn new() -> Result<Self> {
-        HfApiBuilder::new().build()
+        HFClientBuilder::new().build()
     }
 
-    pub fn builder() -> HfApiBuilder {
-        HfApiBuilder::new()
+    pub fn builder() -> HFClientBuilder {
+        HFClientBuilder::new()
     }
 
     /// Build authorization headers for requests
@@ -227,6 +227,11 @@ impl HfApi {
     }
 }
 
+pub type HfApi = HFClient;
+pub type HfApiBuilder = HFClientBuilder;
+pub type HfClient = HFClient;
+pub type HfClientBuilder = HFClientBuilder;
+
 /// Resolve token from environment or token file.
 /// Priority: HF_TOKEN env → HF_TOKEN_PATH file → $HF_HOME/token file.
 fn resolve_token() -> Option<String> {
@@ -288,17 +293,17 @@ fn resolve_cache_dir() -> std::path::PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::HfApiBuilder;
+    use super::HFClientBuilder;
 
     #[test]
     fn test_builder_cache_dir_explicit() {
-        let api = HfApiBuilder::new().cache_dir("/tmp/my-cache").build().unwrap();
+        let api = HFClientBuilder::new().cache_dir("/tmp/my-cache").build().unwrap();
         assert_eq!(api.inner.cache_dir, std::path::PathBuf::from("/tmp/my-cache"));
     }
 
     #[test]
     fn test_builder_cache_dir_default() {
-        let api = HfApiBuilder::new().build().unwrap();
+        let api = HFClientBuilder::new().build().unwrap();
         let path_str = api.inner.cache_dir.to_string_lossy();
         assert!(path_str.contains("huggingface") && path_str.ends_with("hub"));
     }

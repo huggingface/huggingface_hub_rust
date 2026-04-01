@@ -5,7 +5,7 @@ use reqwest::header::HeaderMap;
 use serde::de::DeserializeOwned;
 use url::Url;
 
-use crate::client::HfApi;
+use crate::client::HFClient;
 use crate::error::{HfError, Result};
 
 struct PaginationState {
@@ -15,7 +15,7 @@ struct PaginationState {
     done: bool,
 }
 
-impl HfApi {
+impl HFClient {
     /// Create a paginated stream from an initial URL and query params.
     /// Query params are only sent on the first request; subsequent pages
     /// use the full URL from the Link header.

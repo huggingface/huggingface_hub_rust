@@ -1,7 +1,7 @@
 use futures::Stream;
 use url::Url;
 
-use crate::client::HfApi;
+use crate::client::HFClient;
 use crate::constants;
 use crate::error::Result;
 use crate::types::{
@@ -9,7 +9,7 @@ use crate::types::{
     GitCommitInfo, GitRefs, ListRepoCommitsParams, ListRepoRefsParams,
 };
 
-impl HfApi {
+impl HFClient {
     /// List commits in a repository.
     /// Endpoint: GET /api/{repo_type}s/{repo_id}/commits/{revision}
     pub fn list_repo_commits(&self, params: &ListRepoCommitsParams) -> impl Stream<Item = Result<GitCommitInfo>> + '_ {

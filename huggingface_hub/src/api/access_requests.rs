@@ -1,8 +1,8 @@
-use crate::client::HfApi;
+use crate::client::HFClient;
 use crate::error::Result;
 use crate::types::{AccessRequest, GrantAccessParams, HandleAccessRequestParams, ListAccessRequestsParams};
 
-impl HfApi {
+impl HFClient {
     async fn list_access_requests_by_status(
         &self,
         params: &ListAccessRequestsParams,

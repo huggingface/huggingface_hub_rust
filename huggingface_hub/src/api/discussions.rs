@@ -1,4 +1,4 @@
-use crate::client::HfApi;
+use crate::client::HFClient;
 use crate::error::Result;
 use crate::types::{
     ChangeDiscussionStatusParams, CommentDiscussionParams, CreateDiscussionParams, CreatePullRequestParams,
@@ -7,7 +7,7 @@ use crate::types::{
     RenameDiscussionParams,
 };
 
-impl HfApi {
+impl HFClient {
     pub async fn get_repo_discussions(&self, params: &GetRepoDiscussionsParams) -> Result<DiscussionsResponse> {
         let url = format!("{}/discussions", self.api_url(params.repo_type, &params.repo_id));
         let mut query: Vec<(String, String)> = Vec::new();

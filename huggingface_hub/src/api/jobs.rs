@@ -1,11 +1,11 @@
-use crate::client::HfApi;
+use crate::client::HFClient;
 use crate::error::Result;
 use crate::types::{
     CreateScheduledJobParams, JobHardware, JobInfo, JobLogEntry, JobMetrics, ListJobsParams, RunJobParams,
     ScheduledJobInfo,
 };
 
-impl HfApi {
+impl HFClient {
     async fn resolve_jobs_namespace(&self, namespace: &Option<String>) -> Result<String> {
         match namespace {
             Some(ns) => Ok(ns.clone()),

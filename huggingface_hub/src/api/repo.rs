@@ -1,7 +1,7 @@
 use futures::Stream;
 use url::Url;
 
-use crate::client::HfApi;
+use crate::client::HFClient;
 use crate::constants;
 use crate::error::{HfError, Result};
 use crate::types::{
@@ -10,7 +10,7 @@ use crate::types::{
     RepoUrl, RevisionExistsParams, SpaceInfo, SpaceInfoParams, UpdateRepoParams,
 };
 
-impl HfApi {
+impl HFClient {
     /// Get info about a model repository.
     /// Endpoint: GET /api/models/{repo_id} or /api/models/{repo_id}/revision/{revision}
     pub async fn model_info(&self, params: &ModelInfoParams) -> Result<ModelInfo> {
@@ -116,7 +116,7 @@ impl HfApi {
     }
 }
 
-impl HfApi {
+impl HFClient {
     /// List models on the Hub.
     /// Endpoint: GET /api/models
     pub fn list_models(&self, params: &ListModelsParams) -> impl Stream<Item = Result<ModelInfo>> + '_ {

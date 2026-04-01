@@ -1,12 +1,12 @@
 use futures::Stream;
 use url::Url;
 
-use crate::client::HfApi;
+use crate::client::HFClient;
 use crate::constants;
 use crate::error::Result;
 use crate::types::{LikeParams, LikedRepo, ListLikedReposParams, ListRepoLikersParams, User};
 
-impl HfApi {
+impl HFClient {
     pub async fn like(&self, params: &LikeParams) -> Result<()> {
         let url = format!("{}/like", self.api_url(params.repo_type, &params.repo_id));
         let response = self.inner.client.post(&url).headers(self.auth_headers()).send().await?;

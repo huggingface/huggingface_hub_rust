@@ -1,8 +1,8 @@
-use crate::client::HfApi;
+use crate::client::HFClient;
 use crate::error::{HfError, Result};
 
 pub struct HfApiSync {
-    pub(crate) inner: HfApi,
+    pub(crate) inner: HFClient,
     pub(crate) runtime: tokio::runtime::Runtime,
 }
 
@@ -12,11 +12,11 @@ impl HfApiSync {
             .enable_all()
             .build()
             .map_err(|e| HfError::Other(format!("Failed to create tokio runtime: {e}")))?;
-        let inner = HfApi::new()?;
+        let inner = HFClient::new()?;
         Ok(Self { inner, runtime })
     }
 
-    pub fn from_api(api: HfApi) -> Result<Self> {
+    pub fn from_api(api: HFClient) -> Result<Self> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -24,10 +24,13 @@ impl HfApiSync {
         Ok(Self { inner: api, runtime })
     }
 
-    pub fn api(&self) -> &HfApi {
+    pub fn api(&self) -> &HFClient {
         &self.inner
     }
 }
+
+pub type HFClientSync = HfApiSync;
+pub type HfClientSync = HFClientSync;
 
 #[cfg(test)]
 mod tests {
@@ -41,7 +44,7 @@ mod tests {
 
     #[test]
     fn test_hfapisync_from_api() {
-        let api = HfApi::new().unwrap();
+        let api = HFClient::new().unwrap();
         let sync_api = HfApiSync::from_api(api);
         assert!(sync_api.is_ok());
     }

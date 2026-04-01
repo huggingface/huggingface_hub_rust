@@ -11,7 +11,7 @@ use serde::Deserialize;
 use xet::xet_session::{FileMetadata, Sha256Policy, XetFileInfo, XetSessionBuilder};
 use xet_client::cas_client::auth::{AuthError, TokenRefresher};
 
-use crate::client::HfApi;
+use crate::client::HFClient;
 use crate::constants;
 use crate::error::{HfError, Result};
 use crate::types::{AddSource, GetXetTokenParams, RepoType};
@@ -38,7 +38,7 @@ impl XetConnectionInfo {
 
 /// Implements token refresh by calling the Hub API's xet token endpoint.
 struct HubTokenRefresher {
-    api: HfApi,
+    api: HFClient,
     repo_id: String,
     repo_type: Option<RepoType>,
     revision: String,
@@ -58,7 +58,7 @@ impl TokenRefresher for HubTokenRefresher {
 /// Fetch xet connection info (read or write token) from the Hub API.
 /// Endpoint: GET /api/{repo_type}s/{repo_id}/xet-{read|write}-token/{revision}
 async fn fetch_xet_connection_info(
-    api: &HfApi,
+    api: &HFClient,
     token_type: &str,
     repo_id: &str,
     repo_type: Option<RepoType>,
@@ -82,7 +82,7 @@ async fn fetch_xet_connection_info(
 }
 
 pub(crate) async fn xet_download_to_local_dir(
-    api: &HfApi,
+    api: &HFClient,
     repo_id: &str,
     repo_type: Option<RepoType>,
     revision: &str,
@@ -137,7 +137,7 @@ pub(crate) async fn xet_download_to_local_dir(
 }
 
 pub(crate) async fn xet_download_to_blob(
-    api: &HfApi,
+    api: &HFClient,
     repo_id: &str,
     repo_type: Option<RepoType>,
     revision: &str,
@@ -185,7 +185,7 @@ pub(crate) struct XetBatchFile {
 }
 
 pub(crate) async fn xet_download_batch(
-    api: &HfApi,
+    api: &HFClient,
     repo_id: &str,
     repo_type: Option<RepoType>,
     revision: &str,
@@ -240,7 +240,7 @@ pub(crate) async fn xet_download_batch(
 /// Fetches a write token and uses xet-session's UploadCommit.
 /// Returns the XetFileInfo (hash + size) for each uploaded file.
 pub(crate) async fn xet_upload(
-    api: &HfApi,
+    api: &HFClient,
     files: &[(String, AddSource)],
     repo_id: &str,
     repo_type: Option<RepoType>,
@@ -293,10 +293,10 @@ pub(crate) async fn xet_upload(
     Ok(xet_file_infos)
 }
 
-impl HfApi {
+impl HFClient {
     /// Return the cached XetSession, creating it on first use.
     ///
-    /// The session is built once per HfApi lifetime and reused for all
+    /// The session is built once per HFClient lifetime and reused for all
     /// subsequent xet operations. A token refresher is installed so the
     /// session can renew its CAS credentials when they expire.
     async fn get_or_init_xet_session(

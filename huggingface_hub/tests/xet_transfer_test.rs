@@ -1,3 +1,5 @@
+#![cfg(feature = "xet")]
+
 //! Integration tests for xet-based file transfers.
 //!
 //! Tests uploading large/binary files that require xet storage, and
@@ -19,15 +21,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use huggingface_hub::types::{
     AddSource, CreateRepoParams, DeleteRepoParams, DownloadFileParams, FileExistsParams, UploadFileParams,
 };
-use huggingface_hub::{HfApi, HfApiBuilder};
+use huggingface_hub::{HFClient, HFClientBuilder};
 use rand::Rng;
 use sha2::{Digest, Sha256};
 
-fn api() -> Option<HfApi> {
+fn api() -> Option<HFClient> {
     if std::env::var("HF_TOKEN").is_err() {
         return None;
     }
-    Some(HfApiBuilder::new().build().expect("Failed to create HfApi"))
+    Some(HFClientBuilder::new().build().expect("Failed to create HFClient"))
 }
 
 fn write_enabled() -> bool {
@@ -42,7 +44,7 @@ fn unique_suffix() -> String {
     format!("{:x}{:x}-{count}", t.as_secs(), t.subsec_nanos())
 }
 
-async fn create_test_repo(api: &HfApi, suffix: &str) -> String {
+async fn create_test_repo(api: &HFClient, suffix: &str) -> String {
     let whoami = api.whoami().await.expect("whoami failed");
     let repo_id = format!("{}/hf-hub-xet-test-{suffix}", whoami.username);
     let params = CreateRepoParams::builder()
@@ -54,7 +56,7 @@ async fn create_test_repo(api: &HfApi, suffix: &str) -> String {
     repo_id
 }
 
-async fn delete_test_repo(api: &HfApi, repo_id: &str) {
+async fn delete_test_repo(api: &HFClient, repo_id: &str) {
     let params = DeleteRepoParams::builder().repo_id(repo_id).build();
     let _ = api.delete_repo(&params).await;
 }

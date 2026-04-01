@@ -1,11 +1,11 @@
 use futures::Stream;
 use url::Url;
 
-use crate::client::HfApi;
+use crate::client::HFClient;
 use crate::error::Result;
 use crate::types::{Organization, User};
 
-impl HfApi {
+impl HFClient {
     /// Get authenticated user info.
     /// Endpoint: GET /api/whoami-v2
     pub async fn whoami(&self) -> Result<User> {

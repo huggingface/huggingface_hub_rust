@@ -5,11 +5,11 @@
 //! ## Quick Start
 //!
 //! ```rust,no_run
-//! use huggingface_hub::{HfApi, ModelInfoParams};
+//! use huggingface_hub::{HFClient, ModelInfoParams};
 //!
 //! #[tokio::main]
 //! async fn main() -> huggingface_hub::Result<()> {
-//!     let api = HfApi::new()?;
+//!     let api = HFClient::new()?;
 //!     let info = api.model_info(&ModelInfoParams::builder().repo_id("gpt2").build()).await?;
 //!     println!("Model: {}", info.id);
 //!     Ok(())
@@ -29,7 +29,7 @@ macro_rules! sync_api {
         $(#[$impl_meta])*
         impl $crate::blocking::HfApiSync {
             $(
-                #[doc = concat!("Synchronous version of [`HfApi::", stringify!($name), "`].")]
+                #[doc = concat!("Synchronous version of [`HFClient::", stringify!($name), "`].")]
                 pub fn $name(&self $(, $pname : $ptype)*) -> $ret {
                     self.runtime.block_on(self.inner.$name($($pname),*))
                 }
@@ -51,7 +51,7 @@ macro_rules! sync_api_stream {
         $(#[$impl_meta])*
         impl $crate::blocking::HfApiSync {
             $(
-                #[doc = concat!("Synchronous version of [`HfApi::", stringify!($name), "`]. Collects all items into a `Vec`.")]
+                #[doc = concat!("Synchronous version of [`HFClient::", stringify!($name), "`]. Collects all items into a `Vec`.")]
                 pub fn $name(&self $(, $pname : $ptype)*) -> $crate::error::Result<Vec<$item>> {
                     use futures::StreamExt;
                     self.runtime.block_on(async {
@@ -77,12 +77,14 @@ pub mod client;
 pub mod constants;
 pub mod error;
 pub mod pagination;
+pub mod repository;
 pub mod types;
 #[cfg(feature = "xet")]
 pub mod xet;
 
 #[cfg(feature = "blocking")]
-pub use blocking::HfApiSync;
-pub use client::{HfApi, HfApiBuilder};
+pub use blocking::{HFClientSync, HfApiSync, HfClientSync};
+pub use client::{HFClient, HFClientBuilder, HfApi, HfApiBuilder, HfClient, HfClientBuilder};
 pub use error::{HfError, Result};
+pub use repository::*;
 pub use types::*;

@@ -1,8 +1,8 @@
-use crate::client::HfApi;
+use crate::client::HFClient;
 use crate::error::Result;
 use crate::types::{CreateWebhookParams, UpdateWebhookParams, WebhookInfo};
 
-impl HfApi {
+impl HFClient {
     pub async fn list_webhooks(&self) -> Result<Vec<WebhookInfo>> {
         let url = format!("{}/api/settings/webhooks", self.inner.endpoint);
         let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;

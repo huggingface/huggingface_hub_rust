@@ -1,3 +1,5 @@
+#![cfg(feature = "blocking")]
+
 //! Integration tests for the synchronous HfApiSync wrapper.
 //!
 //! These mirror a subset of the async integration tests to verify that the
@@ -9,14 +11,14 @@
 //! Run: HF_TOKEN=hf_xxx cargo test -p huggingface-hub --features blocking --test blocking_test
 
 use huggingface_hub::types::*;
-use huggingface_hub::{HfApiBuilder, HfApiSync};
+use huggingface_hub::{HFClientBuilder, HFClientSync};
 
-fn sync_api() -> Option<HfApiSync> {
+fn sync_api() -> Option<HFClientSync> {
     if std::env::var("HF_TOKEN").is_err() {
         return None;
     }
-    let api = HfApiBuilder::new().build().expect("Failed to create HfApi");
-    Some(HfApiSync::from_api(api).expect("Failed to create HfApiSync"))
+    let api = HFClientBuilder::new().build().expect("Failed to create HFClient");
+    Some(HFClientSync::from_api(api).expect("Failed to create HFClientSync"))
 }
 
 fn write_enabled() -> bool {

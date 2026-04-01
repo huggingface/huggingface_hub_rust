@@ -34,11 +34,11 @@ huggingface-hub = { git = "https://github.com/huggingface-internal/huggingface-h
 ## Quick Start
 
 ```rust,no_run
-use huggingface_hub::{HfApi, ModelInfoParams};
+use huggingface_hub::{HFClient, ModelInfoParams};
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
-    let api = HfApi::new()?;
+    let api = HFClient::new()?;
 
     // Get model info
     let info = api.model_info(
@@ -56,11 +56,11 @@ async fn main() -> huggingface_hub::Result<()> {
 
 ```rust,no_run
 use futures::StreamExt;
-use huggingface_hub::{HfApi, ListModelsParams};
+use huggingface_hub::{HFClient, ListModelsParams};
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
-    let api = HfApi::new()?;
+    let api = HFClient::new()?;
 
     let params = ListModelsParams::builder()
         .author("meta-llama")
@@ -82,11 +82,11 @@ async fn main() -> huggingface_hub::Result<()> {
 ### Check if a file exists
 
 ```rust,no_run
-use huggingface_hub::{HfApi, FileExistsParams};
+use huggingface_hub::{FileExistsParams, HFClient};
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
-    let api = HfApi::new()?;
+    let api = HFClient::new()?;
 
     let exists = api.file_exists(
         &FileExistsParams::builder()
@@ -104,11 +104,11 @@ async fn main() -> huggingface_hub::Result<()> {
 
 ```rust,no_run
 use std::path::PathBuf;
-use huggingface_hub::{HfApi, DownloadFileParams};
+use huggingface_hub::{DownloadFileParams, HFClient};
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
-    let api = HfApi::new()?;
+    let api = HFClient::new()?;
 
     let path = api.download_file(
         &DownloadFileParams::builder()
@@ -123,14 +123,42 @@ async fn main() -> huggingface_hub::Result<()> {
 }
 ```
 
-### Upload a file
+### Work with a repository handle
 
 ```rust,no_run
-use huggingface_hub::{HfApi, UploadFileParams, AddSource};
+use huggingface_hub::{HFClient, RepoFileExistsParams, RepoInfo, RepoInfoParams};
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
-    let api = HfApi::new()?;
+    let client = HFClient::new()?;
+    let repo = client.model("openai-community", "gpt2");
+
+    match repo.info(&RepoInfoParams::default()).await? {
+        RepoInfo::Model(info) => println!("Model: {}", info.id),
+        _ => unreachable!(),
+    }
+
+    let exists = repo
+        .file_exists(
+            &RepoFileExistsParams::builder()
+                .filename("config.json")
+                .build(),
+        )
+        .await?;
+
+    println!("config.json exists: {exists}");
+    Ok(())
+}
+```
+
+### Upload a file
+
+```rust,no_run
+use huggingface_hub::{AddSource, HFClient, UploadFileParams};
+
+#[tokio::main]
+async fn main() -> huggingface_hub::Result<()> {
+    let api = HFClient::new()?;
 
     let commit = api.upload_file(
         &UploadFileParams::builder()
@@ -149,11 +177,11 @@ async fn main() -> huggingface_hub::Result<()> {
 ### Create a repository
 
 ```rust,no_run
-use huggingface_hub::{HfApi, CreateRepoParams};
+use huggingface_hub::{CreateRepoParams, HFClient};
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
-    let api = HfApi::new()?;
+    let api = HFClient::new()?;
 
     let url = api.create_repo(
         &CreateRepoParams::builder()
@@ -172,7 +200,7 @@ async fn main() -> huggingface_hub::Result<()> {
 
 The client resolves authentication tokens in this order:
 
-1. Explicit token via `HfApiBuilder::token()`
+1. Explicit token via `HFClientBuilder::token()`
 2. `HF_TOKEN` environment variable
 3. Token file at path specified by `HF_TOKEN_PATH`
 4. Default token file at `~/.cache/huggingface/token`

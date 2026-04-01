@@ -1,4 +1,4 @@
-use crate::client::HfApi;
+use crate::client::HFClient;
 use crate::error::Result;
 use crate::types::{
     AddSpaceSecretParams, AddSpaceVariableParams, DeleteSpaceSecretParams, DeleteSpaceVariableParams,
@@ -6,7 +6,7 @@ use crate::types::{
     RestartSpaceParams, SetSpaceSleepTimeParams, SpaceRuntime,
 };
 
-impl HfApi {
+impl HFClient {
     pub async fn get_space_runtime(&self, params: &GetSpaceRuntimeParams) -> Result<SpaceRuntime> {
         let url = format!("{}/api/spaces/{}/runtime", self.inner.endpoint, params.repo_id);
         let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;

@@ -11,13 +11,17 @@
 
 use futures::StreamExt;
 use huggingface_hub::types::*;
-use huggingface_hub::{HfApi, HfApiBuilder};
+#[cfg(feature = "discussions")]
+use huggingface_hub::RepoListDiscussionsParams;
+use huggingface_hub::{HFClient, HFClientBuilder, RepoFileExistsParams, RepoInfoParams};
+#[cfg(feature = "spaces")]
+use huggingface_hub::{SpaceSecretDeleteParams, SpaceSecretParams, SpaceVariableDeleteParams, SpaceVariableParams};
 
-fn api() -> Option<HfApi> {
+fn api() -> Option<HFClient> {
     if std::env::var("HF_TOKEN").is_err() {
         return None;
     }
-    Some(HfApiBuilder::new().build().expect("Failed to create HfApi"))
+    Some(HFClientBuilder::new().build().expect("Failed to create HFClient"))
 }
 
 fn write_enabled() -> bool {
@@ -30,6 +34,52 @@ async fn test_model_info() {
     let params = ModelInfoParams::builder().repo_id("gpt2").build();
     let info = api.model_info(&params).await.unwrap();
     assert_eq!(info.id, "openai-community/gpt2");
+}
+
+#[tokio::test]
+async fn test_repo_handle_info_and_file_exists() {
+    let Some(api) = api() else { return };
+    let repo = api.model("openai-community", "gpt2");
+
+    let info = repo.info(&RepoInfoParams::default()).await.unwrap();
+    match info {
+        RepoInfo::Model(model) => assert_eq!(model.id, "openai-community/gpt2"),
+        _ => panic!("expected model info"),
+    }
+
+    let exists = repo
+        .file_exists(&RepoFileExistsParams::builder().filename("config.json").build())
+        .await
+        .unwrap();
+    assert!(exists);
+}
+
+#[cfg(feature = "discussions")]
+#[tokio::test]
+async fn test_repo_handle_list_discussions() {
+    let Some(api) = api() else { return };
+    let repo = api.model("openai-community", "gpt2");
+
+    let response = repo.list_discussions(&RepoListDiscussionsParams::default()).await.unwrap();
+    assert!(response.count.unwrap_or(0) as usize >= response.discussions.len());
+}
+
+#[cfg(feature = "likes")]
+#[tokio::test]
+async fn test_repo_handle_list_likers() {
+    let Some(api) = api() else { return };
+    let repo = api.model("openai-community", "gpt2");
+
+    let stream = repo.list_likers();
+    futures::pin_mut!(stream);
+    let mut seen = 0usize;
+    while let Some(user) = stream.next().await {
+        user.unwrap();
+        seen += 1;
+        if seen >= 3 {
+            break;
+        }
+    }
 }
 
 #[tokio::test]
@@ -381,7 +431,7 @@ fn uuid_v4_short() -> String {
     format!("{:x}{:x}", t.as_secs(), t.subsec_nanos())
 }
 
-async fn create_test_repo(api: &HfApi) -> String {
+async fn create_test_repo(api: &HFClient) -> String {
     let whoami = api.whoami().await.expect("whoami failed");
     let repo_id = format!("{}/huggingface-hub-rust-test-{}", whoami.username, uuid_v4_short());
     let params = CreateRepoParams::builder()
@@ -402,7 +452,7 @@ async fn create_test_repo(api: &HfApi) -> String {
     repo_id
 }
 
-async fn delete_test_repo(api: &HfApi, repo_id: &str) {
+async fn delete_test_repo(api: &HFClient, repo_id: &str) {
     let params = DeleteRepoParams::builder().repo_id(repo_id).build();
     let _ = api.delete_repo(&params).await;
 }
@@ -634,10 +684,8 @@ async fn test_move_repo() {
 #[tokio::test]
 async fn test_get_space_runtime() {
     let Some(api) = api() else { return };
-    let params = GetSpaceRuntimeParams::builder()
-        .repo_id("huggingface-projects/diffusers-gallery")
-        .build();
-    let runtime = api.get_space_runtime(&params).await.unwrap();
+    let space = api.space("huggingface-projects", "diffusers-gallery");
+    let runtime = space.runtime().await.unwrap();
     assert!(runtime.stage.is_some());
 }
 
@@ -672,38 +720,29 @@ async fn test_space_secrets_and_variables() {
         return;
     }
     let whoami = api.whoami().await.unwrap();
-    let space_id = format!("{}/hub-rust-test-space-{}", whoami.username, uuid_v4_short());
-
+    let space = api.space(&whoami.username, format!("hub-rust-test-space-{}", uuid_v4_short()));
     let create_params = CreateRepoParams::builder()
-        .repo_id(&space_id)
+        .repo_id(space.repo_path())
         .repo_type(RepoType::Space)
         .private(true)
         .space_sdk("static")
         .build();
     api.create_repo(&create_params).await.unwrap();
 
-    let add_secret = AddSpaceSecretParams::builder()
-        .repo_id(&space_id)
-        .key("TEST_SECRET")
-        .value("secret_value")
-        .build();
-    api.add_space_secret(&add_secret).await.unwrap();
+    let add_secret = SpaceSecretParams::builder().key("TEST_SECRET").value("secret_value").build();
+    space.add_secret(&add_secret).await.unwrap();
 
-    let del_secret = DeleteSpaceSecretParams::builder().repo_id(&space_id).key("TEST_SECRET").build();
-    api.delete_space_secret(&del_secret).await.unwrap();
+    let del_secret = SpaceSecretDeleteParams::builder().key("TEST_SECRET").build();
+    space.delete_secret(&del_secret).await.unwrap();
 
-    let add_var = AddSpaceVariableParams::builder()
-        .repo_id(&space_id)
-        .key("TEST_VAR")
-        .value("var_value")
-        .build();
-    api.add_space_variable(&add_var).await.unwrap();
+    let add_var = SpaceVariableParams::builder().key("TEST_VAR").value("var_value").build();
+    space.add_variable(&add_var).await.unwrap();
 
-    let del_var = DeleteSpaceVariableParams::builder().repo_id(&space_id).key("TEST_VAR").build();
-    api.delete_space_variable(&del_var).await.unwrap();
+    let del_var = SpaceVariableDeleteParams::builder().key("TEST_VAR").build();
+    space.delete_variable(&del_var).await.unwrap();
 
     let delete_params = DeleteRepoParams::builder()
-        .repo_id(&space_id)
+        .repo_id(space.repo_path())
         .repo_type(RepoType::Space)
         .build();
     let _ = api.delete_repo(&delete_params).await;
