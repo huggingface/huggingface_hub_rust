@@ -138,6 +138,12 @@ Before writing any code:
 1. **Branch:** Confirm you are on a feature branch, not `main`. If on `main`, create a branch named `<username>/<short-description>`.
 2. **Plan:** Write an implementation plan that includes testing strategy (unit tests, integration tests, manual verification steps). Add this plan as a comment on the PR.
 
+When changing public interfaces or adding user-facing capabilities:
+
+- ALWAYS update the relevant examples in `huggingface_hub/examples/` and any affected README snippets so they match the current public API.
+- ALWAYS add at least one example for new functionality unless an existing example already demonstrates that exact workflow clearly.
+- Prefer examples that show the intended high-level interface, not just the lowest-level parameter structs, especially for new ergonomic APIs like repo handles.
+
 ## Code Review
 
 When reviewing a pull request, follow these rules:

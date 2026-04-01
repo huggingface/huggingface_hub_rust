@@ -1,6 +1,6 @@
 #![cfg(feature = "blocking")]
 
-//! Integration tests for the synchronous HfApiSync wrapper.
+//! Integration tests for the synchronous HFClientSync wrapper.
 //!
 //! These mirror a subset of the async integration tests to verify that the
 //! blocking API works correctly end-to-end.
@@ -11,7 +11,7 @@
 //! Run: HF_TOKEN=hf_xxx cargo test -p huggingface-hub --features blocking --test blocking_test
 
 use huggingface_hub::types::*;
-use huggingface_hub::{HFClientBuilder, HFClientSync};
+use huggingface_hub::{HFClientBuilder, HFClientSync, RepoFileExistsParams, RepoInfo, RepoInfoParams};
 
 fn sync_api() -> Option<HFClientSync> {
     if std::env::var("HF_TOKEN").is_err() {
@@ -41,6 +41,23 @@ fn test_sync_dataset_info() {
     let params = DatasetInfoParams::builder().repo_id("rajpurkar/squad").build();
     let info = api.dataset_info(&params).unwrap();
     assert!(info.id.contains("squad"));
+}
+
+#[test]
+fn test_sync_repo_handle_info_and_file_exists() {
+    let Some(api) = sync_api() else { return };
+    let repo = api.model("openai-community", "gpt2");
+
+    let info = repo.info(&RepoInfoParams::default()).unwrap();
+    match info {
+        RepoInfo::Model(model) => assert_eq!(model.id, "openai-community/gpt2"),
+        _ => panic!("expected model info"),
+    }
+
+    let exists = repo
+        .file_exists(&RepoFileExistsParams::builder().filename("config.json").build())
+        .unwrap();
+    assert!(exists);
 }
 
 #[test]
@@ -234,7 +251,7 @@ fn uuid_v4_short() -> String {
     format!("{:x}{:x}", t.as_secs(), t.subsec_nanos())
 }
 
-fn create_test_repo(api: &HfApiSync) -> String {
+fn create_test_repo(api: &HFClientSync) -> String {
     let whoami = api.whoami().expect("whoami failed");
     let repo_id = format!("{}/huggingface-hub-rust-sync-test-{}", whoami.username, uuid_v4_short());
     let params = CreateRepoParams::builder()
@@ -255,7 +272,7 @@ fn create_test_repo(api: &HfApiSync) -> String {
     repo_id
 }
 
-fn delete_test_repo(api: &HfApiSync, repo_id: &str) {
+fn delete_test_repo(api: &HFClientSync, repo_id: &str) {
     let params = DeleteRepoParams::builder().repo_id(repo_id).build();
     let _ = api.delete_repo(&params);
 }

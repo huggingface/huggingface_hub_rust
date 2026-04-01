@@ -83,7 +83,10 @@ pub mod types;
 pub mod xet;
 
 #[cfg(feature = "blocking")]
-pub use blocking::{HFClientSync, HfApiSync, HfClientSync};
+pub use blocking::{
+    HFClientSync, HFRepoSync, HFRepositorySync, HFSpaceSync, HfApiSync, HfClientSync, HfRepoSync, HfRepositorySync,
+    HfSpaceSync,
+};
 pub use client::{HFClient, HFClientBuilder, HfApi, HfApiBuilder, HfClient, HfClientBuilder};
 pub use error::{HfError, Result};
 pub use repository::*;
