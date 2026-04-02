@@ -1,16 +1,23 @@
-use crate::client::HFClient;
 use crate::error::Result;
 use crate::types::{AccessRequest, GrantAccessParams, HandleAccessRequestParams, ListAccessRequestsParams};
 
-impl HFClient {
+impl crate::repository::HFRepository {
     async fn list_access_requests_by_status(
         &self,
         params: &ListAccessRequestsParams,
         status: &str,
     ) -> Result<Vec<AccessRequest>> {
-        let url = format!("{}/user-access-request/{}", self.api_url(params.repo_type, &params.repo_id), status);
-        let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;
+        let url = format!("{}/user-access-request/{}", self.client.api_url(params.repo_type, &params.repo_id), status);
         let response = self
+            .client
+            .inner
+            .client
+            .get(&url)
+            .headers(self.client.auth_headers())
+            .send()
+            .await?;
+        let response = self
+            .client
             .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(response.json().await?)
@@ -29,20 +36,22 @@ impl HFClient {
     }
 
     async fn handle_access_request(&self, params: &HandleAccessRequestParams, status: &str) -> Result<()> {
-        let url = format!("{}/user-access-request/handle", self.api_url(params.repo_type, &params.repo_id));
+        let url = format!("{}/user-access-request/handle", self.client.api_url(params.repo_type, &params.repo_id));
         let body = serde_json::json!({
             "user": params.user,
             "status": status,
         });
         let response = self
+            .client
             .inner
             .client
             .post(&url)
-            .headers(self.auth_headers())
+            .headers(self.client.auth_headers())
             .json(&body)
             .send()
             .await?;
-        self.check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
+        self.client
+            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(())
     }
@@ -60,30 +69,20 @@ impl HFClient {
     }
 
     pub async fn grant_access(&self, params: &GrantAccessParams) -> Result<()> {
-        let url = format!("{}/user-access-request/grant", self.api_url(params.repo_type, &params.repo_id));
+        let url = format!("{}/user-access-request/grant", self.client.api_url(params.repo_type, &params.repo_id));
         let body = serde_json::json!({ "user": params.user });
         let response = self
+            .client
             .inner
             .client
             .post(&url)
-            .headers(self.auth_headers())
+            .headers(self.client.auth_headers())
             .json(&body)
             .send()
             .await?;
-        self.check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
+        self.client
+            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(())
-    }
-}
-
-sync_api! {
-    impl HfApiSync {
-        fn list_pending_access_requests(&self, params: &ListAccessRequestsParams) -> Result<Vec<AccessRequest>>;
-        fn list_accepted_access_requests(&self, params: &ListAccessRequestsParams) -> Result<Vec<AccessRequest>>;
-        fn list_rejected_access_requests(&self, params: &ListAccessRequestsParams) -> Result<Vec<AccessRequest>>;
-        fn accept_access_request(&self, params: &HandleAccessRequestParams) -> Result<()>;
-        fn reject_access_request(&self, params: &HandleAccessRequestParams) -> Result<()>;
-        fn cancel_access_request(&self, params: &HandleAccessRequestParams) -> Result<()>;
-        fn grant_access(&self, params: &GrantAccessParams) -> Result<()>;
     }
 }

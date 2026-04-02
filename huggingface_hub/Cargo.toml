@@ -52,6 +52,10 @@ name = "repo"
 path = "examples/repo.rs"
 
 [[example]]
+name = "repo_handles"
+path = "examples/repo_handles.rs"
+
+[[example]]
 name = "files"
 path = "examples/files.rs"
 
@@ -121,3 +125,13 @@ required-features = ["blocking"]
 name = "blocking_write"
 path = "examples/blocking_write.rs"
 required-features = ["blocking"]
+
+[[example]]
+name = "blocking_repo_handles"
+path = "examples/blocking_repo_handles.rs"
+required-features = ["blocking"]
+
+[[example]]
+name = "blocking_spaces"
+path = "examples/blocking_spaces.rs"
+required-features = ["blocking", "spaces"]

@@ -24,7 +24,7 @@ These rules apply to ALL code written or modified in this repo:
 
 - NO trivial comments — do not add comments that restate what the code does
 - Descriptive variable and function names
-- No wildcard imports (e.g., `use foo::*`)
+- No wildcard imports (e.g., `use foo::*`), except `pub use` re-exports in `lib.rs`
 - All imports are at the top of the file or top of module
 - Latest stable Rust features are allowed
 

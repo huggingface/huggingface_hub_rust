@@ -4,6 +4,7 @@
 //! Run: cargo run -p huggingface-hub --features likes --example likes
 
 use futures::StreamExt;
+use huggingface_hub::types::LikeParams;
 use huggingface_hub::{HFClient, ListLikedReposParams};
 
 #[tokio::main]
@@ -32,10 +33,11 @@ async fn main() -> huggingface_hub::Result<()> {
         }
     }
 
-    repo.like().await?;
+    let like_params = LikeParams::builder().repo_id(repo.repo_path()).build();
+    repo.like(&like_params).await?;
     println!("\nLiked gpt2");
 
-    repo.unlike().await?;
+    repo.unlike(&like_params).await?;
     println!("Unliked gpt2");
 
     Ok(())

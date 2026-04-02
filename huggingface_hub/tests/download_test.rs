@@ -5,6 +5,7 @@
 //!
 //! Run: source ~/hf/prod_token && cargo test -p huggingface-hub --test download_test
 
+use huggingface_hub::repository::HFRepository;
 use huggingface_hub::types::{DownloadFileParams, RepoType};
 use huggingface_hub::{HfApi, HfApiBuilder};
 use sha2::{Digest, Sha256};
@@ -14,6 +15,15 @@ fn api() -> Option<HfApi> {
         return None;
     }
     Some(HfApiBuilder::new().build().expect("Failed to create HfApi"))
+}
+
+fn repo(api: &HfApi, repo_id: &str) -> HFRepository {
+    let parts: Vec<&str> = repo_id.splitn(2, '/').collect();
+    if parts.len() == 2 {
+        api.model(parts[0], parts[1])
+    } else {
+        api.model("", repo_id)
+    }
 }
 
 #[tokio::test]
@@ -26,7 +36,7 @@ async fn test_download_small_json_file() {
         .filename("config.json")
         .local_dir(dir.path().to_path_buf())
         .build();
-    let path = api.download_file(&params).await.unwrap();
+    let path = repo(&api, &params.repo_id).download_file(&params).await.unwrap();
 
     assert!(path.exists());
     let content = std::fs::read_to_string(&path).unwrap();
@@ -45,7 +55,7 @@ async fn test_download_preserves_subdirectory_structure() {
         .filename("config.json")
         .local_dir(dir.path().to_path_buf())
         .build();
-    let path = api.download_file(&params).await.unwrap();
+    let path = repo(&api, &params.repo_id).download_file(&params).await.unwrap();
 
     assert_eq!(path, dir.path().join("config.json"));
     assert!(path.exists());
@@ -62,7 +72,7 @@ async fn test_download_with_specific_revision() {
         .local_dir(dir.path().to_path_buf())
         .revision("main")
         .build();
-    let path = api.download_file(&params).await.unwrap();
+    let path = repo(&api, &params.repo_id).download_file(&params).await.unwrap();
 
     assert!(path.exists());
     let content = std::fs::read_to_string(&path).unwrap();
@@ -81,7 +91,7 @@ async fn test_download_dataset_file() {
         .local_dir(dir.path().to_path_buf())
         .repo_type(RepoType::Dataset)
         .build();
-    let path = api.download_file(&params).await.unwrap();
+    let path = repo(&api, &params.repo_id).download_file(&params).await.unwrap();
 
     assert!(path.exists());
     let content = std::fs::read_to_string(&path).unwrap();
@@ -98,7 +108,7 @@ async fn test_download_nonexistent_file_returns_error() {
         .filename("this_file_does_not_exist_at_all.bin")
         .local_dir(dir.path().to_path_buf())
         .build();
-    let result = api.download_file(&params).await;
+    let result = repo(&api, &params.repo_id).download_file(&params).await;
 
     assert!(result.is_err());
 }
@@ -113,7 +123,7 @@ async fn test_download_from_nonexistent_repo_returns_error() {
         .filename("anything.txt")
         .local_dir(dir.path().to_path_buf())
         .build();
-    let result = api.download_file(&params).await;
+    let result = repo(&api, &params.repo_id).download_file(&params).await;
 
     assert!(result.is_err());
 }
@@ -130,7 +140,7 @@ async fn test_download_multiple_files_to_same_dir() {
             .filename(*filename)
             .local_dir(dir.path().to_path_buf())
             .build();
-        let path = api.download_file(&params).await.unwrap();
+        let path = repo(&api, &params.repo_id).download_file(&params).await.unwrap();
         assert!(path.exists());
     }
 
@@ -150,7 +160,7 @@ async fn test_download_file_content_is_deterministic() {
             .filename("config.json")
             .local_dir(dir.path().to_path_buf())
             .build();
-        api.download_file(&params).await.unwrap();
+        repo(&api, &params.repo_id).download_file(&params).await.unwrap();
     }
 
     let content1 = std::fs::read(dir1.path().join("config.json")).unwrap();
@@ -174,7 +184,7 @@ async fn test_download_overwrites_existing_file() {
         .filename("config.json")
         .local_dir(dir.path().to_path_buf())
         .build();
-    api.download_file(&params).await.unwrap();
+    repo(&api, &params.repo_id).download_file(&params).await.unwrap();
 
     let content = std::fs::read_to_string(&dest).unwrap();
     assert_ne!(content, "old content");

@@ -9,31 +9,15 @@ use url::Url;
 use crate::client::HFClient;
 use crate::constants;
 use crate::error::{HfError, Result};
-#[cfg(feature = "access_requests")]
-use crate::types::{AccessRequest, GrantAccessParams, HandleAccessRequestParams, ListAccessRequestsParams};
 use crate::types::{
-    AddSource, CommitInfo, CommitOperation, CreateBranchParams, CreateCommitParams, CreateTagParams, DatasetInfoParams,
-    DeleteBranchParams, DeleteFileParams, DeleteFolderParams, DeleteTagParams, DownloadFileParams,
-    DownloadFileStreamParams, FileExistsParams, GetCommitDiffParams, GetPathsInfoParams, GetRawDiffParams,
-    GitCommitInfo, GitRefs, ListRepoFilesParams, ListRepoRefsParams, ModelInfoParams, RepoInfo, RepoTreeEntry,
-    RepoType, RevisionExistsParams, SnapshotDownloadParams, SpaceInfoParams, UpdateRepoParams, UploadFileParams,
-    UploadFolderParams,
-};
-#[cfg(feature = "spaces")]
-use crate::types::{
-    AddSpaceSecretParams, AddSpaceVariableParams, DeleteSpaceSecretParams, DeleteSpaceVariableParams,
-    GetSpaceRuntimeParams, PauseSpaceParams, RequestSpaceHardwareParams, RestartSpaceParams, SetSpaceSleepTimeParams,
-    SpaceRuntime,
+    AddSource, CommitOperation, CreateBranchParams, CreateTagParams, DatasetInfoParams, DeleteBranchParams,
+    DeleteTagParams, GetCommitDiffParams, GetRawDiffParams, GitCommitInfo, GitRefs, ListRepoFilesParams,
+    ListRepoRefsParams, ModelInfoParams, RepoInfo, RepoTreeEntry, RepoType, SpaceInfoParams, UpdateRepoParams,
 };
 #[cfg(feature = "discussions")]
-use crate::types::{
-    ChangeDiscussionStatusParams, CommentDiscussionParams, CreateDiscussionParams, CreatePullRequestParams,
-    DiscussionComment, DiscussionWithDetails, DiscussionsResponse, EditDiscussionCommentParams,
-    GetDiscussionDetailsParams, GetRepoDiscussionsParams, HideDiscussionCommentParams, MergePullRequestParams,
-    RenameDiscussionParams,
-};
+use crate::types::{DiscussionWithDetails, DiscussionsResponse, GetDiscussionDetailsParams, GetRepoDiscussionsParams};
 #[cfg(feature = "likes")]
-use crate::types::{LikeParams, ListRepoLikersParams, User};
+use crate::types::{ListRepoLikersParams, User};
 
 /// A handle for a single repository on the Hugging Face Hub.
 ///
@@ -55,10 +39,10 @@ use crate::types::{LikeParams, ListRepoLikersParams, User};
 /// ```
 #[derive(Clone)]
 pub struct HFRepository {
-    client: HFClient,
+    pub(crate) client: HFClient,
     owner: String,
     name: String,
-    repo_type: RepoType,
+    pub(crate) repo_type: RepoType,
     default_revision: Option<String>,
 }
 
@@ -533,8 +517,14 @@ impl HFRepository {
     }
 
     /// The full `"owner/name"` identifier used in Hub API calls.
+    ///
+    /// If no owner is set, returns just the name (for repos using short-form IDs like `"gpt2"`).
     pub fn repo_path(&self) -> String {
-        format!("{}/{}", self.owner, self.name)
+        if self.owner.is_empty() {
+            self.name.clone()
+        } else {
+            format!("{}/{}", self.owner, self.name)
+        }
     }
 
     /// The type of this repository (model, dataset, or space).
@@ -570,17 +560,14 @@ impl HFRepository {
 
         match self.repo_type {
             RepoType::Model => self
-                .client
                 .model_info(&ModelInfoParams { repo_id, revision })
                 .await
                 .map(RepoInfo::Model),
             RepoType::Dataset => self
-                .client
                 .dataset_info(&DatasetInfoParams { repo_id, revision })
                 .await
                 .map(RepoInfo::Dataset),
             RepoType::Space => self
-                .client
                 .space_info(&SpaceInfoParams { repo_id, revision })
                 .await
                 .map(RepoInfo::Space),
@@ -592,46 +579,21 @@ impl HFRepository {
 
     /// Return `true` if the repository exists and is accessible with the current credentials.
     pub async fn exists(&self) -> Result<bool> {
-        self.client
-            .repo_exists(&crate::types::RepoExistsParams {
-                repo_id: self.repo_path(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
-    }
-
-    /// Return `true` if the given branch, tag, or commit SHA exists in the repository.
-    pub async fn revision_exists(&self, params: &RepoRevisionExistsParams) -> Result<bool> {
-        self.client
-            .revision_exists(&RevisionExistsParams {
-                repo_id: self.repo_path(),
-                revision: params.revision.clone(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
-    }
-
-    /// Return `true` if the specified file exists at the given revision (or the default revision).
-    pub async fn file_exists(&self, params: &RepoFileExistsParams) -> Result<bool> {
-        self.client
-            .file_exists(&FileExistsParams {
-                repo_id: self.repo_path(),
-                filename: params.filename.clone(),
-                revision: self.resolve_revision(params.revision.as_deref()),
-                repo_type: Some(self.repo_type),
-            })
-            .await
+        self.repo_exists(&crate::types::RepoExistsParams {
+            repo_id: self.repo_path(),
+            repo_type: Some(self.repo_type),
+        })
+        .await
     }
 
     /// Return a flat list of all file paths in the repository at the given revision.
     pub async fn list_files(&self, params: &RepoListFilesParams) -> Result<Vec<String>> {
-        self.client
-            .list_repo_files(&ListRepoFilesParams {
-                repo_id: self.repo_path(),
-                revision: self.resolve_revision(params.revision.as_deref()),
-                repo_type: Some(self.repo_type),
-            })
-            .await
+        self.list_repo_files(&ListRepoFilesParams {
+            repo_id: self.repo_path(),
+            revision: self.resolve_revision(params.revision.as_deref()),
+            repo_type: Some(self.repo_type),
+        })
+        .await
     }
 
     /// Stream file and directory entries in the repository tree.
@@ -654,152 +616,6 @@ impl HFRepository {
         Ok(self.client.paginate(url, query, params.max_items))
     }
 
-    /// Fetch metadata for a specific set of paths within the repository.
-    pub async fn get_paths_info(&self, params: &RepoGetPathsInfoParams) -> Result<Vec<RepoTreeEntry>> {
-        self.client
-            .get_paths_info(&GetPathsInfoParams {
-                repo_id: self.repo_path(),
-                paths: params.paths.clone(),
-                revision: self.resolve_revision(params.revision.as_deref()),
-                repo_type: Some(self.repo_type),
-            })
-            .await
-    }
-
-    /// Download a single file to the local cache or an explicit directory, returning its path.
-    pub async fn download_file(&self, params: &RepoDownloadFileParams) -> Result<PathBuf> {
-        self.client
-            .download_file(&DownloadFileParams {
-                repo_id: self.repo_path(),
-                filename: params.filename.clone(),
-                local_dir: params.local_dir.clone(),
-                repo_type: Some(self.repo_type),
-                revision: self.resolve_revision(params.revision.as_deref()),
-                force_download: params.force_download,
-                local_files_only: params.local_files_only,
-            })
-            .await
-    }
-
-    /// Stream the raw bytes of a file directly from the Hub without writing to disk.
-    ///
-    /// Returns a tuple of `(optional content-length, byte stream)`.
-    pub async fn download_file_stream(
-        &self,
-        params: &RepoDownloadFileStreamParams,
-    ) -> Result<(Option<u64>, impl Stream<Item = std::result::Result<bytes::Bytes, reqwest::Error>>)> {
-        self.client
-            .download_file_stream(&DownloadFileStreamParams {
-                repo_id: self.repo_path(),
-                filename: params.filename.clone(),
-                repo_type: Some(self.repo_type),
-                revision: self.resolve_revision(params.revision.as_deref()),
-            })
-            .await
-    }
-
-    /// Download the full repository snapshot to a local directory, returning the directory path.
-    ///
-    /// Supports file filtering via `allow_patterns` / `ignore_patterns` and parallel workers
-    /// via `max_workers`.
-    pub async fn snapshot_download(&self, params: &RepoSnapshotDownloadParams) -> Result<PathBuf> {
-        self.client
-            .snapshot_download(&SnapshotDownloadParams {
-                repo_id: self.repo_path(),
-                repo_type: Some(self.repo_type),
-                revision: self.resolve_revision(params.revision.as_deref()),
-                allow_patterns: params.allow_patterns.clone(),
-                ignore_patterns: params.ignore_patterns.clone(),
-                local_dir: params.local_dir.clone(),
-                force_download: params.force_download,
-                local_files_only: params.local_files_only,
-                max_workers: params.max_workers,
-            })
-            .await
-    }
-
-    /// Create a commit with one or more file operations (add, delete, copy).
-    ///
-    /// Pass `create_pr: Some(true)` to open a pull request instead of pushing directly.
-    pub async fn create_commit(&self, params: &RepoCreateCommitParams) -> Result<CommitInfo> {
-        self.client
-            .create_commit(&CreateCommitParams {
-                repo_id: self.repo_path(),
-                operations: params.operations.clone(),
-                commit_message: params.commit_message.clone(),
-                commit_description: params.commit_description.clone(),
-                repo_type: Some(self.repo_type),
-                revision: self.resolve_revision(params.revision.as_deref()),
-                create_pr: params.create_pr,
-                parent_commit: params.parent_commit.clone(),
-            })
-            .await
-    }
-
-    /// Upload a single file and create a commit for it.
-    pub async fn upload_file(&self, params: &RepoUploadFileParams) -> Result<CommitInfo> {
-        self.client
-            .upload_file(&UploadFileParams {
-                repo_id: self.repo_path(),
-                source: params.source.clone(),
-                path_in_repo: params.path_in_repo.clone(),
-                repo_type: Some(self.repo_type),
-                revision: self.resolve_revision(params.revision.as_deref()),
-                commit_message: params.commit_message.clone(),
-                commit_description: params.commit_description.clone(),
-                create_pr: params.create_pr,
-                parent_commit: params.parent_commit.clone(),
-            })
-            .await
-    }
-
-    /// Upload a local folder as a single commit, with optional glob-based inclusion/exclusion filters.
-    pub async fn upload_folder(&self, params: &RepoUploadFolderParams) -> Result<CommitInfo> {
-        self.client
-            .upload_folder(&UploadFolderParams {
-                repo_id: self.repo_path(),
-                folder_path: params.folder_path.clone(),
-                path_in_repo: params.path_in_repo.clone(),
-                repo_type: Some(self.repo_type),
-                revision: self.resolve_revision(params.revision.as_deref()),
-                commit_message: params.commit_message.clone(),
-                commit_description: params.commit_description.clone(),
-                create_pr: params.create_pr,
-                allow_patterns: params.allow_patterns.clone(),
-                ignore_patterns: params.ignore_patterns.clone(),
-                delete_patterns: params.delete_patterns.clone(),
-            })
-            .await
-    }
-
-    /// Delete a single file from the repository and create a commit.
-    pub async fn delete_file(&self, params: &RepoDeleteFileParams) -> Result<CommitInfo> {
-        self.client
-            .delete_file(&DeleteFileParams {
-                repo_id: self.repo_path(),
-                path_in_repo: params.path_in_repo.clone(),
-                repo_type: Some(self.repo_type),
-                revision: self.resolve_revision(params.revision.as_deref()),
-                commit_message: params.commit_message.clone(),
-                create_pr: params.create_pr,
-            })
-            .await
-    }
-
-    /// Delete an entire folder from the repository and create a commit.
-    pub async fn delete_folder(&self, params: &RepoDeleteFolderParams) -> Result<CommitInfo> {
-        self.client
-            .delete_folder(&DeleteFolderParams {
-                repo_id: self.repo_path(),
-                path_in_repo: params.path_in_repo.clone(),
-                repo_type: Some(self.repo_type),
-                revision: self.resolve_revision(params.revision.as_deref()),
-                commit_message: params.commit_message.clone(),
-                create_pr: params.create_pr,
-            })
-            .await
-    }
-
     /// Stream commit history for the repository at a given revision.
     ///
     /// Returns `Result<impl Stream<Item = Result<GitCommitInfo>>>`. Use `max_items` to limit
@@ -816,331 +632,111 @@ impl HFRepository {
 
     /// Fetch all branches, tags, and optionally pull request refs for the repository.
     pub async fn list_refs(&self, params: &RepoListRefsParams) -> Result<GitRefs> {
-        self.client
-            .list_repo_refs(&ListRepoRefsParams {
-                repo_id: self.repo_path(),
-                repo_type: Some(self.repo_type),
-                include_pull_requests: params.include_pull_requests,
-            })
-            .await
+        self.list_repo_refs(&ListRepoRefsParams {
+            repo_id: self.repo_path(),
+            repo_type: Some(self.repo_type),
+            include_pull_requests: params.include_pull_requests,
+        })
+        .await
     }
 
     /// Fetch a structured diff between two revisions (HEAD..compare or a commit SHA).
     pub async fn get_commit_diff(&self, params: &RepoGetCommitDiffParams) -> Result<String> {
-        self.client
-            .get_commit_diff(&GetCommitDiffParams {
-                repo_id: self.repo_path(),
-                compare: params.compare.clone(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
+        self.list_repo_commit_diff(&GetCommitDiffParams {
+            repo_id: self.repo_path(),
+            compare: params.compare.clone(),
+            repo_type: Some(self.repo_type),
+        })
+        .await
     }
 
     /// Fetch the raw unified diff between two revisions as a string.
     pub async fn get_raw_diff(&self, params: &RepoGetRawDiffParams) -> Result<String> {
-        self.client
-            .get_raw_diff(&GetRawDiffParams {
-                repo_id: self.repo_path(),
-                compare: params.compare.clone(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
+        self.list_repo_raw_diff(&GetRawDiffParams {
+            repo_id: self.repo_path(),
+            compare: params.compare.clone(),
+            repo_type: Some(self.repo_type),
+        })
+        .await
     }
 
     /// Create a new branch, optionally starting from a specific revision.
     pub async fn create_branch(&self, params: &RepoCreateBranchParams) -> Result<()> {
-        self.client
-            .create_branch(&CreateBranchParams {
-                repo_id: self.repo_path(),
-                branch: params.branch.clone(),
-                revision: self.resolve_revision(params.revision.as_deref()),
-                repo_type: Some(self.repo_type),
-            })
-            .await
+        self.create_repo_branch(&CreateBranchParams {
+            repo_id: self.repo_path(),
+            branch: params.branch.clone(),
+            revision: self.resolve_revision(params.revision.as_deref()),
+            repo_type: Some(self.repo_type),
+        })
+        .await
     }
 
     /// Delete a branch from the repository.
     pub async fn delete_branch(&self, params: &RepoDeleteBranchParams) -> Result<()> {
-        self.client
-            .delete_branch(&DeleteBranchParams {
-                repo_id: self.repo_path(),
-                branch: params.branch.clone(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
+        self.delete_repo_branch(&DeleteBranchParams {
+            repo_id: self.repo_path(),
+            branch: params.branch.clone(),
+            repo_type: Some(self.repo_type),
+        })
+        .await
     }
 
     /// Create a lightweight or annotated tag, optionally at a specific revision.
     pub async fn create_tag(&self, params: &RepoCreateTagParams) -> Result<()> {
-        self.client
-            .create_tag(&CreateTagParams {
-                repo_id: self.repo_path(),
-                tag: params.tag.clone(),
-                revision: self.resolve_revision(params.revision.as_deref()),
-                message: params.message.clone(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
+        self.create_repo_tag(&CreateTagParams {
+            repo_id: self.repo_path(),
+            tag: params.tag.clone(),
+            revision: self.resolve_revision(params.revision.as_deref()),
+            message: params.message.clone(),
+            repo_type: Some(self.repo_type),
+        })
+        .await
     }
 
     /// Delete a tag from the repository.
     pub async fn delete_tag(&self, params: &RepoDeleteTagParams) -> Result<()> {
-        self.client
-            .delete_tag(&DeleteTagParams {
-                repo_id: self.repo_path(),
-                tag: params.tag.clone(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
+        self.delete_repo_tag(&DeleteTagParams {
+            repo_id: self.repo_path(),
+            tag: params.tag.clone(),
+            repo_type: Some(self.repo_type),
+        })
+        .await
     }
 
     /// Update repository settings such as visibility, gating policy, or description.
     pub async fn update_settings(&self, params: &RepoUpdateSettingsParams) -> Result<()> {
-        self.client
-            .update_repo_settings(&UpdateRepoParams {
-                repo_id: self.repo_path(),
-                repo_type: Some(self.repo_type),
-                private: params.private,
-                gated: params.gated.clone(),
-                description: params.description.clone(),
-            })
-            .await
+        self.update_repo_settings(&UpdateRepoParams {
+            repo_id: self.repo_path(),
+            repo_type: Some(self.repo_type),
+            private: params.private,
+            gated: params.gated.clone(),
+            description: params.description.clone(),
+        })
+        .await
     }
 
     /// List discussions for this repository, with optional filters on author, type, and status.
     #[cfg(feature = "discussions")]
     pub async fn list_discussions(&self, params: &RepoListDiscussionsParams) -> Result<DiscussionsResponse> {
-        self.client
-            .get_repo_discussions(&GetRepoDiscussionsParams {
-                repo_id: self.repo_path(),
-                repo_type: Some(self.repo_type),
-                author: params.author.clone(),
-                discussion_type: params.discussion_type.clone(),
-                discussion_status: params.discussion_status.clone(),
-            })
-            .await
+        self.get_repo_discussions(&GetRepoDiscussionsParams {
+            repo_id: self.repo_path(),
+            repo_type: Some(self.repo_type),
+            author: params.author.clone(),
+            discussion_type: params.discussion_type.clone(),
+            discussion_status: params.discussion_status.clone(),
+        })
+        .await
     }
 
     /// Fetch the full details and event timeline for a single discussion or pull request.
     #[cfg(feature = "discussions")]
     pub async fn discussion_details(&self, params: &RepoDiscussionDetailsParams) -> Result<DiscussionWithDetails> {
-        self.client
-            .get_discussion_details(&GetDiscussionDetailsParams {
-                repo_id: self.repo_path(),
-                discussion_num: params.discussion_num,
-                repo_type: Some(self.repo_type),
-            })
-            .await
-    }
-
-    /// Open a new discussion on the repository.
-    #[cfg(feature = "discussions")]
-    pub async fn create_discussion(&self, params: &RepoCreateDiscussionParams) -> Result<DiscussionWithDetails> {
-        self.client
-            .create_discussion(&CreateDiscussionParams {
-                repo_id: self.repo_path(),
-                title: params.title.clone(),
-                description: params.description.clone(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
-    }
-
-    /// Open a new pull request on the repository.
-    #[cfg(feature = "discussions")]
-    pub async fn create_pull_request(&self, params: &RepoCreatePullRequestParams) -> Result<DiscussionWithDetails> {
-        self.client
-            .create_pull_request(&CreatePullRequestParams {
-                repo_id: self.repo_path(),
-                title: params.title.clone(),
-                description: params.description.clone(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
-    }
-
-    /// Post a comment on a discussion or pull request.
-    #[cfg(feature = "discussions")]
-    pub async fn comment_discussion(&self, params: &RepoCommentDiscussionParams) -> Result<DiscussionComment> {
-        self.client
-            .comment_discussion(&CommentDiscussionParams {
-                repo_id: self.repo_path(),
-                discussion_num: params.discussion_num,
-                comment: params.comment.clone(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
-    }
-
-    /// Edit the content of an existing comment on a discussion.
-    #[cfg(feature = "discussions")]
-    pub async fn edit_discussion_comment(&self, params: &RepoEditDiscussionCommentParams) -> Result<DiscussionComment> {
-        self.client
-            .edit_discussion_comment(&EditDiscussionCommentParams {
-                repo_id: self.repo_path(),
-                discussion_num: params.discussion_num,
-                comment_id: params.comment_id.clone(),
-                new_content: params.new_content.clone(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
-    }
-
-    /// Hide a comment on a discussion, making it collapsed by default.
-    #[cfg(feature = "discussions")]
-    pub async fn hide_discussion_comment(&self, params: &RepoHideDiscussionCommentParams) -> Result<DiscussionComment> {
-        self.client
-            .hide_discussion_comment(&HideDiscussionCommentParams {
-                repo_id: self.repo_path(),
-                discussion_num: params.discussion_num,
-                comment_id: params.comment_id.clone(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
-    }
-
-    /// Rename a discussion or pull request.
-    #[cfg(feature = "discussions")]
-    pub async fn rename_discussion(&self, params: &RepoRenameDiscussionParams) -> Result<DiscussionWithDetails> {
-        self.client
-            .rename_discussion(&RenameDiscussionParams {
-                repo_id: self.repo_path(),
-                discussion_num: params.discussion_num,
-                new_title: params.new_title.clone(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
-    }
-
-    /// Change the status of a discussion (e.g. open or closed).
-    #[cfg(feature = "discussions")]
-    pub async fn change_discussion_status(
-        &self,
-        params: &RepoChangeDiscussionStatusParams,
-    ) -> Result<DiscussionWithDetails> {
-        self.client
-            .change_discussion_status(&ChangeDiscussionStatusParams {
-                repo_id: self.repo_path(),
-                discussion_num: params.discussion_num,
-                new_status: params.new_status.clone(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
-    }
-
-    /// Merge an open pull request.
-    #[cfg(feature = "discussions")]
-    pub async fn merge_pull_request(&self, params: &RepoMergePullRequestParams) -> Result<DiscussionWithDetails> {
-        self.client
-            .merge_pull_request(&MergePullRequestParams {
-                repo_id: self.repo_path(),
-                discussion_num: params.discussion_num,
-                repo_type: Some(self.repo_type),
-            })
-            .await
-    }
-
-    /// List users whose access request is still pending review.
-    #[cfg(feature = "access_requests")]
-    pub async fn list_pending_access_requests(&self) -> Result<Vec<AccessRequest>> {
-        self.client
-            .list_pending_access_requests(&ListAccessRequestsParams {
-                repo_id: self.repo_path(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
-    }
-
-    /// List users whose access request has been accepted.
-    #[cfg(feature = "access_requests")]
-    pub async fn list_accepted_access_requests(&self) -> Result<Vec<AccessRequest>> {
-        self.client
-            .list_accepted_access_requests(&ListAccessRequestsParams {
-                repo_id: self.repo_path(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
-    }
-
-    /// List users whose access request has been rejected.
-    #[cfg(feature = "access_requests")]
-    pub async fn list_rejected_access_requests(&self) -> Result<Vec<AccessRequest>> {
-        self.client
-            .list_rejected_access_requests(&ListAccessRequestsParams {
-                repo_id: self.repo_path(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
-    }
-
-    /// Accept a pending access request from the given user.
-    #[cfg(feature = "access_requests")]
-    pub async fn accept_access_request(&self, params: &RepoAccessRequestUserParams) -> Result<()> {
-        self.client
-            .accept_access_request(&HandleAccessRequestParams {
-                repo_id: self.repo_path(),
-                user: params.user.clone(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
-    }
-
-    /// Reject a pending access request from the given user.
-    #[cfg(feature = "access_requests")]
-    pub async fn reject_access_request(&self, params: &RepoAccessRequestUserParams) -> Result<()> {
-        self.client
-            .reject_access_request(&HandleAccessRequestParams {
-                repo_id: self.repo_path(),
-                user: params.user.clone(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
-    }
-
-    /// Cancel a previously submitted or accepted access request for the given user.
-    #[cfg(feature = "access_requests")]
-    pub async fn cancel_access_request(&self, params: &RepoAccessRequestUserParams) -> Result<()> {
-        self.client
-            .cancel_access_request(&HandleAccessRequestParams {
-                repo_id: self.repo_path(),
-                user: params.user.clone(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
-    }
-
-    /// Directly grant repository access to a user, bypassing the normal request flow.
-    #[cfg(feature = "access_requests")]
-    pub async fn grant_access(&self, params: &RepoAccessRequestUserParams) -> Result<()> {
-        self.client
-            .grant_access(&GrantAccessParams {
-                repo_id: self.repo_path(),
-                user: params.user.clone(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
-    }
-
-    /// Like the repository as the authenticated user.
-    #[cfg(feature = "likes")]
-    pub async fn like(&self) -> Result<()> {
-        self.client
-            .like(&LikeParams {
-                repo_id: self.repo_path(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
-    }
-
-    /// Remove the authenticated user's like from the repository.
-    #[cfg(feature = "likes")]
-    pub async fn unlike(&self) -> Result<()> {
-        self.client
-            .unlike(&LikeParams {
-                repo_id: self.repo_path(),
-                repo_type: Some(self.repo_type),
-            })
-            .await
+        self.get_discussion_details(&GetDiscussionDetailsParams {
+            repo_id: self.repo_path(),
+            discussion_num: params.discussion_num,
+            repo_type: Some(self.repo_type),
+        })
+        .await
     }
 
     /// Stream users who have liked this repository.
@@ -1149,18 +745,18 @@ impl HFRepository {
     /// number of users yielded.
     #[cfg(feature = "likes")]
     pub fn list_likers(&self, max_items: Option<usize>) -> Result<impl Stream<Item = Result<User>> + '_> {
-        self.client.list_repo_likers(&ListRepoLikersParams {
+        self.list_repo_likers(&ListRepoLikersParams {
             repo_id: self.repo_path(),
             repo_type: Some(self.repo_type),
             max_items,
         })
     }
 
-    fn resolve_revision(&self, revision: Option<&str>) -> Option<String> {
+    pub(crate) fn resolve_revision(&self, revision: Option<&str>) -> Option<String> {
         revision.map(ToOwned::to_owned).or_else(|| self.default_revision.clone())
     }
 
-    fn effective_revision<'a>(&'a self, revision: Option<&'a str>) -> &'a str {
+    pub(crate) fn effective_revision<'a>(&'a self, revision: Option<&'a str>) -> &'a str {
         revision
             .or(self.default_revision.as_deref())
             .unwrap_or(constants::DEFAULT_REVISION)
@@ -1192,116 +788,6 @@ impl HFSpace {
     /// Consume this handle and return the underlying [`HFRepository`].
     pub fn into_repo(self) -> HFRepository {
         self.repo
-    }
-
-    /// Fetch the current runtime state of the Space (hardware, stage, URL, etc.).
-    #[cfg(feature = "spaces")]
-    pub async fn runtime(&self) -> Result<SpaceRuntime> {
-        self.repo
-            .client()
-            .get_space_runtime(&GetSpaceRuntimeParams {
-                repo_id: self.repo.repo_path(),
-            })
-            .await
-    }
-
-    /// Request an upgrade or downgrade of the Space's hardware tier.
-    #[cfg(feature = "spaces")]
-    pub async fn request_hardware(&self, params: &SpaceHardwareRequestParams) -> Result<SpaceRuntime> {
-        self.repo
-            .client()
-            .request_space_hardware(&RequestSpaceHardwareParams {
-                repo_id: self.repo.repo_path(),
-                hardware: params.hardware.clone(),
-                sleep_time: params.sleep_time,
-            })
-            .await
-    }
-
-    /// Configure the number of seconds of inactivity before the Space is put to sleep.
-    #[cfg(feature = "spaces")]
-    pub async fn set_sleep_time(&self, params: &SpaceSleepTimeParams) -> Result<()> {
-        self.repo
-            .client()
-            .set_space_sleep_time(&SetSpaceSleepTimeParams {
-                repo_id: self.repo.repo_path(),
-                sleep_time: params.sleep_time,
-            })
-            .await
-    }
-
-    /// Pause the Space, stopping it from consuming compute resources.
-    #[cfg(feature = "spaces")]
-    pub async fn pause(&self) -> Result<SpaceRuntime> {
-        self.repo
-            .client()
-            .pause_space(&PauseSpaceParams {
-                repo_id: self.repo.repo_path(),
-            })
-            .await
-    }
-
-    /// Restart a paused or errored Space.
-    #[cfg(feature = "spaces")]
-    pub async fn restart(&self) -> Result<SpaceRuntime> {
-        self.repo
-            .client()
-            .restart_space(&RestartSpaceParams {
-                repo_id: self.repo.repo_path(),
-            })
-            .await
-    }
-
-    /// Add or update a secret (encrypted environment variable) on the Space.
-    #[cfg(feature = "spaces")]
-    pub async fn add_secret(&self, params: &SpaceSecretParams) -> Result<()> {
-        self.repo
-            .client()
-            .add_space_secret(&AddSpaceSecretParams {
-                repo_id: self.repo.repo_path(),
-                key: params.key.clone(),
-                value: params.value.clone(),
-                description: params.description.clone(),
-            })
-            .await
-    }
-
-    /// Delete a secret from the Space by key.
-    #[cfg(feature = "spaces")]
-    pub async fn delete_secret(&self, params: &SpaceSecretDeleteParams) -> Result<()> {
-        self.repo
-            .client()
-            .delete_space_secret(&DeleteSpaceSecretParams {
-                repo_id: self.repo.repo_path(),
-                key: params.key.clone(),
-            })
-            .await
-    }
-
-    /// Add or update a public environment variable on the Space.
-    #[cfg(feature = "spaces")]
-    pub async fn add_variable(&self, params: &SpaceVariableParams) -> Result<()> {
-        self.repo
-            .client()
-            .add_space_variable(&AddSpaceVariableParams {
-                repo_id: self.repo.repo_path(),
-                key: params.key.clone(),
-                value: params.value.clone(),
-                description: params.description.clone(),
-            })
-            .await
-    }
-
-    /// Delete a public environment variable from the Space by key.
-    #[cfg(feature = "spaces")]
-    pub async fn delete_variable(&self, params: &SpaceVariableDeleteParams) -> Result<()> {
-        self.repo
-            .client()
-            .delete_space_variable(&DeleteSpaceVariableParams {
-                repo_id: self.repo.repo_path(),
-                key: params.key.clone(),
-            })
-            .await
     }
 }
 
