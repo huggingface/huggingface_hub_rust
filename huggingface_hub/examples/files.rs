@@ -22,7 +22,7 @@ async fn main() -> huggingface_hub::Result<()> {
         println!("  - {f}");
     }
 
-    let tree_stream = model.list_tree(&RepoListTreeParams::builder().recursive(true).build());
+    let tree_stream = model.list_tree(&RepoListTreeParams::builder().recursive(true).build())?;
     futures::pin_mut!(tree_stream);
     println!("\nTree entries in gpt2:");
     let mut count = 0;

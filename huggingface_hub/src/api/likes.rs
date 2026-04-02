@@ -32,11 +32,11 @@ impl HFClient {
         Ok(response.json().await?)
     }
 
-    pub fn list_repo_likers(&self, params: &ListRepoLikersParams) -> impl Stream<Item = Result<User>> + '_ {
+    pub fn list_repo_likers(&self, params: &ListRepoLikersParams) -> Result<impl Stream<Item = Result<User>> + '_> {
         let segment = constants::repo_type_api_segment(params.repo_type);
         let url_str = format!("{}/api/{}/{}/likers", self.inner.endpoint, segment, params.repo_id);
-        let url = Url::parse(&url_str).unwrap();
-        self.paginate(url, vec![])
+        let url = Url::parse(&url_str)?;
+        Ok(self.paginate(url, vec![], params.max_items))
     }
 }
 

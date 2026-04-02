@@ -46,7 +46,7 @@ async fn main() -> huggingface_hub::Result<()> {
         .await?;
     println!("gpt2/config.json exists: {file_exists}");
 
-    let models_stream = api.list_models(&ListModelsParams::builder().author("openai").build());
+    let models_stream = api.list_models(&ListModelsParams::builder().author("openai").build())?;
     futures::pin_mut!(models_stream);
     println!("\nModels by openai:");
     let mut count = 0;
@@ -58,7 +58,7 @@ async fn main() -> huggingface_hub::Result<()> {
         }
     }
 
-    let datasets_stream = api.list_datasets(&ListDatasetsParams::builder().search("squad").build());
+    let datasets_stream = api.list_datasets(&ListDatasetsParams::builder().search("squad").build())?;
     futures::pin_mut!(datasets_stream);
     println!("\nDatasets matching 'squad':");
     let mut count = 0;
@@ -70,7 +70,7 @@ async fn main() -> huggingface_hub::Result<()> {
         }
     }
 
-    let spaces_stream = api.list_spaces(&ListSpacesParams::builder().author("huggingface").build());
+    let spaces_stream = api.list_spaces(&ListSpacesParams::builder().author("huggingface").build())?;
     futures::pin_mut!(spaces_stream);
     println!("\nSpaces by huggingface:");
     let mut count = 0;

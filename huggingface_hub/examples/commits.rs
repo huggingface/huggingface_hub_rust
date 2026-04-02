@@ -16,7 +16,7 @@ async fn main() -> huggingface_hub::Result<()> {
     // --- Read operations ---
 
     let repo = api.model("openai-community", "gpt2");
-    let commits_stream = repo.list_commits(&RepoListCommitsParams::default());
+    let commits_stream = repo.list_commits(&RepoListCommitsParams::default())?;
     futures::pin_mut!(commits_stream);
     println!("Recent commits in gpt2:");
     let mut first_two_ids: Vec<String> = Vec::new();

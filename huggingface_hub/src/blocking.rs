@@ -30,21 +30,37 @@ where
     })
 }
 
+/// Synchronous/blocking counterpart to [`HFClient`].
+///
+/// Wraps an `HFClient` together with a dedicated single-threaded tokio runtime so
+/// that every async API method can be called from synchronous code. The runtime is
+/// shared with all repo/space handles derived from this client.
 #[derive(Clone)]
 pub struct HfApiSync {
     pub(crate) inner: HFClient,
     pub(crate) runtime: Arc<tokio::runtime::Runtime>,
 }
 
+/// Synchronous/blocking counterpart to [`repo::HFRepository`].
+///
+/// Holds a reference to the underlying async handle and the shared tokio runtime.
+/// All repo-scoped API methods are available directly on this type and block until
+/// completion.
 #[derive(Clone)]
 pub struct HFRepositorySync {
     pub(crate) inner: repo::HFRepository,
     pub(crate) runtime: Arc<tokio::runtime::Runtime>,
 }
 
+/// Synchronous/blocking counterpart to [`repo::HFSpace`].
+///
+/// Combines an [`HFRepositorySync`] for general repo operations with an inner
+/// [`repo::HFSpace`] for space-specific operations. Derefs to [`HFRepositorySync`],
+/// so all blocking repository methods are accessible directly.
 #[derive(Clone)]
 pub struct HFSpaceSync {
     repo: HFRepositorySync,
+    space: repo::HFSpace,
 }
 
 impl fmt::Debug for HfApiSync {
@@ -66,6 +82,13 @@ impl fmt::Debug for HFSpaceSync {
 }
 
 impl HfApiSync {
+    /// Creates an `HfApiSync` using default configuration from the environment.
+    ///
+    /// Reads `HF_TOKEN`, `HF_ENDPOINT`, and other standard environment variables.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the tokio runtime cannot be created or if `HFClient::new` fails.
     pub fn new() -> Result<Self> {
         Ok(Self {
             inner: HFClient::new()?,
@@ -73,6 +96,11 @@ impl HfApiSync {
         })
     }
 
+    /// Creates an `HfApiSync` wrapping an already-configured [`HFClient`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the tokio runtime cannot be created.
     pub fn from_api(api: HFClient) -> Result<Self> {
         Ok(Self {
             inner: api,
@@ -80,10 +108,12 @@ impl HfApiSync {
         })
     }
 
+    /// Returns a reference to the underlying async [`HFClient`].
     pub fn api(&self) -> &HFClient {
         &self.inner
     }
 
+    /// Creates a blocking repository handle for the given repo type, owner, and name.
     pub fn repo(
         &self,
         repo_type: types::RepoType,
@@ -93,20 +123,24 @@ impl HfApiSync {
         HFRepositorySync::new(self.clone(), repo_type, owner, name)
     }
 
+    /// Creates a blocking handle for a model repository.
     pub fn model(&self, owner: impl Into<String>, name: impl Into<String>) -> HFRepositorySync {
         self.repo(types::RepoType::Model, owner, name)
     }
 
+    /// Creates a blocking handle for a dataset repository.
     pub fn dataset(&self, owner: impl Into<String>, name: impl Into<String>) -> HFRepositorySync {
         self.repo(types::RepoType::Dataset, owner, name)
     }
 
+    /// Creates a blocking handle for a space repository.
     pub fn space(&self, owner: impl Into<String>, name: impl Into<String>) -> HFSpaceSync {
         HFSpaceSync::new(self.clone(), owner, name)
     }
 }
 
 impl HFRepositorySync {
+    /// Creates a blocking repository handle from a client, repo type, owner, and name.
     pub fn new(
         client: HfApiSync,
         repo_type: types::RepoType,
@@ -123,10 +157,12 @@ impl HFRepositorySync {
         Self { inner, runtime }
     }
 
+    /// Returns a reference to the underlying async [`repo::HFRepository`].
     pub fn repo(&self) -> &repo::HFRepository {
         &self.inner
     }
 
+    /// Returns the [`HfApiSync`] client this handle belongs to.
     pub fn api(&self) -> HfApiSync {
         HfApiSync {
             inner: self.inner.client().clone(),
@@ -134,30 +170,37 @@ impl HFRepositorySync {
         }
     }
 
+    /// Returns the repository owner (user or organization name).
     pub fn owner(&self) -> &str {
         self.inner.owner()
     }
 
+    /// Returns the repository name.
     pub fn name(&self) -> &str {
         self.inner.name()
     }
 
+    /// Returns the `{owner}/{name}` path string used in Hub API URLs.
     pub fn repo_path(&self) -> String {
         self.inner.repo_path()
     }
 
+    /// Returns the repository type (model, dataset, or space).
     pub fn repo_type(&self) -> types::RepoType {
         self.inner.repo_type()
     }
 
+    /// Returns the pinned revision, if one was set via [`with_revision`](Self::with_revision).
     pub fn default_revision(&self) -> Option<&str> {
         self.inner.default_revision()
     }
 
+    /// Returns a new handle pinned to the given revision (branch, tag, or commit SHA).
     pub fn with_revision(&self, revision: impl Into<String>) -> Self {
         Self::from_inner(self.inner.with_revision(revision), self.runtime.clone())
     }
 
+    /// Returns a new handle with the pinned revision cleared, using the repo's default branch.
     pub fn without_revision(&self) -> Self {
         Self::from_inner(self.inner.without_revision(), self.runtime.clone())
     }
@@ -183,7 +226,7 @@ impl HFRepositorySync {
     }
 
     pub fn list_tree(&self, params: &repo::RepoListTreeParams) -> Result<Vec<types::RepoTreeEntry>> {
-        collect_stream(self.runtime.as_ref(), self.inner.list_tree(params))
+        collect_stream(self.runtime.as_ref(), self.inner.list_tree(params)?)
     }
 
     pub fn get_paths_info(&self, params: &repo::RepoGetPathsInfoParams) -> Result<Vec<types::RepoTreeEntry>> {
@@ -234,7 +277,7 @@ impl HFRepositorySync {
     }
 
     pub fn list_commits(&self, params: &repo::RepoListCommitsParams) -> Result<Vec<types::GitCommitInfo>> {
-        collect_stream(self.runtime.as_ref(), self.inner.list_commits(params))
+        collect_stream(self.runtime.as_ref(), self.inner.list_commits(params)?)
     }
 
     pub fn list_refs(&self, params: &repo::RepoListRefsParams) -> Result<types::GitRefs> {
@@ -383,89 +426,96 @@ impl HFRepositorySync {
     }
 
     #[cfg(feature = "likes")]
-    pub fn list_likers(&self) -> Result<Vec<types::User>> {
-        collect_stream(self.runtime.as_ref(), self.inner.list_likers())
+    pub fn list_likers(&self, max_items: Option<usize>) -> Result<Vec<types::User>> {
+        collect_stream(self.runtime.as_ref(), self.inner.list_likers(max_items)?)
     }
 }
 
 impl HFSpaceSync {
+    /// Creates a blocking space handle for the given owner and name.
     pub fn new(client: HfApiSync, owner: impl Into<String>, name: impl Into<String>) -> Self {
-        Self {
-            repo: HFRepositorySync::new(client, types::RepoType::Space, owner, name),
-        }
+        let owner = owner.into();
+        let name = name.into();
+        let space = repo::HFSpace::new(client.inner.clone(), &owner, &name);
+        let repo = HFRepositorySync::new(client, types::RepoType::Space, owner, name);
+        Self { repo, space }
     }
 
-    fn from_repo(repo: HFRepositorySync) -> Self {
-        Self { repo }
-    }
-
-    fn inner_space(&self) -> repo::HFSpace {
-        repo::HFSpace::try_from(self.repo.inner.clone()).expect("HFSpaceSync invariant violated")
-    }
-
+    /// Returns a clone of the underlying async [`repo::HFSpace`] handle.
     pub fn space(&self) -> repo::HFSpace {
-        self.inner_space()
+        self.space.clone()
     }
 
+    /// Returns the [`HfApiSync`] client this handle belongs to.
     pub fn api(&self) -> HfApiSync {
         self.repo.api()
     }
 
+    /// Returns a new handle pinned to the given revision (branch, tag, or commit SHA).
     pub fn with_revision(&self, revision: impl Into<String>) -> Self {
-        Self::from_repo(self.repo.with_revision(revision))
+        let rev = revision.into();
+        Self {
+            space: self.space.with_revision(&rev),
+            repo: self.repo.with_revision(rev),
+        }
     }
 
+    /// Returns a new handle with the pinned revision cleared, using the space's default branch.
     pub fn without_revision(&self) -> Self {
-        Self::from_repo(self.repo.without_revision())
+        Self {
+            space: self.space.without_revision(),
+            repo: self.repo.without_revision(),
+        }
     }
 
+    /// Converts this space handle into a plain [`HFRepositorySync`], discarding space-specific state.
     pub fn into_repo(self) -> HFRepositorySync {
         self.repo
     }
 
     #[cfg(feature = "spaces")]
     pub fn runtime(&self) -> Result<types::SpaceRuntime> {
-        self.repo.runtime.block_on(self.inner_space().runtime())
+        self.repo.runtime.block_on(self.space.clone().runtime())
     }
 
     #[cfg(feature = "spaces")]
     pub fn request_hardware(&self, params: &repo::SpaceHardwareRequestParams) -> Result<types::SpaceRuntime> {
-        self.repo.runtime.block_on(self.inner_space().request_hardware(params))
+        self.repo.runtime.block_on(self.space.clone().request_hardware(params))
     }
 
     #[cfg(feature = "spaces")]
     pub fn set_sleep_time(&self, params: &repo::SpaceSleepTimeParams) -> Result<()> {
-        self.repo.runtime.block_on(self.inner_space().set_sleep_time(params))
+        self.repo.runtime.block_on(self.space.clone().set_sleep_time(params))
     }
 
     #[cfg(feature = "spaces")]
     pub fn pause(&self) -> Result<types::SpaceRuntime> {
-        self.repo.runtime.block_on(self.inner_space().pause())
+        self.repo.runtime.block_on(self.space.clone().pause())
     }
 
     #[cfg(feature = "spaces")]
     pub fn restart(&self) -> Result<types::SpaceRuntime> {
-        self.repo.runtime.block_on(self.inner_space().restart())
+        self.repo.runtime.block_on(self.space.clone().restart())
     }
 
     #[cfg(feature = "spaces")]
     pub fn add_secret(&self, params: &repo::SpaceSecretParams) -> Result<()> {
-        self.repo.runtime.block_on(self.inner_space().add_secret(params))
+        self.repo.runtime.block_on(self.space.clone().add_secret(params))
     }
 
     #[cfg(feature = "spaces")]
     pub fn delete_secret(&self, params: &repo::SpaceSecretDeleteParams) -> Result<()> {
-        self.repo.runtime.block_on(self.inner_space().delete_secret(params))
+        self.repo.runtime.block_on(self.space.clone().delete_secret(params))
     }
 
     #[cfg(feature = "spaces")]
     pub fn add_variable(&self, params: &repo::SpaceVariableParams) -> Result<()> {
-        self.repo.runtime.block_on(self.inner_space().add_variable(params))
+        self.repo.runtime.block_on(self.space.clone().add_variable(params))
     }
 
     #[cfg(feature = "spaces")]
     pub fn delete_variable(&self, params: &repo::SpaceVariableDeleteParams) -> Result<()> {
-        self.repo.runtime.block_on(self.inner_space().delete_variable(params))
+        self.repo.runtime.block_on(self.space.clone().delete_variable(params))
     }
 }
 
@@ -481,8 +531,8 @@ impl TryFrom<HFRepositorySync> for HFSpaceSync {
     type Error = HfError;
 
     fn try_from(repo: HFRepositorySync) -> Result<Self> {
-        let _ = repo::HFSpace::try_from(repo.inner.clone())?;
-        Ok(Self::from_repo(repo))
+        let space = repo::HFSpace::try_from(repo.inner.clone())?;
+        Ok(Self { repo, space })
     }
 }
 
@@ -492,11 +542,17 @@ impl From<HFSpaceSync> for HFRepositorySync {
     }
 }
 
+/// Alias for [`HfApiSync`].
 pub type HFClientSync = HfApiSync;
+/// Alias for [`HfApiSync`].
 pub type HfClientSync = HFClientSync;
+/// Alias for [`HFRepositorySync`].
 pub type HFRepoSync = HFRepositorySync;
+/// Alias for [`HFRepositorySync`].
 pub type HfRepositorySync = HFRepositorySync;
+/// Alias for [`HFRepositorySync`].
 pub type HfRepoSync = HFRepoSync;
+/// Alias for [`HFSpaceSync`].
 pub type HfSpaceSync = HFSpaceSync;
 
 #[cfg(test)]

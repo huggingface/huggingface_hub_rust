@@ -70,7 +70,7 @@ async fn test_repo_handle_list_likers() {
     let Some(api) = api() else { return };
     let repo = api.model("openai-community", "gpt2");
 
-    let stream = repo.list_likers();
+    let stream = repo.list_likers(None).unwrap();
     futures::pin_mut!(stream);
     let mut seen = 0usize;
     while let Some(user) = stream.next().await {
@@ -119,7 +119,7 @@ async fn test_file_exists() {
 async fn test_list_models() {
     let Some(api) = api() else { return };
     let params = ListModelsParams::builder().author("openai-community").limit(3_usize).build();
-    let stream = api.list_models(&params);
+    let stream = api.list_models(&params).unwrap();
     futures::pin_mut!(stream);
 
     let mut count = 0;
@@ -147,7 +147,7 @@ async fn test_list_repo_files() {
 async fn test_list_repo_tree() {
     let Some(api) = api() else { return };
     let params = ListRepoTreeParams::builder().repo_id("gpt2").build();
-    let stream = api.list_repo_tree(&params);
+    let stream = api.list_repo_tree(&params).unwrap();
     futures::pin_mut!(stream);
 
     let mut found_config = false;
@@ -167,7 +167,7 @@ async fn test_list_repo_tree() {
 async fn test_list_repo_commits() {
     let Some(api) = api() else { return };
     let params = ListRepoCommitsParams::builder().repo_id("gpt2").build();
-    let stream = api.list_repo_commits(&params);
+    let stream = api.list_repo_commits(&params).unwrap();
     futures::pin_mut!(stream);
 
     let first = stream.next().await.unwrap().unwrap();
@@ -246,7 +246,7 @@ async fn test_get_organization_overview() {
 #[tokio::test]
 async fn test_list_user_followers() {
     let Some(api) = api() else { return };
-    let stream = api.list_user_followers("julien-c");
+    let stream = api.list_user_followers("julien-c", None).unwrap();
     futures::pin_mut!(stream);
     let first = stream.next().await;
     assert!(first.is_some());
@@ -256,7 +256,7 @@ async fn test_list_user_followers() {
 #[tokio::test]
 async fn test_list_user_following() {
     let Some(api) = api() else { return };
-    let stream = api.list_user_following("julien-c");
+    let stream = api.list_user_following("julien-c", None).unwrap();
     futures::pin_mut!(stream);
     let first = stream.next().await;
     assert!(first.is_some());
@@ -266,7 +266,7 @@ async fn test_list_user_following() {
 #[tokio::test]
 async fn test_list_organization_members() {
     let Some(api) = api() else { return };
-    let stream = api.list_organization_members("huggingface");
+    let stream = api.list_organization_members("huggingface", None).unwrap();
     futures::pin_mut!(stream);
     let first = stream.next().await;
     assert!(first.is_some());
@@ -287,7 +287,7 @@ async fn test_space_info() {
 async fn test_list_datasets() {
     let Some(api) = api() else { return };
     let params = ListDatasetsParams::builder().author("huggingface").limit(3_usize).build();
-    let stream = api.list_datasets(&params);
+    let stream = api.list_datasets(&params).unwrap();
     futures::pin_mut!(stream);
 
     let mut count = 0;
@@ -305,7 +305,7 @@ async fn test_list_datasets() {
 async fn test_list_spaces() {
     let Some(api) = api() else { return };
     let params = ListSpacesParams::builder().author("huggingface").limit(3_usize).build();
-    let stream = api.list_spaces(&params);
+    let stream = api.list_spaces(&params).unwrap();
     futures::pin_mut!(stream);
 
     let mut count = 0;
@@ -348,7 +348,7 @@ async fn test_get_commit_diff() {
     let Some(api) = api() else { return };
 
     let commits_params = ListRepoCommitsParams::builder().repo_id("openai-community/gpt2").build();
-    let stream = api.list_repo_commits(&commits_params);
+    let stream = api.list_repo_commits(&commits_params).unwrap();
     futures::pin_mut!(stream);
 
     let first = stream.next().await.unwrap().unwrap();
@@ -367,7 +367,7 @@ async fn test_get_raw_diff() {
     let Some(api) = api() else { return };
 
     let commits_params = ListRepoCommitsParams::builder().repo_id("openai-community/gpt2").build();
-    let stream = api.list_repo_commits(&commits_params);
+    let stream = api.list_repo_commits(&commits_params).unwrap();
     futures::pin_mut!(stream);
 
     let first = stream.next().await.unwrap().unwrap();
@@ -1040,7 +1040,7 @@ async fn test_list_access_requests_on_gated_repo() {
 async fn test_list_repo_likers() {
     let Some(api) = api() else { return };
     let params = ListRepoLikersParams::builder().repo_id("openai-community/gpt2").build();
-    let stream = api.list_repo_likers(&params);
+    let stream = api.list_repo_likers(&params).unwrap();
     futures::pin_mut!(stream);
 
     let first = stream.next().await;

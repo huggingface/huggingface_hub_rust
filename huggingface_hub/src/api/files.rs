@@ -27,7 +27,7 @@ impl HFClient {
             ..tree_params
         };
 
-        let stream = self.list_repo_tree(&tree_params);
+        let stream = self.list_repo_tree(&tree_params)?;
         futures::pin_mut!(stream);
 
         let mut files = Vec::new();
@@ -42,10 +42,13 @@ impl HFClient {
 
     /// List files and directories in a repository tree.
     /// Endpoint: GET /api/{repo_type}s/{repo_id}/tree/{revision}
-    pub fn list_repo_tree(&self, params: &ListRepoTreeParams) -> impl Stream<Item = Result<RepoTreeEntry>> + '_ {
+    pub fn list_repo_tree(
+        &self,
+        params: &ListRepoTreeParams,
+    ) -> Result<impl Stream<Item = Result<RepoTreeEntry>> + '_> {
         let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
         let url_str = format!("{}/tree/{}", self.api_url(params.repo_type, &params.repo_id), revision);
-        let url = Url::parse(&url_str).unwrap();
+        let url = Url::parse(&url_str)?;
 
         let mut query: Vec<(String, String)> = Vec::new();
         if params.recursive {
@@ -55,7 +58,7 @@ impl HFClient {
             query.push(("expand".into(), "true".into()));
         }
 
-        self.paginate(url, query)
+        Ok(self.paginate(url, query, params.max_items))
     }
 
     /// Get info about specific paths in a repository.
@@ -469,7 +472,7 @@ impl HFClient {
             repo_type,
             ..tree_params
         };
-        let stream = self.list_repo_tree(&tree_params);
+        let stream = self.list_repo_tree(&tree_params)?;
         futures::pin_mut!(stream);
 
         let mut filenames: Vec<String> = Vec::new();
@@ -1011,7 +1014,7 @@ impl HFClient {
                 repo_type: params.repo_type,
                 ..tree_params
             };
-            let stream = self.list_repo_tree(&tree_params);
+            let stream = self.list_repo_tree(&tree_params)?;
             futures::pin_mut!(stream);
             while let Some(entry) = stream.next().await {
                 let entry = entry?;
@@ -1078,7 +1081,7 @@ impl HFClient {
             ..tree_params
         };
 
-        let stream = self.list_repo_tree(&tree_params);
+        let stream = self.list_repo_tree(&tree_params)?;
         futures::pin_mut!(stream);
 
         let mut operations = Vec::new();

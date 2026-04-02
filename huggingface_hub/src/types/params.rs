@@ -79,6 +79,8 @@ pub struct ListModelsParams {
     pub card_data: Option<bool>,
     #[builder(default, setter(strip_option))]
     pub fetch_config: Option<bool>,
+    #[builder(default, setter(strip_option))]
+    pub max_items: Option<usize>,
 }
 
 #[derive(TypedBuilder)]
@@ -95,6 +97,8 @@ pub struct ListDatasetsParams {
     pub limit: Option<usize>,
     #[builder(default, setter(strip_option))]
     pub full: Option<bool>,
+    #[builder(default, setter(strip_option))]
+    pub max_items: Option<usize>,
 }
 
 #[derive(TypedBuilder)]
@@ -111,6 +115,8 @@ pub struct ListSpacesParams {
     pub limit: Option<usize>,
     #[builder(default, setter(strip_option))]
     pub full: Option<bool>,
+    #[builder(default, setter(strip_option))]
+    pub max_items: Option<usize>,
 }
 
 #[derive(TypedBuilder)]
@@ -183,6 +189,8 @@ pub struct ListRepoTreeParams {
     pub recursive: bool,
     #[builder(default)]
     pub expand: bool,
+    #[builder(default, setter(strip_option))]
+    pub max_items: Option<usize>,
 }
 
 #[derive(TypedBuilder)]
@@ -353,6 +361,8 @@ pub struct ListRepoCommitsParams {
     pub revision: Option<String>,
     #[builder(default, setter(into, strip_option))]
     pub repo_type: Option<RepoType>,
+    #[builder(default, setter(strip_option))]
+    pub max_items: Option<usize>,
 }
 
 #[derive(TypedBuilder)]
@@ -1041,6 +1051,8 @@ pub struct ListRepoLikersParams {
     pub repo_id: String,
     #[builder(default, setter(into, strip_option))]
     pub repo_type: Option<RepoType>,
+    #[builder(default, setter(strip_option))]
+    pub max_items: Option<usize>,
 }
 
 #[cfg(feature = "papers")]

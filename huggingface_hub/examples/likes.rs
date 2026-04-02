@@ -20,7 +20,7 @@ async fn main() -> huggingface_hub::Result<()> {
         println!("  - {:?}", repo);
     }
 
-    let likers_stream = repo.list_likers();
+    let likers_stream = repo.list_likers(None)?;
     futures::pin_mut!(likers_stream);
     println!("\nLikers of gpt2:");
     let mut count = 0;

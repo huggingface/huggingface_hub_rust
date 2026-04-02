@@ -119,8 +119,8 @@ impl HFClient {
 impl HFClient {
     /// List models on the Hub.
     /// Endpoint: GET /api/models
-    pub fn list_models(&self, params: &ListModelsParams) -> impl Stream<Item = Result<ModelInfo>> + '_ {
-        let url = Url::parse(&format!("{}/api/models", self.inner.endpoint)).unwrap();
+    pub fn list_models(&self, params: &ListModelsParams) -> Result<impl Stream<Item = Result<ModelInfo>> + '_> {
+        let url = Url::parse(&format!("{}/api/models", self.inner.endpoint))?;
         let mut query: Vec<(String, String)> = Vec::new();
         if let Some(ref search) = params.search {
             query.push(("search".into(), search.clone()));
@@ -149,13 +149,13 @@ impl HFClient {
         if params.fetch_config == Some(true) {
             query.push(("config".into(), "true".into()));
         }
-        self.paginate(url, query)
+        Ok(self.paginate(url, query, params.max_items))
     }
 
     /// List datasets on the Hub.
     /// Endpoint: GET /api/datasets
-    pub fn list_datasets(&self, params: &ListDatasetsParams) -> impl Stream<Item = Result<DatasetInfo>> + '_ {
-        let url = Url::parse(&format!("{}/api/datasets", self.inner.endpoint)).unwrap();
+    pub fn list_datasets(&self, params: &ListDatasetsParams) -> Result<impl Stream<Item = Result<DatasetInfo>> + '_> {
+        let url = Url::parse(&format!("{}/api/datasets", self.inner.endpoint))?;
         let mut query: Vec<(String, String)> = Vec::new();
         if let Some(ref search) = params.search {
             query.push(("search".into(), search.clone()));
@@ -175,13 +175,13 @@ impl HFClient {
         if params.full == Some(true) {
             query.push(("full".into(), "true".into()));
         }
-        self.paginate(url, query)
+        Ok(self.paginate(url, query, params.max_items))
     }
 
     /// List spaces on the Hub.
     /// Endpoint: GET /api/spaces
-    pub fn list_spaces(&self, params: &ListSpacesParams) -> impl Stream<Item = Result<SpaceInfo>> + '_ {
-        let url = Url::parse(&format!("{}/api/spaces", self.inner.endpoint)).unwrap();
+    pub fn list_spaces(&self, params: &ListSpacesParams) -> Result<impl Stream<Item = Result<SpaceInfo>> + '_> {
+        let url = Url::parse(&format!("{}/api/spaces", self.inner.endpoint))?;
         let mut query: Vec<(String, String)> = Vec::new();
         if let Some(ref search) = params.search {
             query.push(("search".into(), search.clone()));
@@ -201,7 +201,7 @@ impl HFClient {
         if params.full == Some(true) {
             query.push(("full".into(), "true".into()));
         }
-        self.paginate(url, query)
+        Ok(self.paginate(url, query, params.max_items))
     }
 
     /// Create a new repository.

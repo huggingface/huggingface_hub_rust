@@ -208,21 +208,21 @@ fn test_sync_get_organization_overview() {
 #[test]
 fn test_sync_list_user_followers() {
     let Some(api) = sync_api() else { return };
-    let followers = api.list_user_followers("julien-c").unwrap();
+    let followers = api.list_user_followers("julien-c", None).unwrap();
     assert!(!followers.is_empty());
 }
 
 #[test]
 fn test_sync_list_user_following() {
     let Some(api) = sync_api() else { return };
-    let following = api.list_user_following("julien-c").unwrap();
+    let following = api.list_user_following("julien-c", None).unwrap();
     assert!(!following.is_empty());
 }
 
 #[test]
 fn test_sync_list_organization_members() {
     let Some(api) = sync_api() else { return };
-    let members = api.list_organization_members("huggingface").unwrap();
+    let members = api.list_organization_members("huggingface", None).unwrap();
     assert!(!members.is_empty());
 }
 

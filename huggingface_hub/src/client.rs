@@ -8,6 +8,25 @@ use reqwest_retry::RetryTransientMiddleware;
 use crate::constants;
 use crate::error::{HfError, Result};
 
+/// Async client for the Hugging Face Hub API.
+///
+/// `HFClient` wraps an `Arc<HFClientInner>` so it is cheap to clone — all clones
+/// share the same underlying HTTP connection pool, token, and configuration.
+///
+/// # Creating a client
+///
+/// ```rust,no_run
+/// use huggingface_hub::HFClient;
+///
+/// // Reads token and settings from the environment (HF_TOKEN, HF_ENDPOINT, …).
+/// let client = HFClient::new()?;
+///
+/// // Or configure explicitly:
+/// let client = HFClient::builder().token("hf_…").endpoint("https://huggingface.co").build()?;
+/// # Ok::<(), huggingface_hub::HfError>(())
+/// ```
+///
+/// The type aliases [`HfApi`] and [`HfClient`] are provided for compatibility.
 pub struct HFClient {
     pub(crate) inner: Arc<HFClientInner>,
 }
@@ -28,6 +47,10 @@ pub(crate) struct HFClientInner {
     pub(crate) cache_enabled: bool,
 }
 
+/// Builder for [`HFClient`].
+///
+/// Obtain one via [`HFClient::builder()`] or [`HFClientBuilder::new()`].
+/// Call [`build()`](HFClientBuilder::build) when all options are set.
 pub struct HFClientBuilder {
     endpoint: Option<String>,
     token: Option<String>,
@@ -39,6 +62,7 @@ pub struct HFClientBuilder {
 }
 
 impl HFClientBuilder {
+    /// Creates a builder with all options unset; defaults are applied at [`build`](Self::build) time.
     pub fn new() -> Self {
         Self {
             endpoint: None,
@@ -51,44 +75,59 @@ impl HFClientBuilder {
         }
     }
 
+    /// Overrides the Hub base URL (default: `https://huggingface.co`, or `HF_ENDPOINT` env var).
     pub fn endpoint(mut self, endpoint: impl Into<String>) -> Self {
         self.endpoint = Some(endpoint.into());
         self
     }
 
+    /// Sets the authentication token. Without this, the client falls back to the `HF_TOKEN` env
+    /// var and the cached token file written by `huggingface-cli login`.
     pub fn token(mut self, token: impl Into<String>) -> Self {
         self.token = Some(token.into());
         self
     }
 
+    /// Overrides the `User-Agent` header sent with every request.
     pub fn user_agent(mut self, user_agent: impl Into<String>) -> Self {
         self.user_agent = Some(user_agent.into());
         self
     }
 
+    /// Merges additional default headers into every request. Ignored when a custom
+    /// [`client`](Self::client) is supplied (configure headers on that client directly).
     pub fn headers(mut self, headers: HeaderMap) -> Self {
         self.headers = Some(headers);
         self
     }
 
-    /// Provide a pre-configured reqwest::Client. The retry middleware will
-    /// still be applied on top. Caller is responsible for setting User-Agent
-    /// and other default headers on this client.
+    /// Supplies a pre-configured `reqwest::Client`. Retry middleware is still applied on top.
+    /// The caller is responsible for any default headers (including `User-Agent`) on this client;
+    /// the [`headers`](Self::headers) and [`user_agent`](Self::user_agent) options are ignored.
     pub fn client(mut self, client: reqwest::Client) -> Self {
         self.client = Some(client);
         self
     }
 
+    /// Sets the local cache directory. Defaults to `HF_HUB_CACHE` → `$HF_HOME/hub` →
+    /// `~/.cache/huggingface/hub`.
     pub fn cache_dir(mut self, path: impl Into<std::path::PathBuf>) -> Self {
         self.cache_dir = Some(path.into());
         self
     }
 
+    /// Enables or disables the local file cache. Caching is on by default.
     pub fn cache_enabled(mut self, enabled: bool) -> Self {
         self.cache_enabled = Some(enabled);
         self
     }
 
+    /// Builds the [`HFClient`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the endpoint URL is not a valid URL or if the `reqwest` client
+    /// cannot be constructed (e.g. an invalid `User-Agent` string was provided).
     pub fn build(self) -> Result<HFClient> {
         let endpoint = self
             .endpoint
@@ -144,10 +183,17 @@ impl Default for HFClientBuilder {
 }
 
 impl HFClient {
+    /// Creates a client with default settings, reading the token and endpoint from the
+    /// environment. Equivalent to `HFClient::builder().build()`.
+    ///
+    /// # Errors
+    ///
+    /// Fails if the resolved endpoint URL is invalid or the HTTP client cannot be built.
     pub fn new() -> Result<Self> {
         HFClientBuilder::new().build()
     }
 
+    /// Returns an [`HFClientBuilder`] for fine-grained configuration.
     pub fn builder() -> HFClientBuilder {
         HFClientBuilder::new()
     }
@@ -223,9 +269,13 @@ impl HFClient {
     }
 }
 
+/// Compatibility alias for [`HFClient`].
 pub type HfApi = HFClient;
+/// Compatibility alias for [`HFClientBuilder`].
 pub type HfApiBuilder = HFClientBuilder;
+/// Compatibility alias for [`HFClient`].
 pub type HfClient = HFClient;
+/// Compatibility alias for [`HFClientBuilder`].
 pub type HfClientBuilder = HFClientBuilder;
 
 /// Resolve token from environment or token file.

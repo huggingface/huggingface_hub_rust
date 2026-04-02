@@ -104,13 +104,13 @@ fn main() -> huggingface_hub::Result<()> {
     let org = api.get_organization_overview("huggingface")?;
     println!("Org: {} (fullname: {:?})", org.name, org.fullname);
 
-    let followers = api.list_user_followers("julien-c")?;
+    let followers = api.list_user_followers("julien-c", None)?;
     println!("\nFollowers of julien-c ({} total):", followers.len());
     for u in followers.iter().take(3) {
         println!("  - {}", u.username);
     }
 
-    let members = api.list_organization_members("huggingface")?;
+    let members = api.list_organization_members("huggingface", None)?;
     println!("\nMembers of huggingface ({} total):", members.len());
     for m in members.iter().take(3) {
         println!("  - {}", m.username);

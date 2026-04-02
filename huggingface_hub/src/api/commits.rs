@@ -12,11 +12,14 @@ use crate::types::{
 impl HFClient {
     /// List commits in a repository.
     /// Endpoint: GET /api/{repo_type}s/{repo_id}/commits/{revision}
-    pub fn list_repo_commits(&self, params: &ListRepoCommitsParams) -> impl Stream<Item = Result<GitCommitInfo>> + '_ {
+    pub fn list_repo_commits(
+        &self,
+        params: &ListRepoCommitsParams,
+    ) -> Result<impl Stream<Item = Result<GitCommitInfo>> + '_> {
         let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
         let url_str = format!("{}/commits/{}", self.api_url(params.repo_type, &params.repo_id), revision);
-        let url = Url::parse(&url_str).unwrap();
-        self.paginate(url, vec![])
+        let url = Url::parse(&url_str)?;
+        Ok(self.paginate(url, vec![], params.max_items))
     }
 
     /// List branches, tags, and (optionally) pull requests.

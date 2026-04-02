@@ -55,7 +55,7 @@ macro_rules! sync_api_stream {
                 pub fn $name(&self $(, $pname : $ptype)*) -> $crate::error::Result<Vec<$item>> {
                     use futures::StreamExt;
                     self.runtime.block_on(async {
-                        let stream = self.inner.$name($($pname),*);
+                        let stream = self.inner.$name($($pname),*)?;
                         futures::pin_mut!(stream);
                         let mut items = Vec::new();
                         while let Some(item) = stream.next().await {

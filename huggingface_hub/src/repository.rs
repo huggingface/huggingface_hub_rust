@@ -35,6 +35,24 @@ use crate::types::{
 #[cfg(feature = "likes")]
 use crate::types::{LikeParams, ListRepoLikersParams, User};
 
+/// A handle for a single repository on the Hugging Face Hub.
+///
+/// `HFRepository` is created via [`HFClient::repo`], [`HFClient::model`], or
+/// [`HFClient::dataset`] and binds together the client, owner, repo name, and repo type.
+/// All repo-scoped API operations are methods on this type.
+///
+/// Cheap to clone — the inner [`HFClient`] is `Arc`-backed.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// # use huggingface_hub::{HFClient, types::RepoType};
+/// # #[tokio::main] async fn main() -> huggingface_hub::error::Result<()> {
+/// let client = HFClient::builder().build()?;
+/// let repo = client.model("openai-community", "gpt2");
+/// let info = repo.info(&Default::default()).await?;
+/// # Ok(()) }
+/// ```
 #[derive(Clone)]
 pub struct HFRepository {
     client: HFClient,
@@ -44,15 +62,38 @@ pub struct HFRepository {
     default_revision: Option<String>,
 }
 
+/// Alias for [`HFRepository`].
 pub type HFRepo = HFRepository;
+/// Alias for [`HFRepository`].
 pub type HfRepository = HFRepository;
+/// Alias for [`HFRepository`].
 pub type HfRepo = HFRepo;
 
+/// A handle for a Space repository, providing Space-specific operations on top of [`HFRepository`].
+///
+/// `HFSpace` wraps an [`HFRepository`] fixed to [`RepoType::Space`] and exposes hardware,
+/// secret, and variable management. It derefs to [`HFRepository`], so all general repo
+/// methods are accessible directly.
+///
+/// Created via [`HFClient::space`] or [`TryFrom<HFRepository>`].
+///
+/// # Example
+///
+/// ```rust,no_run
+/// # use huggingface_hub::HFClient;
+/// # #[tokio::main] async fn main() -> huggingface_hub::error::Result<()> {
+/// let client = HFClient::builder().build()?;
+/// let space = client.space("huggingface", "diffusers-gallery");
+/// // General repo methods are available via Deref:
+/// let exists = space.exists().await?;
+/// # Ok(()) }
+/// ```
 #[derive(Clone)]
 pub struct HFSpace {
     repo: HFRepository,
 }
 
+/// Alias for [`HFSpace`].
 pub type HfSpace = HFSpace;
 
 impl fmt::Debug for HFRepository {
@@ -106,6 +147,8 @@ pub struct RepoListTreeParams {
     pub recursive: bool,
     #[builder(default)]
     pub expand: bool,
+    #[builder(default, setter(strip_option))]
+    pub max_items: Option<usize>,
 }
 
 #[derive(TypedBuilder)]
@@ -237,6 +280,8 @@ pub struct RepoCreateCommitParams {
 pub struct RepoListCommitsParams {
     #[builder(default, setter(into, strip_option))]
     pub revision: Option<String>,
+    #[builder(default, setter(strip_option))]
+    pub max_items: Option<usize>,
 }
 
 #[derive(Default, TypedBuilder)]
@@ -439,24 +484,29 @@ pub struct SpaceVariableDeleteParams {
 }
 
 impl HFClient {
+    /// Create an [`HFRepository`] handle for any repo type.
     pub fn repo(&self, repo_type: RepoType, owner: impl Into<String>, name: impl Into<String>) -> HFRepository {
         HFRepository::new(self.clone(), repo_type, owner, name)
     }
 
+    /// Create an [`HFRepository`] handle for a model repository.
     pub fn model(&self, owner: impl Into<String>, name: impl Into<String>) -> HFRepository {
         self.repo(RepoType::Model, owner, name)
     }
 
+    /// Create an [`HFRepository`] handle for a dataset repository.
     pub fn dataset(&self, owner: impl Into<String>, name: impl Into<String>) -> HFRepository {
         self.repo(RepoType::Dataset, owner, name)
     }
 
+    /// Create an [`HFSpace`] handle for a Space repository.
     pub fn space(&self, owner: impl Into<String>, name: impl Into<String>) -> HFSpace {
         HFSpace::new(self.clone(), owner, name)
     }
 }
 
 impl HFRepository {
+    /// Construct a new repository handle. Prefer the factory methods on [`HFClient`] instead.
     pub fn new(client: HFClient, repo_type: RepoType, owner: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             client,
@@ -467,42 +517,53 @@ impl HFRepository {
         }
     }
 
+    /// Return a reference to the underlying [`HFClient`].
     pub fn client(&self) -> &HFClient {
         &self.client
     }
 
+    /// The repository owner (user or organization name).
     pub fn owner(&self) -> &str {
         &self.owner
     }
 
+    /// The repository name (without owner prefix).
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// The full `"owner/name"` identifier used in Hub API calls.
     pub fn repo_path(&self) -> String {
         format!("{}/{}", self.owner, self.name)
     }
 
+    /// The type of this repository (model, dataset, or space).
     pub fn repo_type(&self) -> RepoType {
         self.repo_type
     }
 
+    /// The default revision used when no per-call revision is supplied, if any.
     pub fn default_revision(&self) -> Option<&str> {
         self.default_revision.as_deref()
     }
 
+    /// Return a clone of this handle pinned to the given revision.
+    ///
+    /// Methods that accept an optional revision will use this value when none is specified.
     pub fn with_revision(&self, revision: impl Into<String>) -> Self {
         let mut repo = self.clone();
         repo.default_revision = Some(revision.into());
         repo
     }
 
+    /// Return a clone of this handle with the default revision cleared.
     pub fn without_revision(&self) -> Self {
         let mut repo = self.clone();
         repo.default_revision = None;
         repo
     }
 
+    /// Fetch repository metadata, returning the appropriate [`RepoInfo`] variant.
     pub async fn info(&self, params: &RepoInfoParams) -> Result<RepoInfo> {
         let repo_id = self.repo_path();
         let revision = self.resolve_revision(params.revision.as_deref());
@@ -529,6 +590,7 @@ impl HFRepository {
         }
     }
 
+    /// Return `true` if the repository exists and is accessible with the current credentials.
     pub async fn exists(&self) -> Result<bool> {
         self.client
             .repo_exists(&crate::types::RepoExistsParams {
@@ -538,6 +600,7 @@ impl HFRepository {
             .await
     }
 
+    /// Return `true` if the given branch, tag, or commit SHA exists in the repository.
     pub async fn revision_exists(&self, params: &RepoRevisionExistsParams) -> Result<bool> {
         self.client
             .revision_exists(&RevisionExistsParams {
@@ -548,6 +611,7 @@ impl HFRepository {
             .await
     }
 
+    /// Return `true` if the specified file exists at the given revision (or the default revision).
     pub async fn file_exists(&self, params: &RepoFileExistsParams) -> Result<bool> {
         self.client
             .file_exists(&FileExistsParams {
@@ -559,6 +623,7 @@ impl HFRepository {
             .await
     }
 
+    /// Return a flat list of all file paths in the repository at the given revision.
     pub async fn list_files(&self, params: &RepoListFilesParams) -> Result<Vec<String>> {
         self.client
             .list_repo_files(&ListRepoFilesParams {
@@ -569,10 +634,14 @@ impl HFRepository {
             .await
     }
 
-    pub fn list_tree(&self, params: &RepoListTreeParams) -> impl Stream<Item = Result<RepoTreeEntry>> + '_ {
+    /// Stream file and directory entries in the repository tree.
+    ///
+    /// Returns `Result<impl Stream<Item = Result<RepoTreeEntry>>>`. Set `recursive` to traverse
+    /// subdirectories. Use `max_items` to cap the total number of entries yielded.
+    pub fn list_tree(&self, params: &RepoListTreeParams) -> Result<impl Stream<Item = Result<RepoTreeEntry>> + '_> {
         let revision = self.effective_revision(params.revision.as_deref());
         let url_str = format!("{}/tree/{}", self.client.api_url(Some(self.repo_type), &self.repo_path()), revision);
-        let url = Url::parse(&url_str).unwrap();
+        let url = Url::parse(&url_str)?;
 
         let mut query: Vec<(String, String)> = Vec::new();
         if params.recursive {
@@ -582,9 +651,10 @@ impl HFRepository {
             query.push(("expand".into(), "true".into()));
         }
 
-        self.client.paginate(url, query)
+        Ok(self.client.paginate(url, query, params.max_items))
     }
 
+    /// Fetch metadata for a specific set of paths within the repository.
     pub async fn get_paths_info(&self, params: &RepoGetPathsInfoParams) -> Result<Vec<RepoTreeEntry>> {
         self.client
             .get_paths_info(&GetPathsInfoParams {
@@ -596,6 +666,7 @@ impl HFRepository {
             .await
     }
 
+    /// Download a single file to the local cache or an explicit directory, returning its path.
     pub async fn download_file(&self, params: &RepoDownloadFileParams) -> Result<PathBuf> {
         self.client
             .download_file(&DownloadFileParams {
@@ -610,6 +681,9 @@ impl HFRepository {
             .await
     }
 
+    /// Stream the raw bytes of a file directly from the Hub without writing to disk.
+    ///
+    /// Returns a tuple of `(optional content-length, byte stream)`.
     pub async fn download_file_stream(
         &self,
         params: &RepoDownloadFileStreamParams,
@@ -624,6 +698,10 @@ impl HFRepository {
             .await
     }
 
+    /// Download the full repository snapshot to a local directory, returning the directory path.
+    ///
+    /// Supports file filtering via `allow_patterns` / `ignore_patterns` and parallel workers
+    /// via `max_workers`.
     pub async fn snapshot_download(&self, params: &RepoSnapshotDownloadParams) -> Result<PathBuf> {
         self.client
             .snapshot_download(&SnapshotDownloadParams {
@@ -640,6 +718,9 @@ impl HFRepository {
             .await
     }
 
+    /// Create a commit with one or more file operations (add, delete, copy).
+    ///
+    /// Pass `create_pr: Some(true)` to open a pull request instead of pushing directly.
     pub async fn create_commit(&self, params: &RepoCreateCommitParams) -> Result<CommitInfo> {
         self.client
             .create_commit(&CreateCommitParams {
@@ -655,6 +736,7 @@ impl HFRepository {
             .await
     }
 
+    /// Upload a single file and create a commit for it.
     pub async fn upload_file(&self, params: &RepoUploadFileParams) -> Result<CommitInfo> {
         self.client
             .upload_file(&UploadFileParams {
@@ -671,6 +753,7 @@ impl HFRepository {
             .await
     }
 
+    /// Upload a local folder as a single commit, with optional glob-based inclusion/exclusion filters.
     pub async fn upload_folder(&self, params: &RepoUploadFolderParams) -> Result<CommitInfo> {
         self.client
             .upload_folder(&UploadFolderParams {
@@ -689,6 +772,7 @@ impl HFRepository {
             .await
     }
 
+    /// Delete a single file from the repository and create a commit.
     pub async fn delete_file(&self, params: &RepoDeleteFileParams) -> Result<CommitInfo> {
         self.client
             .delete_file(&DeleteFileParams {
@@ -702,6 +786,7 @@ impl HFRepository {
             .await
     }
 
+    /// Delete an entire folder from the repository and create a commit.
     pub async fn delete_folder(&self, params: &RepoDeleteFolderParams) -> Result<CommitInfo> {
         self.client
             .delete_folder(&DeleteFolderParams {
@@ -715,13 +800,21 @@ impl HFRepository {
             .await
     }
 
-    pub fn list_commits(&self, params: &RepoListCommitsParams) -> impl Stream<Item = Result<GitCommitInfo>> + '_ {
+    /// Stream commit history for the repository at a given revision.
+    ///
+    /// Returns `Result<impl Stream<Item = Result<GitCommitInfo>>>`. Use `max_items` to limit
+    /// the total number of commits yielded.
+    pub fn list_commits(
+        &self,
+        params: &RepoListCommitsParams,
+    ) -> Result<impl Stream<Item = Result<GitCommitInfo>> + '_> {
         let revision = self.effective_revision(params.revision.as_deref());
         let url_str = format!("{}/commits/{}", self.client.api_url(Some(self.repo_type), &self.repo_path()), revision);
-        let url = Url::parse(&url_str).unwrap();
-        self.client.paginate(url, vec![])
+        let url = Url::parse(&url_str)?;
+        Ok(self.client.paginate(url, vec![], params.max_items))
     }
 
+    /// Fetch all branches, tags, and optionally pull request refs for the repository.
     pub async fn list_refs(&self, params: &RepoListRefsParams) -> Result<GitRefs> {
         self.client
             .list_repo_refs(&ListRepoRefsParams {
@@ -732,6 +825,7 @@ impl HFRepository {
             .await
     }
 
+    /// Fetch a structured diff between two revisions (HEAD..compare or a commit SHA).
     pub async fn get_commit_diff(&self, params: &RepoGetCommitDiffParams) -> Result<String> {
         self.client
             .get_commit_diff(&GetCommitDiffParams {
@@ -742,6 +836,7 @@ impl HFRepository {
             .await
     }
 
+    /// Fetch the raw unified diff between two revisions as a string.
     pub async fn get_raw_diff(&self, params: &RepoGetRawDiffParams) -> Result<String> {
         self.client
             .get_raw_diff(&GetRawDiffParams {
@@ -752,6 +847,7 @@ impl HFRepository {
             .await
     }
 
+    /// Create a new branch, optionally starting from a specific revision.
     pub async fn create_branch(&self, params: &RepoCreateBranchParams) -> Result<()> {
         self.client
             .create_branch(&CreateBranchParams {
@@ -763,6 +859,7 @@ impl HFRepository {
             .await
     }
 
+    /// Delete a branch from the repository.
     pub async fn delete_branch(&self, params: &RepoDeleteBranchParams) -> Result<()> {
         self.client
             .delete_branch(&DeleteBranchParams {
@@ -773,6 +870,7 @@ impl HFRepository {
             .await
     }
 
+    /// Create a lightweight or annotated tag, optionally at a specific revision.
     pub async fn create_tag(&self, params: &RepoCreateTagParams) -> Result<()> {
         self.client
             .create_tag(&CreateTagParams {
@@ -785,6 +883,7 @@ impl HFRepository {
             .await
     }
 
+    /// Delete a tag from the repository.
     pub async fn delete_tag(&self, params: &RepoDeleteTagParams) -> Result<()> {
         self.client
             .delete_tag(&DeleteTagParams {
@@ -795,6 +894,7 @@ impl HFRepository {
             .await
     }
 
+    /// Update repository settings such as visibility, gating policy, or description.
     pub async fn update_settings(&self, params: &RepoUpdateSettingsParams) -> Result<()> {
         self.client
             .update_repo_settings(&UpdateRepoParams {
@@ -807,6 +907,7 @@ impl HFRepository {
             .await
     }
 
+    /// List discussions for this repository, with optional filters on author, type, and status.
     #[cfg(feature = "discussions")]
     pub async fn list_discussions(&self, params: &RepoListDiscussionsParams) -> Result<DiscussionsResponse> {
         self.client
@@ -820,6 +921,7 @@ impl HFRepository {
             .await
     }
 
+    /// Fetch the full details and event timeline for a single discussion or pull request.
     #[cfg(feature = "discussions")]
     pub async fn discussion_details(&self, params: &RepoDiscussionDetailsParams) -> Result<DiscussionWithDetails> {
         self.client
@@ -831,6 +933,7 @@ impl HFRepository {
             .await
     }
 
+    /// Open a new discussion on the repository.
     #[cfg(feature = "discussions")]
     pub async fn create_discussion(&self, params: &RepoCreateDiscussionParams) -> Result<DiscussionWithDetails> {
         self.client
@@ -843,6 +946,7 @@ impl HFRepository {
             .await
     }
 
+    /// Open a new pull request on the repository.
     #[cfg(feature = "discussions")]
     pub async fn create_pull_request(&self, params: &RepoCreatePullRequestParams) -> Result<DiscussionWithDetails> {
         self.client
@@ -855,6 +959,7 @@ impl HFRepository {
             .await
     }
 
+    /// Post a comment on a discussion or pull request.
     #[cfg(feature = "discussions")]
     pub async fn comment_discussion(&self, params: &RepoCommentDiscussionParams) -> Result<DiscussionComment> {
         self.client
@@ -867,6 +972,7 @@ impl HFRepository {
             .await
     }
 
+    /// Edit the content of an existing comment on a discussion.
     #[cfg(feature = "discussions")]
     pub async fn edit_discussion_comment(&self, params: &RepoEditDiscussionCommentParams) -> Result<DiscussionComment> {
         self.client
@@ -880,6 +986,7 @@ impl HFRepository {
             .await
     }
 
+    /// Hide a comment on a discussion, making it collapsed by default.
     #[cfg(feature = "discussions")]
     pub async fn hide_discussion_comment(&self, params: &RepoHideDiscussionCommentParams) -> Result<DiscussionComment> {
         self.client
@@ -892,6 +999,7 @@ impl HFRepository {
             .await
     }
 
+    /// Rename a discussion or pull request.
     #[cfg(feature = "discussions")]
     pub async fn rename_discussion(&self, params: &RepoRenameDiscussionParams) -> Result<DiscussionWithDetails> {
         self.client
@@ -904,6 +1012,7 @@ impl HFRepository {
             .await
     }
 
+    /// Change the status of a discussion (e.g. open or closed).
     #[cfg(feature = "discussions")]
     pub async fn change_discussion_status(
         &self,
@@ -919,6 +1028,7 @@ impl HFRepository {
             .await
     }
 
+    /// Merge an open pull request.
     #[cfg(feature = "discussions")]
     pub async fn merge_pull_request(&self, params: &RepoMergePullRequestParams) -> Result<DiscussionWithDetails> {
         self.client
@@ -930,6 +1040,7 @@ impl HFRepository {
             .await
     }
 
+    /// List users whose access request is still pending review.
     #[cfg(feature = "access_requests")]
     pub async fn list_pending_access_requests(&self) -> Result<Vec<AccessRequest>> {
         self.client
@@ -940,6 +1051,7 @@ impl HFRepository {
             .await
     }
 
+    /// List users whose access request has been accepted.
     #[cfg(feature = "access_requests")]
     pub async fn list_accepted_access_requests(&self) -> Result<Vec<AccessRequest>> {
         self.client
@@ -950,6 +1062,7 @@ impl HFRepository {
             .await
     }
 
+    /// List users whose access request has been rejected.
     #[cfg(feature = "access_requests")]
     pub async fn list_rejected_access_requests(&self) -> Result<Vec<AccessRequest>> {
         self.client
@@ -960,6 +1073,7 @@ impl HFRepository {
             .await
     }
 
+    /// Accept a pending access request from the given user.
     #[cfg(feature = "access_requests")]
     pub async fn accept_access_request(&self, params: &RepoAccessRequestUserParams) -> Result<()> {
         self.client
@@ -971,6 +1085,7 @@ impl HFRepository {
             .await
     }
 
+    /// Reject a pending access request from the given user.
     #[cfg(feature = "access_requests")]
     pub async fn reject_access_request(&self, params: &RepoAccessRequestUserParams) -> Result<()> {
         self.client
@@ -982,6 +1097,7 @@ impl HFRepository {
             .await
     }
 
+    /// Cancel a previously submitted or accepted access request for the given user.
     #[cfg(feature = "access_requests")]
     pub async fn cancel_access_request(&self, params: &RepoAccessRequestUserParams) -> Result<()> {
         self.client
@@ -993,6 +1109,7 @@ impl HFRepository {
             .await
     }
 
+    /// Directly grant repository access to a user, bypassing the normal request flow.
     #[cfg(feature = "access_requests")]
     pub async fn grant_access(&self, params: &RepoAccessRequestUserParams) -> Result<()> {
         self.client
@@ -1004,6 +1121,7 @@ impl HFRepository {
             .await
     }
 
+    /// Like the repository as the authenticated user.
     #[cfg(feature = "likes")]
     pub async fn like(&self) -> Result<()> {
         self.client
@@ -1014,6 +1132,7 @@ impl HFRepository {
             .await
     }
 
+    /// Remove the authenticated user's like from the repository.
     #[cfg(feature = "likes")]
     pub async fn unlike(&self) -> Result<()> {
         self.client
@@ -1024,11 +1143,16 @@ impl HFRepository {
             .await
     }
 
+    /// Stream users who have liked this repository.
+    ///
+    /// Returns `Result<impl Stream<Item = Result<User>>>`. Pass `max_items` to cap the total
+    /// number of users yielded.
     #[cfg(feature = "likes")]
-    pub fn list_likers(&self) -> impl Stream<Item = Result<User>> + '_ {
+    pub fn list_likers(&self, max_items: Option<usize>) -> Result<impl Stream<Item = Result<User>> + '_> {
         self.client.list_repo_likers(&ListRepoLikersParams {
             repo_id: self.repo_path(),
             repo_type: Some(self.repo_type),
+            max_items,
         })
     }
 
@@ -1044,28 +1168,33 @@ impl HFRepository {
 }
 
 impl HFSpace {
+    /// Construct a new Space handle. Prefer [`HFClient::space`] in most cases.
     pub fn new(client: HFClient, owner: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             repo: HFRepository::new(client, RepoType::Space, owner, name),
         }
     }
 
+    /// Return a clone of this handle pinned to the given revision.
     pub fn with_revision(&self, revision: impl Into<String>) -> Self {
         Self {
             repo: self.repo.with_revision(revision),
         }
     }
 
+    /// Return a clone of this handle with the default revision cleared.
     pub fn without_revision(&self) -> Self {
         Self {
             repo: self.repo.without_revision(),
         }
     }
 
+    /// Consume this handle and return the underlying [`HFRepository`].
     pub fn into_repo(self) -> HFRepository {
         self.repo
     }
 
+    /// Fetch the current runtime state of the Space (hardware, stage, URL, etc.).
     #[cfg(feature = "spaces")]
     pub async fn runtime(&self) -> Result<SpaceRuntime> {
         self.repo
@@ -1076,6 +1205,7 @@ impl HFSpace {
             .await
     }
 
+    /// Request an upgrade or downgrade of the Space's hardware tier.
     #[cfg(feature = "spaces")]
     pub async fn request_hardware(&self, params: &SpaceHardwareRequestParams) -> Result<SpaceRuntime> {
         self.repo
@@ -1088,6 +1218,7 @@ impl HFSpace {
             .await
     }
 
+    /// Configure the number of seconds of inactivity before the Space is put to sleep.
     #[cfg(feature = "spaces")]
     pub async fn set_sleep_time(&self, params: &SpaceSleepTimeParams) -> Result<()> {
         self.repo
@@ -1099,6 +1230,7 @@ impl HFSpace {
             .await
     }
 
+    /// Pause the Space, stopping it from consuming compute resources.
     #[cfg(feature = "spaces")]
     pub async fn pause(&self) -> Result<SpaceRuntime> {
         self.repo
@@ -1109,6 +1241,7 @@ impl HFSpace {
             .await
     }
 
+    /// Restart a paused or errored Space.
     #[cfg(feature = "spaces")]
     pub async fn restart(&self) -> Result<SpaceRuntime> {
         self.repo
@@ -1119,6 +1252,7 @@ impl HFSpace {
             .await
     }
 
+    /// Add or update a secret (encrypted environment variable) on the Space.
     #[cfg(feature = "spaces")]
     pub async fn add_secret(&self, params: &SpaceSecretParams) -> Result<()> {
         self.repo
@@ -1132,6 +1266,7 @@ impl HFSpace {
             .await
     }
 
+    /// Delete a secret from the Space by key.
     #[cfg(feature = "spaces")]
     pub async fn delete_secret(&self, params: &SpaceSecretDeleteParams) -> Result<()> {
         self.repo
@@ -1143,6 +1278,7 @@ impl HFSpace {
             .await
     }
 
+    /// Add or update a public environment variable on the Space.
     #[cfg(feature = "spaces")]
     pub async fn add_variable(&self, params: &SpaceVariableParams) -> Result<()> {
         self.repo
@@ -1156,6 +1292,7 @@ impl HFSpace {
             .await
     }
 
+    /// Delete a public environment variable from the Space by key.
     #[cfg(feature = "spaces")]
     pub async fn delete_variable(&self, params: &SpaceVariableDeleteParams) -> Result<()> {
         self.repo
