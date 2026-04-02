@@ -4,26 +4,26 @@
 //! Run: cargo run -p huggingface-hub --example files
 
 use futures::StreamExt;
+use huggingface_hub::types::{AddSource, CommitOperation, RepoTreeEntry};
 use huggingface_hub::{
-    AddSource, CommitOperation, CreateCommitParams, CreateRepoParams, DeleteFileParams, DeleteFolderParams,
-    DeleteRepoParams, DownloadFileParams, GetPathsInfoParams, HfApi, ListRepoFilesParams, ListRepoTreeParams,
-    RepoTreeEntry, UploadFileParams, UploadFolderParams,
+    CreateRepoParams, DeleteRepoParams, HFClient, RepoCreateCommitParams, RepoDeleteFileParams, RepoDeleteFolderParams,
+    RepoDownloadFileParams, RepoGetPathsInfoParams, RepoListFilesParams, RepoListTreeParams, RepoUploadFileParams,
+    RepoUploadFolderParams,
 };
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
-    let api = HfApi::new()?;
+    let api = HFClient::new()?;
+    let model = api.model("openai-community", "gpt2");
 
     // --- Read operations ---
 
-    let files = api
-        .list_repo_files(&ListRepoFilesParams::builder().repo_id("gpt2").build())
-        .await?;
+    let files = model.list_files(&RepoListFilesParams::default()).await?;
     println!("Files in gpt2: {}", files.len());
     for f in files.iter().take(5) {
         println!("  - {f}");
     }
 
-    let tree_stream = api.list_repo_tree(&ListRepoTreeParams::builder().repo_id("gpt2").recursive(true).build());
+    let tree_stream = model.list_tree(&RepoListTreeParams::builder().recursive(true).build())?;
     futures::pin_mut!(tree_stream);
     println!("\nTree entries in gpt2:");
     let mut count = 0;
@@ -38,10 +38,9 @@ async fn main() -> huggingface_hub::Result<()> {
         }
     }
 
-    let paths_info = api
+    let paths_info = model
         .get_paths_info(
-            &GetPathsInfoParams::builder()
-                .repo_id("gpt2")
+            &RepoGetPathsInfoParams::builder()
                 .paths(vec!["config.json".to_string(), "README.md".to_string()])
                 .build(),
         )
@@ -52,10 +51,9 @@ async fn main() -> huggingface_hub::Result<()> {
     }
 
     let tmp_dir = tempfile::tempdir().expect("failed to create tempdir");
-    let downloaded = api
+    let downloaded = model
         .download_file(
-            &DownloadFileParams::builder()
-                .repo_id("gpt2")
+            &RepoDownloadFileParams::builder()
                 .filename("config.json")
                 .local_dir(tmp_dir.path().to_path_buf())
                 .build(),
@@ -67,22 +65,21 @@ async fn main() -> huggingface_hub::Result<()> {
 
     let user = api.whoami().await?;
     let unique = std::process::id();
-    let repo_name = format!("{}/example-files-{unique}", user.username);
+    let repo = api.model(&user.username, format!("example-files-{unique}"));
 
     api.create_repo(
         &CreateRepoParams::builder()
-            .repo_id(&repo_name)
+            .repo_id(repo.repo_path())
             .private(true)
             .exist_ok(true)
             .build(),
     )
     .await?;
-    println!("\nCreated test repo: {repo_name}");
+    println!("\nCreated test repo: {}", repo.repo_path());
 
-    let commit = api
+    let commit = repo
         .upload_file(
-            &UploadFileParams::builder()
-                .repo_id(&repo_name)
+            &RepoUploadFileParams::builder()
                 .source(AddSource::Bytes(b"Hello from Rust!".to_vec()))
                 .path_in_repo("hello.txt")
                 .commit_message("Add hello.txt via example")
@@ -91,10 +88,9 @@ async fn main() -> huggingface_hub::Result<()> {
         .await?;
     println!("Uploaded hello.txt: {:?}", commit.commit_url);
 
-    let commit = api
+    let commit = repo
         .create_commit(
-            &CreateCommitParams::builder()
-                .repo_id(&repo_name)
+            &RepoCreateCommitParams::builder()
                 .operations(vec![
                     CommitOperation::Add {
                         path_in_repo: "data/file1.txt".to_string(),
@@ -116,10 +112,9 @@ async fn main() -> huggingface_hub::Result<()> {
     std::fs::write(upload_dir.join("root.txt"), "root file").expect("failed to write");
     std::fs::write(upload_dir.join("subdir/nested.txt"), "nested file").expect("failed to write");
 
-    let commit = api
+    let commit = repo
         .upload_folder(
-            &UploadFolderParams::builder()
-                .repo_id(&repo_name)
+            &RepoUploadFolderParams::builder()
                 .folder_path(upload_dir)
                 .path_in_repo("uploaded")
                 .commit_message("Upload folder via example")
@@ -128,20 +123,15 @@ async fn main() -> huggingface_hub::Result<()> {
         .await?;
     println!("Uploaded folder: {:?}", commit.commit_oid);
 
-    api.delete_file(
-        &DeleteFileParams::builder()
-            .repo_id(&repo_name)
-            .path_in_repo("hello.txt")
-            .build(),
-    )
-    .await?;
+    repo.delete_file(&RepoDeleteFileParams::builder().path_in_repo("hello.txt").build())
+        .await?;
     println!("Deleted hello.txt");
 
-    api.delete_folder(&DeleteFolderParams::builder().repo_id(&repo_name).path_in_repo("data").build())
+    repo.delete_folder(&RepoDeleteFolderParams::builder().path_in_repo("data").build())
         .await?;
     println!("Deleted data/ folder");
 
-    api.delete_repo(&DeleteRepoParams::builder().repo_id(&repo_name).missing_ok(true).build())
+    api.delete_repo(&DeleteRepoParams::builder().repo_id(repo.repo_path()).missing_ok(true).build())
         .await?;
     println!("Cleaned up test repo");
 

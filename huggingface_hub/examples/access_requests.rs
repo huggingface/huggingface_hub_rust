@@ -3,41 +3,39 @@
 //! Requires HF_TOKEN and the "access_requests" feature.
 //! Run: cargo run -p huggingface-hub --features access_requests --example access_requests
 
-use huggingface_hub::{CreateRepoParams, DeleteRepoParams, HfApi, ListAccessRequestsParams, UpdateRepoParams};
+use huggingface_hub::{CreateRepoParams, DeleteRepoParams, HFClient, RepoUpdateSettingsParams};
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
-    let api = HfApi::new()?;
+    let api = HFClient::new()?;
 
     let user = api.whoami().await?;
     let unique = std::process::id();
-    let repo_name = format!("{}/example-gated-{unique}", user.username);
+    let repo = api.model(&user.username, format!("example-gated-{unique}"));
 
     api.create_repo(
         &CreateRepoParams::builder()
-            .repo_id(&repo_name)
+            .repo_id(repo.repo_path())
             .private(true)
             .exist_ok(true)
             .build(),
     )
     .await?;
 
-    api.update_repo_settings(&UpdateRepoParams::builder().repo_id(&repo_name).gated("auto").build())
+    repo.update_settings(&RepoUpdateSettingsParams::builder().gated("auto").build())
         .await?;
-    println!("Created gated repo: {repo_name}");
+    println!("Created gated repo: {}", repo.repo_path());
 
-    let params = ListAccessRequestsParams::builder().repo_id(&repo_name).build();
-
-    let pending = api.list_pending_access_requests(&params).await?;
+    let pending = repo.list_pending_access_requests().await?;
     println!("Pending requests: {}", pending.len());
 
-    let accepted = api.list_accepted_access_requests(&params).await?;
+    let accepted = repo.list_accepted_access_requests().await?;
     println!("Accepted requests: {}", accepted.len());
 
-    let rejected = api.list_rejected_access_requests(&params).await?;
+    let rejected = repo.list_rejected_access_requests().await?;
     println!("Rejected requests: {}", rejected.len());
 
-    api.delete_repo(&DeleteRepoParams::builder().repo_id(&repo_name).missing_ok(true).build())
+    api.delete_repo(&DeleteRepoParams::builder().repo_id(repo.repo_path()).missing_ok(true).build())
         .await?;
     println!("Cleaned up test repo");
 

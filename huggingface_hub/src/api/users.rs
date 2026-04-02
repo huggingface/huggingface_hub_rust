@@ -1,11 +1,11 @@
 use futures::Stream;
 use url::Url;
 
-use crate::client::HfApi;
+use crate::client::HFClient;
 use crate::error::Result;
 use crate::types::{Organization, User};
 
-impl HfApi {
+impl HFClient {
     /// Get authenticated user info.
     /// Endpoint: GET /api/whoami-v2
     pub async fn whoami(&self) -> Result<User> {
@@ -49,23 +49,35 @@ impl HfApi {
 
     /// List followers of a user.
     /// Endpoint: GET /api/users/{username}/followers
-    pub fn list_user_followers(&self, username: &str) -> impl Stream<Item = Result<User>> + '_ {
-        let url = Url::parse(&format!("{}/api/users/{}/followers", self.inner.endpoint, username)).unwrap();
-        self.paginate(url, vec![])
+    pub fn list_user_followers(
+        &self,
+        username: &str,
+        max_items: Option<usize>,
+    ) -> Result<impl Stream<Item = Result<User>> + '_> {
+        let url = Url::parse(&format!("{}/api/users/{}/followers", self.inner.endpoint, username))?;
+        Ok(self.paginate(url, vec![], max_items))
     }
 
     /// List users that a user is following.
     /// Endpoint: GET /api/users/{username}/following
-    pub fn list_user_following(&self, username: &str) -> impl Stream<Item = Result<User>> + '_ {
-        let url = Url::parse(&format!("{}/api/users/{}/following", self.inner.endpoint, username)).unwrap();
-        self.paginate(url, vec![])
+    pub fn list_user_following(
+        &self,
+        username: &str,
+        max_items: Option<usize>,
+    ) -> Result<impl Stream<Item = Result<User>> + '_> {
+        let url = Url::parse(&format!("{}/api/users/{}/following", self.inner.endpoint, username))?;
+        Ok(self.paginate(url, vec![], max_items))
     }
 
     /// List members of an organization.
     /// Endpoint: GET /api/organizations/{organization}/members
-    pub fn list_organization_members(&self, organization: &str) -> impl Stream<Item = Result<User>> + '_ {
-        let url = Url::parse(&format!("{}/api/organizations/{}/members", self.inner.endpoint, organization)).unwrap();
-        self.paginate(url, vec![])
+    pub fn list_organization_members(
+        &self,
+        organization: &str,
+        max_items: Option<usize>,
+    ) -> Result<impl Stream<Item = Result<User>> + '_> {
+        let url = Url::parse(&format!("{}/api/organizations/{}/members", self.inner.endpoint, organization))?;
+        Ok(self.paginate(url, vec![], max_items))
     }
 }
 
@@ -80,8 +92,8 @@ sync_api! {
 
 sync_api_stream! {
     impl HfApiSync {
-        fn list_user_followers(&self, username: &str) -> User;
-        fn list_user_following(&self, username: &str) -> User;
-        fn list_organization_members(&self, organization: &str) -> User;
+        fn list_user_followers(&self, username: &str, max_items: Option<usize>) -> User;
+        fn list_user_following(&self, username: &str, max_items: Option<usize>) -> User;
+        fn list_organization_members(&self, organization: &str, max_items: Option<usize>) -> User;
     }
 }

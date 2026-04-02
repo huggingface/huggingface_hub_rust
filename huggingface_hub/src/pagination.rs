@@ -5,7 +5,7 @@ use reqwest::header::HeaderMap;
 use serde::de::DeserializeOwned;
 use url::Url;
 
-use crate::client::HfApi;
+use crate::client::HFClient;
 use crate::error::{HfError, Result};
 
 struct PaginationState {
@@ -13,29 +13,40 @@ struct PaginationState {
     next_url: Option<Url>,
     is_first_page: bool,
     done: bool,
+    items_yielded: usize,
+    max_items: Option<usize>,
 }
 
-impl HfApi {
+impl HFClient {
     /// Create a paginated stream from an initial URL and query params.
     /// Query params are only sent on the first request; subsequent pages
     /// use the full URL from the Link header.
+    /// If `max_items` is `Some(n)`, the stream stops after yielding `n` items.
     pub(crate) fn paginate<T: DeserializeOwned + 'static>(
         &self,
         initial_url: Url,
         params: Vec<(String, String)>,
+        max_items: Option<usize>,
     ) -> impl Stream<Item = Result<T>> + '_ {
         let state = PaginationState {
             buffer: VecDeque::new(),
             next_url: Some(initial_url),
             is_first_page: true,
             done: false,
+            items_yielded: 0,
+            max_items,
         };
 
         stream::try_unfold(state, move |mut state| {
             let params = params.clone();
             async move {
+                if state.max_items.is_some_and(|max| state.items_yielded >= max) {
+                    return Ok(None);
+                }
+
                 if let Some(raw) = state.buffer.pop_front() {
                     let item: T = serde_json::from_value(raw)?;
+                    state.items_yielded += 1;
                     return Ok(Some((item, state)));
                 }
 
@@ -78,6 +89,7 @@ impl HfApi {
                 match state.buffer.pop_front() {
                     Some(raw) => {
                         let item: T = serde_json::from_value(raw)?;
+                        state.items_yielded += 1;
                         Ok(Some((item, state)))
                     },
                     None => Ok(None),

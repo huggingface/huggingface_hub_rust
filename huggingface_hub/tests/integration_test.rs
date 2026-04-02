@@ -10,66 +10,149 @@
 //!   HF_TOKEN=hf_xxx cargo test -p huggingface-hub --all-features --test integration_test
 
 use futures::StreamExt;
+use huggingface_hub::repository::{
+    HFRepository, RepoCreateBranchParams, RepoCreateCommitParams, RepoCreateTagParams, RepoDeleteBranchParams,
+    RepoDeleteFileParams, RepoDeleteFolderParams, RepoDeleteTagParams, RepoDownloadFileParams, RepoFileExistsParams,
+    RepoGetCommitDiffParams, RepoGetPathsInfoParams, RepoGetRawDiffParams, RepoInfoParams, RepoListCommitsParams,
+    RepoListFilesParams, RepoListRefsParams, RepoListTreeParams, RepoRevisionExistsParams, RepoUpdateSettingsParams,
+    RepoUploadFileParams, RepoUploadFolderParams,
+};
+#[cfg(feature = "discussions")]
+use huggingface_hub::repository::{
+    RepoCreateDiscussionParams, RepoCreatePullRequestParams, RepoDiscussionDetailsParams, RepoListDiscussionsParams,
+};
 use huggingface_hub::types::*;
-use huggingface_hub::{HfApi, HfApiBuilder};
+use huggingface_hub::{HFClient, HFClientBuilder};
+#[cfg(feature = "spaces")]
+use huggingface_hub::{SpaceSecretDeleteParams, SpaceSecretParams, SpaceVariableDeleteParams, SpaceVariableParams};
 
-fn api() -> Option<HfApi> {
+fn api() -> Option<HFClient> {
     if std::env::var("HF_TOKEN").is_err() {
         return None;
     }
-    Some(HfApiBuilder::new().build().expect("Failed to create HfApi"))
+    Some(HFClientBuilder::new().build().expect("Failed to create HFClient"))
 }
 
 fn write_enabled() -> bool {
     std::env::var("HF_TEST_WRITE").ok().is_some_and(|v| v == "1")
 }
 
+/// Create an HFRepository handle from a full `owner/name` repo_id string.
+fn repo(api: &HFClient, repo_id: &str) -> HFRepository {
+    let parts: Vec<&str> = repo_id.splitn(2, '/').collect();
+    if parts.len() == 2 {
+        api.model(parts[0], parts[1])
+    } else {
+        api.model("", repo_id)
+    }
+}
+
+/// Create an HFRepository handle with a specific repo type.
+fn repo_typed(api: &HFClient, repo_id: &str, repo_type: RepoType) -> HFRepository {
+    let parts: Vec<&str> = repo_id.splitn(2, '/').collect();
+    let (owner, name) = if parts.len() == 2 {
+        (parts[0], parts[1])
+    } else {
+        ("", repo_id)
+    };
+    api.repo(repo_type, owner, name)
+}
+
 #[tokio::test]
 async fn test_model_info() {
     let Some(api) = api() else { return };
-    let params = ModelInfoParams::builder().repo_id("gpt2").build();
-    let info = api.model_info(&params).await.unwrap();
-    assert_eq!(info.id, "openai-community/gpt2");
+    let info = repo(&api, "gpt2").info(&RepoInfoParams::default()).await.unwrap();
+    match info {
+        RepoInfo::Model(model) => assert!(model.id.contains("gpt2")),
+        _ => panic!("expected model info"),
+    }
+}
+
+#[tokio::test]
+async fn test_repo_handle_info_and_file_exists() {
+    let Some(api) = api() else { return };
+    let repo = api.model("openai-community", "gpt2");
+
+    let info = repo.info(&RepoInfoParams::default()).await.unwrap();
+    match info {
+        RepoInfo::Model(model) => assert_eq!(model.id, "openai-community/gpt2"),
+        _ => panic!("expected model info"),
+    }
+
+    let exists = repo
+        .file_exists(&RepoFileExistsParams::builder().filename("config.json").build())
+        .await
+        .unwrap();
+    assert!(exists);
+}
+
+#[cfg(feature = "discussions")]
+#[tokio::test]
+async fn test_repo_handle_list_discussions() {
+    let Some(api) = api() else { return };
+    let repo = api.model("openai-community", "gpt2");
+
+    let response = repo.list_discussions(&RepoListDiscussionsParams::default()).await.unwrap();
+    assert!(response.count.unwrap_or(0) as usize >= response.discussions.len());
+}
+
+#[cfg(feature = "likes")]
+#[tokio::test]
+async fn test_repo_handle_list_likers() {
+    let Some(api) = api() else { return };
+    let repo = api.model("openai-community", "gpt2");
+
+    let stream = repo.list_likers(None).unwrap();
+    futures::pin_mut!(stream);
+    let mut seen = 0usize;
+    while let Some(user) = stream.next().await {
+        user.unwrap();
+        seen += 1;
+        if seen >= 3 {
+            break;
+        }
+    }
 }
 
 #[tokio::test]
 async fn test_dataset_info() {
     let Some(api) = api() else { return };
-    let params = DatasetInfoParams::builder().repo_id("rajpurkar/squad").build();
-    let info = api.dataset_info(&params).await.unwrap();
-    assert!(info.id.contains("squad"));
+    let info = repo_typed(&api, "rajpurkar/squad", RepoType::Dataset)
+        .info(&RepoInfoParams::default())
+        .await
+        .unwrap();
+    match info {
+        RepoInfo::Dataset(ds) => assert!(ds.id.contains("squad")),
+        _ => panic!("expected dataset info"),
+    }
 }
 
 #[tokio::test]
 async fn test_repo_exists() {
     let Some(api) = api() else { return };
-    let params = RepoExistsParams::builder().repo_id("gpt2").build();
-    assert!(api.repo_exists(&params).await.unwrap());
-
-    let params = RepoExistsParams::builder()
-        .repo_id("this-repo-definitely-does-not-exist-12345")
-        .build();
-    assert!(!api.repo_exists(&params).await.unwrap());
+    assert!(repo(&api, "gpt2").exists().await.unwrap());
+    assert!(!repo(&api, "this-repo-definitely-does-not-exist-12345").exists().await.unwrap());
 }
 
 #[tokio::test]
 async fn test_file_exists() {
     let Some(api) = api() else { return };
-    let params = FileExistsParams::builder().repo_id("gpt2").filename("config.json").build();
-    assert!(api.file_exists(&params).await.unwrap());
+    assert!(repo(&api, "gpt2")
+        .file_exists(&RepoFileExistsParams::builder().filename("config.json").build())
+        .await
+        .unwrap());
 
-    let params = FileExistsParams::builder()
-        .repo_id("gpt2")
-        .filename("nonexistent_file.xyz")
-        .build();
-    assert!(!api.file_exists(&params).await.unwrap());
+    assert!(!repo(&api, "gpt2")
+        .file_exists(&RepoFileExistsParams::builder().filename("nonexistent_file.xyz").build())
+        .await
+        .unwrap());
 }
 
 #[tokio::test]
 async fn test_list_models() {
     let Some(api) = api() else { return };
     let params = ListModelsParams::builder().author("openai-community").limit(3_usize).build();
-    let stream = api.list_models(&params);
+    let stream = api.list_models(&params).unwrap();
     futures::pin_mut!(stream);
 
     let mut count = 0;
@@ -87,8 +170,7 @@ async fn test_list_models() {
 #[tokio::test]
 async fn test_list_repo_files() {
     let Some(api) = api() else { return };
-    let params = ListRepoFilesParams::builder().repo_id("gpt2").build();
-    let files = api.list_repo_files(&params).await.unwrap();
+    let files = repo(&api, "gpt2").list_files(&RepoListFilesParams::default()).await.unwrap();
     assert!(files.contains(&"config.json".to_string()));
     assert!(files.contains(&"README.md".to_string()));
 }
@@ -96,8 +178,8 @@ async fn test_list_repo_files() {
 #[tokio::test]
 async fn test_list_repo_tree() {
     let Some(api) = api() else { return };
-    let params = ListRepoTreeParams::builder().repo_id("gpt2").build();
-    let stream = api.list_repo_tree(&params);
+    let r = repo(&api, "gpt2");
+    let stream = r.list_tree(&RepoListTreeParams::default()).unwrap();
     futures::pin_mut!(stream);
 
     let mut found_config = false;
@@ -116,8 +198,8 @@ async fn test_list_repo_tree() {
 #[tokio::test]
 async fn test_list_repo_commits() {
     let Some(api) = api() else { return };
-    let params = ListRepoCommitsParams::builder().repo_id("gpt2").build();
-    let stream = api.list_repo_commits(&params);
+    let r = repo(&api, "gpt2");
+    let stream = r.list_commits(&RepoListCommitsParams::default()).unwrap();
     futures::pin_mut!(stream);
 
     let first = stream.next().await.unwrap().unwrap();
@@ -128,8 +210,7 @@ async fn test_list_repo_commits() {
 #[tokio::test]
 async fn test_list_repo_refs() {
     let Some(api) = api() else { return };
-    let params = ListRepoRefsParams::builder().repo_id("gpt2").build();
-    let refs = api.list_repo_refs(&params).await.unwrap();
+    let refs = repo(&api, "gpt2").list_refs(&RepoListRefsParams::default()).await.unwrap();
     assert!(!refs.branches.is_empty());
     // "main" branch should exist
     assert!(refs.branches.iter().any(|b| b.name == "main"));
@@ -138,26 +219,30 @@ async fn test_list_repo_refs() {
 #[tokio::test]
 async fn test_revision_exists() {
     let Some(api) = api() else { return };
-    let params = RevisionExistsParams::builder().repo_id("gpt2").revision("main").build();
-    assert!(api.revision_exists(&params).await.unwrap());
+    assert!(repo(&api, "gpt2")
+        .revision_exists(&RepoRevisionExistsParams::builder().revision("main").build())
+        .await
+        .unwrap());
 
-    let params = RevisionExistsParams::builder()
-        .repo_id("gpt2")
-        .revision("nonexistent-branch-xyz")
-        .build();
-    assert!(!api.revision_exists(&params).await.unwrap());
+    assert!(!repo(&api, "gpt2")
+        .revision_exists(&RepoRevisionExistsParams::builder().revision("nonexistent-branch-xyz").build())
+        .await
+        .unwrap());
 }
 
 #[tokio::test]
 async fn test_download_file() {
     let Some(api) = api() else { return };
     let dir = tempfile::tempdir().unwrap();
-    let params = DownloadFileParams::builder()
-        .repo_id("gpt2")
-        .filename("config.json")
-        .local_dir(dir.path().to_path_buf())
-        .build();
-    let path = api.download_file(&params).await.unwrap();
+    let path = repo(&api, "gpt2")
+        .download_file(
+            &RepoDownloadFileParams::builder()
+                .filename("config.json")
+                .local_dir(dir.path().to_path_buf())
+                .build(),
+        )
+        .await
+        .unwrap();
     assert!(path.exists());
     let content = std::fs::read_to_string(&path).unwrap();
     let json: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -196,7 +281,7 @@ async fn test_get_organization_overview() {
 #[tokio::test]
 async fn test_list_user_followers() {
     let Some(api) = api() else { return };
-    let stream = api.list_user_followers("julien-c");
+    let stream = api.list_user_followers("julien-c", None).unwrap();
     futures::pin_mut!(stream);
     let first = stream.next().await;
     assert!(first.is_some());
@@ -206,7 +291,7 @@ async fn test_list_user_followers() {
 #[tokio::test]
 async fn test_list_user_following() {
     let Some(api) = api() else { return };
-    let stream = api.list_user_following("julien-c");
+    let stream = api.list_user_following("julien-c", None).unwrap();
     futures::pin_mut!(stream);
     let first = stream.next().await;
     assert!(first.is_some());
@@ -216,7 +301,7 @@ async fn test_list_user_following() {
 #[tokio::test]
 async fn test_list_organization_members() {
     let Some(api) = api() else { return };
-    let stream = api.list_organization_members("huggingface");
+    let stream = api.list_organization_members("huggingface", None).unwrap();
     futures::pin_mut!(stream);
     let first = stream.next().await;
     assert!(first.is_some());
@@ -228,16 +313,21 @@ async fn test_list_organization_members() {
 #[tokio::test]
 async fn test_space_info() {
     let Some(api) = api() else { return };
-    let params = SpaceInfoParams::builder().repo_id("HuggingFaceFW/blogpost-fineweb-v1").build();
-    let info = api.space_info(&params).await.unwrap();
-    assert!(info.id.contains("blogpost-fineweb-v1"));
+    let info = repo_typed(&api, "HuggingFaceFW/blogpost-fineweb-v1", RepoType::Space)
+        .info(&RepoInfoParams::default())
+        .await
+        .unwrap();
+    match info {
+        RepoInfo::Space(space) => assert!(space.id.contains("blogpost-fineweb-v1")),
+        _ => panic!("expected space info"),
+    }
 }
 
 #[tokio::test]
 async fn test_list_datasets() {
     let Some(api) = api() else { return };
     let params = ListDatasetsParams::builder().author("huggingface").limit(3_usize).build();
-    let stream = api.list_datasets(&params);
+    let stream = api.list_datasets(&params).unwrap();
     futures::pin_mut!(stream);
 
     let mut count = 0;
@@ -255,7 +345,7 @@ async fn test_list_datasets() {
 async fn test_list_spaces() {
     let Some(api) = api() else { return };
     let params = ListSpacesParams::builder().author("huggingface").limit(3_usize).build();
-    let stream = api.list_spaces(&params);
+    let stream = api.list_spaces(&params).unwrap();
     futures::pin_mut!(stream);
 
     let mut count = 0;
@@ -274,11 +364,14 @@ async fn test_list_spaces() {
 #[tokio::test]
 async fn test_get_paths_info() {
     let Some(api) = api() else { return };
-    let params = GetPathsInfoParams::builder()
-        .repo_id("gpt2")
-        .paths(vec!["config.json".to_string(), "README.md".to_string()])
-        .build();
-    let entries = api.get_paths_info(&params).await.unwrap();
+    let entries = repo(&api, "gpt2")
+        .get_paths_info(
+            &RepoGetPathsInfoParams::builder()
+                .paths(vec!["config.json".to_string(), "README.md".to_string()])
+                .build(),
+        )
+        .await
+        .unwrap();
     assert_eq!(entries.len(), 2);
     let paths: Vec<String> = entries
         .iter()
@@ -297,18 +390,21 @@ async fn test_get_paths_info() {
 async fn test_get_commit_diff() {
     let Some(api) = api() else { return };
 
-    let commits_params = ListRepoCommitsParams::builder().repo_id("openai-community/gpt2").build();
-    let stream = api.list_repo_commits(&commits_params);
+    let gpt2 = repo(&api, "openai-community/gpt2");
+    let stream = gpt2.list_commits(&RepoListCommitsParams::default()).unwrap();
     futures::pin_mut!(stream);
 
     let first = stream.next().await.unwrap().unwrap();
     let second = stream.next().await.unwrap().unwrap();
 
-    let params = GetCommitDiffParams::builder()
-        .repo_id("openai-community/gpt2")
-        .compare(format!("{}..{}", second.id, first.id))
-        .build();
-    let diff = api.get_commit_diff(&params).await.unwrap();
+    let diff = gpt2
+        .get_commit_diff(
+            &RepoGetCommitDiffParams::builder()
+                .compare(format!("{}..{}", second.id, first.id))
+                .build(),
+        )
+        .await
+        .unwrap();
     assert!(!diff.is_empty());
 }
 
@@ -316,18 +412,21 @@ async fn test_get_commit_diff() {
 async fn test_get_raw_diff() {
     let Some(api) = api() else { return };
 
-    let commits_params = ListRepoCommitsParams::builder().repo_id("openai-community/gpt2").build();
-    let stream = api.list_repo_commits(&commits_params);
+    let gpt2 = repo(&api, "openai-community/gpt2");
+    let stream = gpt2.list_commits(&RepoListCommitsParams::default()).unwrap();
     futures::pin_mut!(stream);
 
     let first = stream.next().await.unwrap().unwrap();
     let second = stream.next().await.unwrap().unwrap();
 
-    let params = GetRawDiffParams::builder()
-        .repo_id("openai-community/gpt2")
-        .compare(format!("{}..{}", second.id, first.id))
-        .build();
-    let raw = api.get_raw_diff(&params).await.unwrap();
+    let raw = gpt2
+        .get_raw_diff(
+            &RepoGetRawDiffParams::builder()
+                .compare(format!("{}..{}", second.id, first.id))
+                .build(),
+        )
+        .await
+        .unwrap();
     assert!(!raw.is_empty());
 }
 
@@ -357,18 +456,24 @@ async fn test_create_and_delete_repo() {
     assert!(url.url.contains(&repo_id));
 
     // Upload a file
-    let params = UploadFileParams::builder()
-        .repo_id(&repo_id)
-        .source(AddSource::Bytes(b"hello world".to_vec()))
-        .path_in_repo("test.txt")
-        .commit_message("test upload")
-        .build();
-    let commit = api.upload_file(&params).await.unwrap();
+    let test_repo = repo(&api, &repo_id);
+    let commit = test_repo
+        .upload_file(
+            &RepoUploadFileParams::builder()
+                .source(AddSource::Bytes(b"hello world".to_vec()))
+                .path_in_repo("test.txt")
+                .commit_message("test upload")
+                .build(),
+        )
+        .await
+        .unwrap();
     assert!(commit.commit_oid.is_some());
 
     // Verify file exists
-    let params = FileExistsParams::builder().repo_id(&repo_id).filename("test.txt").build();
-    assert!(api.file_exists(&params).await.unwrap());
+    assert!(test_repo
+        .file_exists(&RepoFileExistsParams::builder().filename("test.txt").build())
+        .await
+        .unwrap());
 
     // Delete repo
     let params = DeleteRepoParams::builder().repo_id(&repo_id).build();
@@ -376,12 +481,10 @@ async fn test_create_and_delete_repo() {
 }
 
 fn uuid_v4_short() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-    format!("{:x}{:x}", t.as_secs(), t.subsec_nanos())
+    format!("{:016x}", rand::random::<u64>())
 }
 
-async fn create_test_repo(api: &HfApi) -> String {
+async fn create_test_repo(api: &HFClient) -> String {
     let whoami = api.whoami().await.expect("whoami failed");
     let repo_id = format!("{}/huggingface-hub-rust-test-{}", whoami.username, uuid_v4_short());
     let params = CreateRepoParams::builder()
@@ -391,18 +494,22 @@ async fn create_test_repo(api: &HfApi) -> String {
         .build();
     api.create_repo(&params).await.expect("create_repo failed");
 
-    let params = UploadFileParams::builder()
-        .repo_id(&repo_id)
-        .source(AddSource::Bytes(b"initial content".to_vec()))
-        .path_in_repo("README.md")
-        .commit_message("initial commit")
-        .build();
-    api.upload_file(&params).await.expect("seed upload failed");
+    let test_repo = repo(api, &repo_id);
+    test_repo
+        .upload_file(
+            &RepoUploadFileParams::builder()
+                .source(AddSource::Bytes(b"initial content".to_vec()))
+                .path_in_repo("README.md")
+                .commit_message("initial commit")
+                .build(),
+        )
+        .await
+        .expect("seed upload failed");
 
     repo_id
 }
 
-async fn delete_test_repo(api: &HfApi, repo_id: &str) {
+async fn delete_test_repo(api: &HFClient, repo_id: &str) {
     let params = DeleteRepoParams::builder().repo_id(repo_id).build();
     let _ = api.delete_repo(&params).await;
 }
@@ -415,25 +522,28 @@ async fn test_create_commit() {
     }
     let repo_id = create_test_repo(&api).await;
 
-    let params = CreateCommitParams::builder()
-        .repo_id(&repo_id)
-        .operations(vec![
-            CommitOperation::Add {
-                path_in_repo: "file_a.txt".to_string(),
-                source: AddSource::Bytes(b"content a".to_vec()),
-            },
-            CommitOperation::Add {
-                path_in_repo: "file_b.txt".to_string(),
-                source: AddSource::Bytes(b"content b".to_vec()),
-            },
-        ])
-        .commit_message("add two files")
-        .build();
-    let commit = api.create_commit(&params).await.unwrap();
+    let test_repo = repo(&api, &repo_id);
+    let commit = test_repo
+        .create_commit(
+            &RepoCreateCommitParams::builder()
+                .operations(vec![
+                    CommitOperation::Add {
+                        path_in_repo: "file_a.txt".to_string(),
+                        source: AddSource::Bytes(b"content a".to_vec()),
+                    },
+                    CommitOperation::Add {
+                        path_in_repo: "file_b.txt".to_string(),
+                        source: AddSource::Bytes(b"content b".to_vec()),
+                    },
+                ])
+                .commit_message("add two files")
+                .build(),
+        )
+        .await
+        .unwrap();
     assert!(commit.commit_oid.is_some());
 
-    let files_params = ListRepoFilesParams::builder().repo_id(&repo_id).build();
-    let files = api.list_repo_files(&files_params).await.unwrap();
+    let files = test_repo.list_files(&RepoListFilesParams::default()).await.unwrap();
     assert!(files.contains(&"file_a.txt".to_string()));
     assert!(files.contains(&"file_b.txt".to_string()));
 
@@ -453,16 +563,19 @@ async fn test_upload_folder() {
     std::fs::create_dir_all(dir.path().join("subdir")).unwrap();
     std::fs::write(dir.path().join("subdir/nested.txt"), "nested").unwrap();
 
-    let params = UploadFolderParams::builder()
-        .repo_id(&repo_id)
-        .folder_path(dir.path().to_path_buf())
-        .commit_message("upload folder")
-        .build();
-    let commit = api.upload_folder(&params).await.unwrap();
+    let test_repo = repo(&api, &repo_id);
+    let commit = test_repo
+        .upload_folder(
+            &RepoUploadFolderParams::builder()
+                .folder_path(dir.path().to_path_buf())
+                .commit_message("upload folder")
+                .build(),
+        )
+        .await
+        .unwrap();
     assert!(commit.commit_oid.is_some());
 
-    let files_params = ListRepoFilesParams::builder().repo_id(&repo_id).build();
-    let files = api.list_repo_files(&files_params).await.unwrap();
+    let files = test_repo.list_files(&RepoListFilesParams::default()).await.unwrap();
     assert!(files.contains(&"hello.txt".to_string()));
     assert!(files.contains(&"subdir/nested.txt".to_string()));
 
@@ -477,23 +590,32 @@ async fn test_delete_file() {
     }
     let repo_id = create_test_repo(&api).await;
 
-    let upload_params = UploadFileParams::builder()
-        .repo_id(&repo_id)
-        .source(AddSource::Bytes(b"to delete".to_vec()))
-        .path_in_repo("deleteme.txt")
-        .commit_message("add file to delete")
-        .build();
-    api.upload_file(&upload_params).await.unwrap();
+    let test_repo = repo(&api, &repo_id);
+    test_repo
+        .upload_file(
+            &RepoUploadFileParams::builder()
+                .source(AddSource::Bytes(b"to delete".to_vec()))
+                .path_in_repo("deleteme.txt")
+                .commit_message("add file to delete")
+                .build(),
+        )
+        .await
+        .unwrap();
 
-    let params = DeleteFileParams::builder()
-        .repo_id(&repo_id)
-        .path_in_repo("deleteme.txt")
-        .commit_message("delete file")
-        .build();
-    api.delete_file(&params).await.unwrap();
+    test_repo
+        .delete_file(
+            &RepoDeleteFileParams::builder()
+                .path_in_repo("deleteme.txt")
+                .commit_message("delete file")
+                .build(),
+        )
+        .await
+        .unwrap();
 
-    let exists_params = FileExistsParams::builder().repo_id(&repo_id).filename("deleteme.txt").build();
-    assert!(!api.file_exists(&exists_params).await.unwrap());
+    assert!(!test_repo
+        .file_exists(&RepoFileExistsParams::builder().filename("deleteme.txt").build())
+        .await
+        .unwrap());
 
     delete_test_repo(&api, &repo_id).await;
 }
@@ -506,31 +628,40 @@ async fn test_delete_folder() {
     }
     let repo_id = create_test_repo(&api).await;
 
-    let commit_params = CreateCommitParams::builder()
-        .repo_id(&repo_id)
-        .operations(vec![
-            CommitOperation::Add {
-                path_in_repo: "folder/a.txt".to_string(),
-                source: AddSource::Bytes(b"a".to_vec()),
-            },
-            CommitOperation::Add {
-                path_in_repo: "folder/b.txt".to_string(),
-                source: AddSource::Bytes(b"b".to_vec()),
-            },
-        ])
-        .commit_message("add folder")
-        .build();
-    api.create_commit(&commit_params).await.unwrap();
+    let test_repo = repo(&api, &repo_id);
+    test_repo
+        .create_commit(
+            &RepoCreateCommitParams::builder()
+                .operations(vec![
+                    CommitOperation::Add {
+                        path_in_repo: "folder/a.txt".to_string(),
+                        source: AddSource::Bytes(b"a".to_vec()),
+                    },
+                    CommitOperation::Add {
+                        path_in_repo: "folder/b.txt".to_string(),
+                        source: AddSource::Bytes(b"b".to_vec()),
+                    },
+                ])
+                .commit_message("add folder")
+                .build(),
+        )
+        .await
+        .unwrap();
 
-    let params = DeleteFolderParams::builder()
-        .repo_id(&repo_id)
-        .path_in_repo("folder")
-        .commit_message("delete folder")
-        .build();
-    api.delete_folder(&params).await.unwrap();
+    test_repo
+        .delete_folder(
+            &RepoDeleteFolderParams::builder()
+                .path_in_repo("folder")
+                .commit_message("delete folder")
+                .build(),
+        )
+        .await
+        .unwrap();
 
-    let exists_a = FileExistsParams::builder().repo_id(&repo_id).filename("folder/a.txt").build();
-    assert!(!api.file_exists(&exists_a).await.unwrap());
+    assert!(!test_repo
+        .file_exists(&RepoFileExistsParams::builder().filename("folder/a.txt").build())
+        .await
+        .unwrap());
 
     delete_test_repo(&api, &repo_id).await;
 }
@@ -543,17 +674,21 @@ async fn test_create_and_delete_branch() {
     }
     let repo_id = create_test_repo(&api).await;
 
-    let create_params = CreateBranchParams::builder().repo_id(&repo_id).branch("test-branch").build();
-    api.create_branch(&create_params).await.unwrap();
+    let test_repo = repo(&api, &repo_id);
+    test_repo
+        .create_branch(&RepoCreateBranchParams::builder().branch("test-branch").build())
+        .await
+        .unwrap();
 
-    let refs_params = ListRepoRefsParams::builder().repo_id(&repo_id).build();
-    let refs = api.list_repo_refs(&refs_params).await.unwrap();
+    let refs = test_repo.list_refs(&RepoListRefsParams::default()).await.unwrap();
     assert!(refs.branches.iter().any(|b| b.name == "test-branch"));
 
-    let delete_params = DeleteBranchParams::builder().repo_id(&repo_id).branch("test-branch").build();
-    api.delete_branch(&delete_params).await.unwrap();
+    test_repo
+        .delete_branch(&RepoDeleteBranchParams::builder().branch("test-branch").build())
+        .await
+        .unwrap();
 
-    let refs = api.list_repo_refs(&refs_params).await.unwrap();
+    let refs = test_repo.list_refs(&RepoListRefsParams::default()).await.unwrap();
     assert!(!refs.branches.iter().any(|b| b.name == "test-branch"));
 
     delete_test_repo(&api, &repo_id).await;
@@ -567,17 +702,21 @@ async fn test_create_and_delete_tag() {
     }
     let repo_id = create_test_repo(&api).await;
 
-    let create_params = CreateTagParams::builder().repo_id(&repo_id).tag("v1.0").build();
-    api.create_tag(&create_params).await.unwrap();
+    let test_repo = repo(&api, &repo_id);
+    test_repo
+        .create_tag(&RepoCreateTagParams::builder().tag("v1.0").build())
+        .await
+        .unwrap();
 
-    let refs_params = ListRepoRefsParams::builder().repo_id(&repo_id).build();
-    let refs = api.list_repo_refs(&refs_params).await.unwrap();
+    let refs = test_repo.list_refs(&RepoListRefsParams::default()).await.unwrap();
     assert!(refs.tags.iter().any(|t| t.name == "v1.0"));
 
-    let delete_params = DeleteTagParams::builder().repo_id(&repo_id).tag("v1.0").build();
-    api.delete_tag(&delete_params).await.unwrap();
+    test_repo
+        .delete_tag(&RepoDeleteTagParams::builder().tag("v1.0").build())
+        .await
+        .unwrap();
 
-    let refs = api.list_repo_refs(&refs_params).await.unwrap();
+    let refs = test_repo.list_refs(&RepoListRefsParams::default()).await.unwrap();
     assert!(!refs.tags.iter().any(|t| t.name == "v1.0"));
 
     delete_test_repo(&api, &repo_id).await;
@@ -591,14 +730,18 @@ async fn test_update_repo_settings() {
     }
     let repo_id = create_test_repo(&api).await;
 
-    let params = UpdateRepoParams::builder()
-        .repo_id(&repo_id)
-        .description("test description from integration test")
-        .build();
-    api.update_repo_settings(&params).await.unwrap();
+    let test_repo = repo(&api, &repo_id);
+    test_repo
+        .update_settings(
+            &RepoUpdateSettingsParams::builder()
+                .description("test description from integration test")
+                .build(),
+        )
+        .await
+        .unwrap();
 
-    let info_params = ModelInfoParams::builder().repo_id(&repo_id).build();
-    let _info = api.model_info(&info_params).await.unwrap();
+    // Verify we can still get info after update
+    let _info = test_repo.info(&RepoInfoParams::default()).await.unwrap();
 
     delete_test_repo(&api, &repo_id).await;
 }
@@ -619,8 +762,7 @@ async fn test_move_repo() {
     let move_params = MoveRepoParams::builder().from_id(&original_name).to_id(&new_name).build();
     api.move_repo(&move_params).await.unwrap();
 
-    let exists_new = RepoExistsParams::builder().repo_id(&new_name).build();
-    assert!(api.repo_exists(&exists_new).await.unwrap());
+    assert!(repo(&api, &new_name).exists().await.unwrap());
 
     let delete_params = DeleteRepoParams::builder().repo_id(&new_name).build();
     api.delete_repo(&delete_params).await.unwrap();
@@ -634,10 +776,8 @@ async fn test_move_repo() {
 #[tokio::test]
 async fn test_get_space_runtime() {
     let Some(api) = api() else { return };
-    let params = GetSpaceRuntimeParams::builder()
-        .repo_id("huggingface-projects/diffusers-gallery")
-        .build();
-    let runtime = api.get_space_runtime(&params).await.unwrap();
+    let space = api.space("huggingface-projects", "diffusers-gallery");
+    let runtime = space.runtime().await.unwrap();
     assert!(runtime.stage.is_some());
 }
 
@@ -652,12 +792,12 @@ async fn test_duplicate_space() {
     let to_id = format!("{}/hub-rust-test-dup-space-{}", whoami.username, uuid_v4_short());
 
     let params = DuplicateSpaceParams::builder()
-        .from_id("huggingface-projects/diffusers-gallery")
         .to_id(&to_id)
         .private(true)
         .hardware("cpu-basic")
         .build();
-    let result = api.duplicate_space(&params).await.unwrap();
+    let source = api.space("huggingface-projects", "diffusers-gallery");
+    let result = source.duplicate(&params).await.unwrap();
     assert!(result.url.contains(&to_id));
 
     let delete_params = DeleteRepoParams::builder().repo_id(&to_id).repo_type(RepoType::Space).build();
@@ -672,38 +812,29 @@ async fn test_space_secrets_and_variables() {
         return;
     }
     let whoami = api.whoami().await.unwrap();
-    let space_id = format!("{}/hub-rust-test-space-{}", whoami.username, uuid_v4_short());
-
+    let space = api.space(&whoami.username, format!("hub-rust-test-space-{}", uuid_v4_short()));
     let create_params = CreateRepoParams::builder()
-        .repo_id(&space_id)
+        .repo_id(space.repo_path())
         .repo_type(RepoType::Space)
         .private(true)
         .space_sdk("static")
         .build();
     api.create_repo(&create_params).await.unwrap();
 
-    let add_secret = AddSpaceSecretParams::builder()
-        .repo_id(&space_id)
-        .key("TEST_SECRET")
-        .value("secret_value")
-        .build();
-    api.add_space_secret(&add_secret).await.unwrap();
+    let add_secret = SpaceSecretParams::builder().key("TEST_SECRET").value("secret_value").build();
+    space.add_secret(&add_secret).await.unwrap();
 
-    let del_secret = DeleteSpaceSecretParams::builder().repo_id(&space_id).key("TEST_SECRET").build();
-    api.delete_space_secret(&del_secret).await.unwrap();
+    let del_secret = SpaceSecretDeleteParams::builder().key("TEST_SECRET").build();
+    space.delete_secret(&del_secret).await.unwrap();
 
-    let add_var = AddSpaceVariableParams::builder()
-        .repo_id(&space_id)
-        .key("TEST_VAR")
-        .value("var_value")
-        .build();
-    api.add_space_variable(&add_var).await.unwrap();
+    let add_var = SpaceVariableParams::builder().key("TEST_VAR").value("var_value").build();
+    space.add_variable(&add_var).await.unwrap();
 
-    let del_var = DeleteSpaceVariableParams::builder().repo_id(&space_id).key("TEST_VAR").build();
-    api.delete_space_variable(&del_var).await.unwrap();
+    let del_var = SpaceVariableDeleteParams::builder().key("TEST_VAR").build();
+    space.delete_variable(&del_var).await.unwrap();
 
     let delete_params = DeleteRepoParams::builder()
-        .repo_id(&space_id)
+        .repo_id(space.repo_path())
         .repo_type(RepoType::Space)
         .build();
     let _ = api.delete_repo(&delete_params).await;
@@ -785,8 +916,10 @@ async fn test_create_update_delete_collection() {
 #[tokio::test]
 async fn test_get_repo_discussions() {
     let Some(api) = api() else { return };
-    let params = GetRepoDiscussionsParams::builder().repo_id("openai-community/gpt2").build();
-    let response = api.get_repo_discussions(&params).await.unwrap();
+    let response = repo(&api, "openai-community/gpt2")
+        .list_discussions(&RepoListDiscussionsParams::default())
+        .await
+        .unwrap();
     assert!(!response.discussions.is_empty());
     assert!(response.discussions[0].num > 0);
 }
@@ -795,12 +928,11 @@ async fn test_get_repo_discussions() {
 #[tokio::test]
 async fn test_get_discussion_details() {
     let Some(api) = api() else { return };
-    let params = GetDiscussionDetailsParams::builder()
-        .repo_id("openai-community/gpt2")
-        .discussion_num(1_u64)
-        .build();
-    let details = api.get_discussion_details(&params).await.unwrap();
-    assert_eq!(details.num, Some(1));
+    let details = repo(&api, "openai-community/gpt2")
+        .discussion_details(&RepoDiscussionDetailsParams::builder().discussion_num(1_u64).build())
+        .await
+        .unwrap();
+    assert_eq!(details.num, 1);
     assert!(details.title.is_some());
 }
 
@@ -812,24 +944,22 @@ async fn test_create_discussion_and_comment() {
         return;
     }
     let repo_id = create_test_repo(&api).await;
+    let test_repo = repo(&api, &repo_id);
 
-    let disc_response = api
-        .get_repo_discussions(&GetRepoDiscussionsParams::builder().repo_id(&repo_id).build())
-        .await
-        .unwrap();
+    let disc_response = test_repo.list_discussions(&RepoListDiscussionsParams::default()).await.unwrap();
     let initial_count = disc_response.discussions.len();
 
-    let create_params = CreateDiscussionParams::builder()
-        .repo_id(&repo_id)
-        .title("Test discussion from integration test")
-        .description("This is a test")
-        .build();
-    let _disc = api.create_discussion(&create_params).await.unwrap();
-
-    let disc_response = api
-        .get_repo_discussions(&GetRepoDiscussionsParams::builder().repo_id(&repo_id).build())
+    let _disc = test_repo
+        .create_discussion(
+            &RepoCreateDiscussionParams::builder()
+                .title("Test discussion from integration test")
+                .description("This is a test")
+                .build(),
+        )
         .await
         .unwrap();
+
+    let disc_response = test_repo.list_discussions(&RepoListDiscussionsParams::default()).await.unwrap();
     assert!(disc_response.discussions.len() > initial_count);
 
     delete_test_repo(&api, &repo_id).await;
@@ -843,18 +973,19 @@ async fn test_create_and_merge_pull_request() {
         return;
     }
     let repo_id = create_test_repo(&api).await;
+    let test_repo = repo(&api, &repo_id);
 
-    let pr_params = CreatePullRequestParams::builder()
-        .repo_id(&repo_id)
-        .title("Test PR from integration test")
-        .description("")
-        .build();
-    let _pr = api.create_pull_request(&pr_params).await.unwrap();
-
-    let disc_response = api
-        .get_repo_discussions(&GetRepoDiscussionsParams::builder().repo_id(&repo_id).build())
+    let _pr = test_repo
+        .create_pull_request(
+            &RepoCreatePullRequestParams::builder()
+                .title("Test PR from integration test")
+                .description("")
+                .build(),
+        )
         .await
         .unwrap();
+
+    let disc_response = test_repo.list_discussions(&RepoListDiscussionsParams::default()).await.unwrap();
     assert!(disc_response.discussions.iter().any(|d| d.is_pull_request == Some(true)));
 
     delete_test_repo(&api, &repo_id).await;
@@ -977,18 +1108,20 @@ async fn test_list_access_requests_on_gated_repo() {
     }
     let repo_id = create_test_repo(&api).await;
 
-    let update_params = UpdateRepoParams::builder().repo_id(&repo_id).gated("auto").build();
-    api.update_repo_settings(&update_params).await.unwrap();
+    let test_repo = repo(&api, &repo_id);
+    test_repo
+        .update_settings(&RepoUpdateSettingsParams::builder().gated("auto").build())
+        .await
+        .unwrap();
 
-    let params = ListAccessRequestsParams::builder().repo_id(&repo_id).build();
-    let pending = api.list_pending_access_requests(&params).await.unwrap();
+    let pending = test_repo.list_pending_access_requests().await.unwrap();
     assert!(pending.is_empty());
 
-    let accepted = api.list_accepted_access_requests(&params).await.unwrap();
+    let accepted = test_repo.list_accepted_access_requests().await.unwrap();
     // auto-approved gated repos may have entries, but no error
     let _ = accepted;
 
-    let rejected = api.list_rejected_access_requests(&params).await.unwrap();
+    let rejected = test_repo.list_rejected_access_requests().await.unwrap();
     assert!(rejected.is_empty());
 
     delete_test_repo(&api, &repo_id).await;
@@ -1002,8 +1135,8 @@ async fn test_list_access_requests_on_gated_repo() {
 #[tokio::test]
 async fn test_list_repo_likers() {
     let Some(api) = api() else { return };
-    let params = ListRepoLikersParams::builder().repo_id("openai-community/gpt2").build();
-    let stream = api.list_repo_likers(&params);
+    let gpt2 = repo(&api, "openai-community/gpt2");
+    let stream = gpt2.list_likers(None).unwrap();
     futures::pin_mut!(stream);
 
     let first = stream.next().await;
@@ -1021,8 +1154,8 @@ async fn test_like_and_unlike() {
     }
 
     let repo_id = create_test_repo(&api).await;
-    let like_params = LikeParams::builder().repo_id(&repo_id).build();
-    if let Err(e) = api.like(&like_params).await {
+    let test_repo = repo(&api, &repo_id);
+    if let Err(e) = test_repo.like().await {
         eprintln!("like failed (token may lack write scope for likes): {e}");
         delete_test_repo(&api, &repo_id).await;
         return;
@@ -1038,7 +1171,7 @@ async fn test_like_and_unlike() {
             .is_some_and(|n| n.contains(&repo_id))
     }));
 
-    api.unlike(&like_params).await.unwrap();
+    test_repo.unlike().await.unwrap();
     delete_test_repo(&api, &repo_id).await;
 }
 

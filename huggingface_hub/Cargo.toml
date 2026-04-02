@@ -6,6 +6,7 @@ description = "Rust client for the Hugging Face Hub API"
 license = "Apache-2.0"
 
 [dependencies]
+bytes = "1"
 reqwest = { version = "0.13", features = ["json", "stream", "multipart"] }
 reqwest-middleware = { version = "0.5", features = ["json", "multipart", "query"] }
 reqwest-retry = "0.9"
@@ -21,8 +22,8 @@ base64 = "0.22"
 fs4 = { version = "0.13", features = ["tokio"] }
 pathdiff = "0.2"
 async-trait = { version = "0.1", optional = true }
-hf-xet = { git = "https://github.com/huggingface/xet-core.git", rev = "749c28b", optional = true }
-xet-client = { git = "https://github.com/huggingface/xet-core.git", rev = "749c28b", optional = true }
+hf-xet = { git = "https://github.com/huggingface/xet-core.git", rev = "2659c69", optional = true }
+xet-client = { git = "https://github.com/huggingface/xet-core.git", rev = "2659c69", optional = true }
 sha2 = { version = "0.10", optional = true }
 
 [features]
@@ -49,6 +50,10 @@ serial_test = "3"
 [[example]]
 name = "repo"
 path = "examples/repo.rs"
+
+[[example]]
+name = "repo_handles"
+path = "examples/repo_handles.rs"
 
 [[example]]
 name = "files"
@@ -108,6 +113,10 @@ path = "examples/papers.rs"
 required-features = ["papers"]
 
 [[example]]
+name = "download_upload"
+path = "examples/download_upload.rs"
+
+[[example]]
 name = "blocking_read"
 path = "examples/blocking_read.rs"
 required-features = ["blocking"]
@@ -116,3 +125,13 @@ required-features = ["blocking"]
 name = "blocking_write"
 path = "examples/blocking_write.rs"
 required-features = ["blocking"]
+
+[[example]]
+name = "blocking_repo_handles"
+path = "examples/blocking_repo_handles.rs"
+required-features = ["blocking"]
+
+[[example]]
+name = "blocking_spaces"
+path = "examples/blocking_spaces.rs"
+required-features = ["blocking", "spaces"]

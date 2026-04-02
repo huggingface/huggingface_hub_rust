@@ -1,28 +1,29 @@
-//! Space operations: runtime info, secrets, variables, and lifecycle management.
+//! Synchronous Space operations using HFClientSync and HFSpaceSync.
 //!
-//! Requires HF_TOKEN and the "spaces" feature.
-//! Run: cargo run -p huggingface-hub --features spaces --example spaces
+//! Demonstrates runtime info, secrets, variables, and lifecycle management.
+//!
+//! Requires HF_TOKEN and the "blocking" + "spaces" features.
+//! Run: cargo run -p huggingface-hub --features "blocking spaces" --example blocking_spaces
 
 use huggingface_hub::{
-    CreateRepoParams, DeleteRepoParams, HFClient, RepoType, SpaceSecretDeleteParams, SpaceSecretParams,
+    CreateRepoParams, DeleteRepoParams, HFClientSync, RepoType, SpaceSecretDeleteParams, SpaceSecretParams,
     SpaceVariableDeleteParams, SpaceVariableParams,
 };
 
-#[tokio::main]
-async fn main() -> huggingface_hub::Result<()> {
-    let api = HFClient::new()?;
+fn main() -> huggingface_hub::Result<()> {
+    let api = HFClientSync::new()?;
 
     // --- Read operations ---
 
     let reference_space = api.space("huggingface", "transformers-benchmarks");
-    let runtime = reference_space.runtime().await?;
+    let runtime = reference_space.runtime()?;
     println!("Space runtime: {runtime:?}");
 
     // --- Write operations (creates real resources on the Hub) ---
 
-    let user = api.whoami().await?;
+    let user = api.whoami()?;
     let unique = std::process::id();
-    let space = api.space(&user.username, format!("example-space-{unique}"));
+    let space = api.space(&user.username, format!("blocking-example-space-{unique}"));
 
     api.create_repo(
         &CreateRepoParams::builder()
@@ -32,34 +33,25 @@ async fn main() -> huggingface_hub::Result<()> {
             .space_sdk("static")
             .exist_ok(true)
             .build(),
-    )
-    .await?;
+    )?;
     println!("\nCreated test space: {}", space.repo_path());
 
-    space
-        .add_secret(&SpaceSecretParams::builder().key("EXAMPLE_SECRET").value("secret-value").build())
-        .await?;
+    space.add_secret(&SpaceSecretParams::builder().key("EXAMPLE_SECRET").value("secret-value").build())?;
     println!("Added secret: EXAMPLE_SECRET");
 
-    space
-        .delete_secret(&SpaceSecretDeleteParams::builder().key("EXAMPLE_SECRET").build())
-        .await?;
+    space.delete_secret(&SpaceSecretDeleteParams::builder().key("EXAMPLE_SECRET").build())?;
     println!("Deleted secret: EXAMPLE_SECRET");
 
-    space
-        .add_variable(&SpaceVariableParams::builder().key("EXAMPLE_VAR").value("var-value").build())
-        .await?;
+    space.add_variable(&SpaceVariableParams::builder().key("EXAMPLE_VAR").value("var-value").build())?;
     println!("Added variable: EXAMPLE_VAR");
 
-    space
-        .delete_variable(&SpaceVariableDeleteParams::builder().key("EXAMPLE_VAR").build())
-        .await?;
+    space.delete_variable(&SpaceVariableDeleteParams::builder().key("EXAMPLE_VAR").build())?;
     println!("Deleted variable: EXAMPLE_VAR");
 
-    let paused = space.pause().await?;
+    let paused = space.pause()?;
     println!("Paused space: {paused:?}");
 
-    let restarted = space.restart().await?;
+    let restarted = space.restart()?;
     println!("Restarted space: {restarted:?}");
 
     api.delete_repo(
@@ -68,8 +60,7 @@ async fn main() -> huggingface_hub::Result<()> {
             .repo_type(RepoType::Space)
             .missing_ok(true)
             .build(),
-    )
-    .await?;
+    )?;
     println!("Cleaned up test space");
 
     Ok(())

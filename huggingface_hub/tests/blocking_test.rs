@@ -1,4 +1,6 @@
-//! Integration tests for the synchronous HfApiSync wrapper.
+#![cfg(feature = "blocking")]
+
+//! Integration tests for the synchronous HFClientSync wrapper.
 //!
 //! These mirror a subset of the async integration tests to verify that the
 //! blocking API works correctly end-to-end.
@@ -8,19 +10,34 @@
 //!
 //! Run: HF_TOKEN=hf_xxx cargo test -p huggingface-hub --features blocking --test blocking_test
 
+use huggingface_hub::repository::{
+    RepoCreateBranchParams, RepoCreateCommitParams, RepoDeleteBranchParams, RepoDownloadFileParams,
+    RepoFileExistsParams, RepoGetCommitDiffParams, RepoListCommitsParams, RepoListFilesParams, RepoListRefsParams,
+    RepoListTreeParams, RepoRevisionExistsParams, RepoUploadFileParams, RepoUploadFolderParams,
+};
 use huggingface_hub::types::*;
-use huggingface_hub::{HfApiBuilder, HfApiSync};
+use huggingface_hub::{HFClientBuilder, HFClientSync, RepoInfo, RepoInfoParams};
 
-fn sync_api() -> Option<HfApiSync> {
+fn sync_api() -> Option<HFClientSync> {
     if std::env::var("HF_TOKEN").is_err() {
         return None;
     }
-    let api = HfApiBuilder::new().build().expect("Failed to create HfApi");
-    Some(HfApiSync::from_api(api).expect("Failed to create HfApiSync"))
+    let api = HFClientBuilder::new().build().expect("Failed to create HFClient");
+    Some(HFClientSync::from_api(api).expect("Failed to create HFClientSync"))
 }
 
 fn write_enabled() -> bool {
     std::env::var("HF_TEST_WRITE").ok().is_some_and(|v| v == "1")
+}
+
+/// Split a `"owner/name"` string into an `HFRepositorySync` handle.
+fn repo_handle(api: &HFClientSync, repo_id: &str) -> huggingface_hub::blocking::HFRepositorySync {
+    let parts: Vec<&str> = repo_id.splitn(2, '/').collect();
+    if parts.len() == 2 {
+        api.model(parts[0], parts[1])
+    } else {
+        api.model("", repo_id)
+    }
 }
 
 // --- Repo info ---
@@ -28,42 +45,59 @@ fn write_enabled() -> bool {
 #[test]
 fn test_sync_model_info() {
     let Some(api) = sync_api() else { return };
-    let params = ModelInfoParams::builder().repo_id("gpt2").build();
-    let info = api.model_info(&params).unwrap();
-    assert_eq!(info.id, "openai-community/gpt2");
+    let repo = api.model("openai-community", "gpt2");
+    let info = repo.info(&RepoInfoParams::default()).unwrap();
+    match info {
+        RepoInfo::Model(model) => assert_eq!(model.id, "openai-community/gpt2"),
+        _ => panic!("expected model info"),
+    }
 }
 
 #[test]
 fn test_sync_dataset_info() {
     let Some(api) = sync_api() else { return };
-    let params = DatasetInfoParams::builder().repo_id("rajpurkar/squad").build();
-    let info = api.dataset_info(&params).unwrap();
-    assert!(info.id.contains("squad"));
+    let repo = api.dataset("rajpurkar", "squad");
+    let info = repo.info(&RepoInfoParams::default()).unwrap();
+    match info {
+        RepoInfo::Dataset(dataset) => assert!(dataset.id.contains("squad")),
+        _ => panic!("expected dataset info"),
+    }
+}
+
+#[test]
+fn test_sync_repo_handle_info_and_file_exists() {
+    let Some(api) = sync_api() else { return };
+    let repo = api.model("openai-community", "gpt2");
+
+    let info = repo.info(&RepoInfoParams::default()).unwrap();
+    match info {
+        RepoInfo::Model(model) => assert_eq!(model.id, "openai-community/gpt2"),
+        _ => panic!("expected model info"),
+    }
+
+    let exists = repo
+        .file_exists(&RepoFileExistsParams::builder().filename("config.json").build())
+        .unwrap();
+    assert!(exists);
 }
 
 #[test]
 fn test_sync_repo_exists() {
     let Some(api) = sync_api() else { return };
-    let params = RepoExistsParams::builder().repo_id("gpt2").build();
-    assert!(api.repo_exists(&params).unwrap());
-
-    let params = RepoExistsParams::builder()
-        .repo_id("this-repo-definitely-does-not-exist-12345")
-        .build();
-    assert!(!api.repo_exists(&params).unwrap());
+    assert!(repo_handle(&api, "gpt2").exists().unwrap());
+    assert!(!repo_handle(&api, "this-repo-definitely-does-not-exist-12345").exists().unwrap());
 }
 
 #[test]
 fn test_sync_file_exists() {
     let Some(api) = sync_api() else { return };
-    let params = FileExistsParams::builder().repo_id("gpt2").filename("config.json").build();
-    assert!(api.file_exists(&params).unwrap());
-
-    let params = FileExistsParams::builder()
-        .repo_id("gpt2")
-        .filename("nonexistent_file.xyz")
-        .build();
-    assert!(!api.file_exists(&params).unwrap());
+    let repo = repo_handle(&api, "gpt2");
+    assert!(repo
+        .file_exists(&RepoFileExistsParams::builder().filename("config.json").build())
+        .unwrap());
+    assert!(!repo
+        .file_exists(&RepoFileExistsParams::builder().filename("nonexistent_file.xyz").build())
+        .unwrap());
 }
 
 // --- Listing (stream methods collected to Vec) ---
@@ -88,8 +122,7 @@ fn test_sync_list_datasets() {
 #[test]
 fn test_sync_list_repo_files() {
     let Some(api) = sync_api() else { return };
-    let params = ListRepoFilesParams::builder().repo_id("gpt2").build();
-    let files = api.list_repo_files(&params).unwrap();
+    let files = repo_handle(&api, "gpt2").list_files(&RepoListFilesParams::default()).unwrap();
     assert!(files.contains(&"config.json".to_string()));
     assert!(files.contains(&"README.md".to_string()));
 }
@@ -97,8 +130,7 @@ fn test_sync_list_repo_files() {
 #[test]
 fn test_sync_list_repo_tree() {
     let Some(api) = sync_api() else { return };
-    let params = ListRepoTreeParams::builder().repo_id("gpt2").build();
-    let entries = api.list_repo_tree(&params).unwrap();
+    let entries = repo_handle(&api, "gpt2").list_tree(&RepoListTreeParams::default()).unwrap();
     let has_config = entries
         .iter()
         .any(|e| matches!(e, RepoTreeEntry::File { path, .. } if path == "config.json"));
@@ -108,8 +140,9 @@ fn test_sync_list_repo_tree() {
 #[test]
 fn test_sync_list_repo_commits() {
     let Some(api) = sync_api() else { return };
-    let params = ListRepoCommitsParams::builder().repo_id("gpt2").build();
-    let commits = api.list_repo_commits(&params).unwrap();
+    let commits = repo_handle(&api, "gpt2")
+        .list_commits(&RepoListCommitsParams::default())
+        .unwrap();
     assert!(!commits.is_empty());
     assert!(!commits[0].id.is_empty());
     assert!(!commits[0].title.is_empty());
@@ -120,8 +153,7 @@ fn test_sync_list_repo_commits() {
 #[test]
 fn test_sync_list_repo_refs() {
     let Some(api) = sync_api() else { return };
-    let params = ListRepoRefsParams::builder().repo_id("gpt2").build();
-    let refs = api.list_repo_refs(&params).unwrap();
+    let refs = repo_handle(&api, "gpt2").list_refs(&RepoListRefsParams::default()).unwrap();
     assert!(!refs.branches.is_empty());
     assert!(refs.branches.iter().any(|b| b.name == "main"));
 }
@@ -129,14 +161,13 @@ fn test_sync_list_repo_refs() {
 #[test]
 fn test_sync_revision_exists() {
     let Some(api) = sync_api() else { return };
-    let params = RevisionExistsParams::builder().repo_id("gpt2").revision("main").build();
-    assert!(api.revision_exists(&params).unwrap());
-
-    let params = RevisionExistsParams::builder()
-        .repo_id("gpt2")
-        .revision("nonexistent-branch-xyz")
-        .build();
-    assert!(!api.revision_exists(&params).unwrap());
+    let repo = repo_handle(&api, "gpt2");
+    assert!(repo
+        .revision_exists(&RepoRevisionExistsParams::builder().revision("main").build())
+        .unwrap());
+    assert!(!repo
+        .revision_exists(&RepoRevisionExistsParams::builder().revision("nonexistent-branch-xyz").build())
+        .unwrap());
 }
 
 // --- Download ---
@@ -145,12 +176,11 @@ fn test_sync_revision_exists() {
 fn test_sync_download_file() {
     let Some(api) = sync_api() else { return };
     let dir = tempfile::tempdir().unwrap();
-    let params = DownloadFileParams::builder()
-        .repo_id("gpt2")
+    let params = RepoDownloadFileParams::builder()
         .filename("config.json")
         .local_dir(dir.path().to_path_buf())
         .build();
-    let path = api.download_file(&params).unwrap();
+    let path = repo_handle(&api, "gpt2").download_file(&params).unwrap();
     assert!(path.exists());
     let content = std::fs::read_to_string(&path).unwrap();
     let json: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -189,21 +219,21 @@ fn test_sync_get_organization_overview() {
 #[test]
 fn test_sync_list_user_followers() {
     let Some(api) = sync_api() else { return };
-    let followers = api.list_user_followers("julien-c").unwrap();
+    let followers = api.list_user_followers("julien-c", None).unwrap();
     assert!(!followers.is_empty());
 }
 
 #[test]
 fn test_sync_list_user_following() {
     let Some(api) = sync_api() else { return };
-    let following = api.list_user_following("julien-c").unwrap();
+    let following = api.list_user_following("julien-c", None).unwrap();
     assert!(!following.is_empty());
 }
 
 #[test]
 fn test_sync_list_organization_members() {
     let Some(api) = sync_api() else { return };
-    let members = api.list_organization_members("huggingface").unwrap();
+    let members = api.list_organization_members("huggingface", None).unwrap();
     assert!(!members.is_empty());
 }
 
@@ -212,27 +242,27 @@ fn test_sync_list_organization_members() {
 #[test]
 fn test_sync_get_commit_diff() {
     let Some(api) = sync_api() else { return };
-    let commits_params = ListRepoCommitsParams::builder().repo_id("openai-community/gpt2").build();
-    let commits = api.list_repo_commits(&commits_params).unwrap();
+    let gpt2 = repo_handle(&api, "openai-community/gpt2");
+    let commits = gpt2.list_commits(&RepoListCommitsParams::default()).unwrap();
     assert!(commits.len() >= 2);
 
-    let params = GetCommitDiffParams::builder()
-        .repo_id("openai-community/gpt2")
-        .compare(format!("{}..{}", commits[1].id, commits[0].id))
-        .build();
-    let diff = api.get_commit_diff(&params).unwrap();
+    let diff = gpt2
+        .get_commit_diff(
+            &RepoGetCommitDiffParams::builder()
+                .compare(format!("{}..{}", commits[1].id, commits[0].id))
+                .build(),
+        )
+        .unwrap();
     assert!(!diff.is_empty());
 }
 
 // --- Write operations ---
 
 fn uuid_v4_short() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-    format!("{:x}{:x}", t.as_secs(), t.subsec_nanos())
+    format!("{:016x}", rand::random::<u64>())
 }
 
-fn create_test_repo(api: &HfApiSync) -> String {
+fn create_test_repo(api: &HFClientSync) -> String {
     let whoami = api.whoami().expect("whoami failed");
     let repo_id = format!("{}/huggingface-hub-rust-sync-test-{}", whoami.username, uuid_v4_short());
     let params = CreateRepoParams::builder()
@@ -242,18 +272,22 @@ fn create_test_repo(api: &HfApiSync) -> String {
         .build();
     api.create_repo(&params).expect("create_repo failed");
 
-    let params = UploadFileParams::builder()
-        .repo_id(&repo_id)
-        .source(AddSource::Bytes(b"initial content".to_vec()))
-        .path_in_repo("README.md")
-        .commit_message("initial commit")
-        .build();
-    api.upload_file(&params).expect("seed upload failed");
+    let parts: Vec<&str> = repo_id.splitn(2, '/').collect();
+    let test_repo = api.model(parts[0], parts[1]);
+    test_repo
+        .upload_file(
+            &RepoUploadFileParams::builder()
+                .source(AddSource::Bytes(b"initial content".to_vec()))
+                .path_in_repo("README.md")
+                .commit_message("initial commit")
+                .build(),
+        )
+        .expect("seed upload failed");
 
     repo_id
 }
 
-fn delete_test_repo(api: &HfApiSync, repo_id: &str) {
+fn delete_test_repo(api: &HFClientSync, repo_id: &str) {
     let params = DeleteRepoParams::builder().repo_id(repo_id).build();
     let _ = api.delete_repo(&params);
 }
@@ -276,17 +310,23 @@ fn test_sync_create_and_delete_repo() {
     let url = api.create_repo(&params).unwrap();
     assert!(url.url.contains(&repo_id));
 
-    let params = UploadFileParams::builder()
-        .repo_id(&repo_id)
-        .source(AddSource::Bytes(b"hello world".to_vec()))
-        .path_in_repo("test.txt")
-        .commit_message("test upload")
-        .build();
-    let commit = api.upload_file(&params).unwrap();
+    let parts: Vec<&str> = repo_id.splitn(2, '/').collect();
+    let test_repo = api.model(parts[0], parts[1]);
+
+    let commit = test_repo
+        .upload_file(
+            &RepoUploadFileParams::builder()
+                .source(AddSource::Bytes(b"hello world".to_vec()))
+                .path_in_repo("test.txt")
+                .commit_message("test upload")
+                .build(),
+        )
+        .unwrap();
     assert!(commit.commit_oid.is_some());
 
-    let params = FileExistsParams::builder().repo_id(&repo_id).filename("test.txt").build();
-    assert!(api.file_exists(&params).unwrap());
+    assert!(test_repo
+        .file_exists(&RepoFileExistsParams::builder().filename("test.txt").build())
+        .unwrap());
 
     let params = DeleteRepoParams::builder().repo_id(&repo_id).build();
     api.delete_repo(&params).unwrap();
@@ -299,26 +339,29 @@ fn test_sync_create_commit() {
         return;
     }
     let repo_id = create_test_repo(&api);
+    let parts: Vec<&str> = repo_id.splitn(2, '/').collect();
+    let test_repo = api.model(parts[0], parts[1]);
 
-    let params = CreateCommitParams::builder()
-        .repo_id(&repo_id)
-        .operations(vec![
-            CommitOperation::Add {
-                path_in_repo: "file_a.txt".to_string(),
-                source: AddSource::Bytes(b"content a".to_vec()),
-            },
-            CommitOperation::Add {
-                path_in_repo: "file_b.txt".to_string(),
-                source: AddSource::Bytes(b"content b".to_vec()),
-            },
-        ])
-        .commit_message("add two files")
-        .build();
-    let commit = api.create_commit(&params).unwrap();
+    let commit = test_repo
+        .create_commit(
+            &RepoCreateCommitParams::builder()
+                .operations(vec![
+                    CommitOperation::Add {
+                        path_in_repo: "file_a.txt".to_string(),
+                        source: AddSource::Bytes(b"content a".to_vec()),
+                    },
+                    CommitOperation::Add {
+                        path_in_repo: "file_b.txt".to_string(),
+                        source: AddSource::Bytes(b"content b".to_vec()),
+                    },
+                ])
+                .commit_message("add two files")
+                .build(),
+        )
+        .unwrap();
     assert!(commit.commit_oid.is_some());
 
-    let files_params = ListRepoFilesParams::builder().repo_id(&repo_id).build();
-    let files = api.list_repo_files(&files_params).unwrap();
+    let files = test_repo.list_files(&RepoListFilesParams::default()).unwrap();
     assert!(files.contains(&"file_a.txt".to_string()));
     assert!(files.contains(&"file_b.txt".to_string()));
 
@@ -332,22 +375,25 @@ fn test_sync_upload_folder() {
         return;
     }
     let repo_id = create_test_repo(&api);
+    let parts: Vec<&str> = repo_id.splitn(2, '/').collect();
+    let test_repo = api.model(parts[0], parts[1]);
 
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("hello.txt"), "hello").unwrap();
     std::fs::create_dir_all(dir.path().join("subdir")).unwrap();
     std::fs::write(dir.path().join("subdir/nested.txt"), "nested").unwrap();
 
-    let params = UploadFolderParams::builder()
-        .repo_id(&repo_id)
-        .folder_path(dir.path().to_path_buf())
-        .commit_message("upload folder")
-        .build();
-    let commit = api.upload_folder(&params).unwrap();
+    let commit = test_repo
+        .upload_folder(
+            &RepoUploadFolderParams::builder()
+                .folder_path(dir.path().to_path_buf())
+                .commit_message("upload folder")
+                .build(),
+        )
+        .unwrap();
     assert!(commit.commit_oid.is_some());
 
-    let files_params = ListRepoFilesParams::builder().repo_id(&repo_id).build();
-    let files = api.list_repo_files(&files_params).unwrap();
+    let files = test_repo.list_files(&RepoListFilesParams::default()).unwrap();
     assert!(files.contains(&"hello.txt".to_string()));
     assert!(files.contains(&"subdir/nested.txt".to_string()));
 
@@ -361,18 +407,21 @@ fn test_sync_branch_operations() {
         return;
     }
     let repo_id = create_test_repo(&api);
+    let parts: Vec<&str> = repo_id.splitn(2, '/').collect();
+    let test_repo = api.model(parts[0], parts[1]);
 
-    let create_params = CreateBranchParams::builder().repo_id(&repo_id).branch("test-branch").build();
-    api.create_branch(&create_params).unwrap();
+    test_repo
+        .create_branch(&RepoCreateBranchParams::builder().branch("test-branch").build())
+        .unwrap();
 
-    let refs_params = ListRepoRefsParams::builder().repo_id(&repo_id).build();
-    let refs = api.list_repo_refs(&refs_params).unwrap();
+    let refs = test_repo.list_refs(&RepoListRefsParams::default()).unwrap();
     assert!(refs.branches.iter().any(|b| b.name == "test-branch"));
 
-    let delete_params = DeleteBranchParams::builder().repo_id(&repo_id).branch("test-branch").build();
-    api.delete_branch(&delete_params).unwrap();
+    test_repo
+        .delete_branch(&RepoDeleteBranchParams::builder().branch("test-branch").build())
+        .unwrap();
 
-    let refs = api.list_repo_refs(&refs_params).unwrap();
+    let refs = test_repo.list_refs(&RepoListRefsParams::default()).unwrap();
     assert!(!refs.branches.iter().any(|b| b.name == "test-branch"));
 
     delete_test_repo(&api, &repo_id);

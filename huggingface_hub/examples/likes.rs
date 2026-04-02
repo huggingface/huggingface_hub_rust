@@ -4,11 +4,12 @@
 //! Run: cargo run -p huggingface-hub --features likes --example likes
 
 use futures::StreamExt;
-use huggingface_hub::{HfApi, LikeParams, ListLikedReposParams, ListRepoLikersParams};
+use huggingface_hub::{HFClient, ListLikedReposParams};
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
-    let api = HfApi::new()?;
+    let api = HFClient::new()?;
+    let repo = api.model("openai-community", "gpt2");
 
     let user = api.whoami().await?;
     let liked = api
@@ -19,7 +20,7 @@ async fn main() -> huggingface_hub::Result<()> {
         println!("  - {:?}", repo);
     }
 
-    let likers_stream = api.list_repo_likers(&ListRepoLikersParams::builder().repo_id("gpt2").build());
+    let likers_stream = repo.list_likers(None)?;
     futures::pin_mut!(likers_stream);
     println!("\nLikers of gpt2:");
     let mut count = 0;
@@ -31,10 +32,10 @@ async fn main() -> huggingface_hub::Result<()> {
         }
     }
 
-    api.like(&LikeParams::builder().repo_id("gpt2").build()).await?;
+    repo.like().await?;
     println!("\nLiked gpt2");
 
-    api.unlike(&LikeParams::builder().repo_id("gpt2").build()).await?;
+    repo.unlike().await?;
     println!("Unliked gpt2");
 
     Ok(())

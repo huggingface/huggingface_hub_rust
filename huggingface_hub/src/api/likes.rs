@@ -1,28 +1,61 @@
 use futures::Stream;
 use url::Url;
 
-use crate::client::HfApi;
+use crate::client::HFClient;
 use crate::constants;
 use crate::error::Result;
-use crate::types::{LikeParams, LikedRepo, ListLikedReposParams, ListRepoLikersParams, User};
+use crate::types::{LikedRepo, ListLikedReposParams, User};
 
-impl HfApi {
-    pub async fn like(&self, params: &LikeParams) -> Result<()> {
-        let url = format!("{}/like", self.api_url(params.repo_type, &params.repo_id));
-        let response = self.inner.client.post(&url).headers(self.auth_headers()).send().await?;
-        self.check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
+impl crate::repository::HFRepository {
+    /// Like this repository.
+    pub async fn like(&self) -> Result<()> {
+        let repo_path = self.repo_path();
+        let url = format!("{}/like", self.client.api_url(Some(self.repo_type), &repo_path));
+        let response = self
+            .client
+            .inner
+            .client
+            .post(&url)
+            .headers(self.client.auth_headers())
+            .send()
+            .await?;
+        self.client
+            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(())
     }
 
-    pub async fn unlike(&self, params: &LikeParams) -> Result<()> {
-        let url = format!("{}/like", self.api_url(params.repo_type, &params.repo_id));
-        let response = self.inner.client.delete(&url).headers(self.auth_headers()).send().await?;
-        self.check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
+    /// Unlike this repository.
+    pub async fn unlike(&self) -> Result<()> {
+        let repo_path = self.repo_path();
+        let url = format!("{}/like", self.client.api_url(Some(self.repo_type), &repo_path));
+        let response = self
+            .client
+            .inner
+            .client
+            .delete(&url)
+            .headers(self.client.auth_headers())
+            .send()
+            .await?;
+        self.client
+            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(())
     }
 
+    /// Stream users who have liked this repository.
+    ///
+    /// Returns `Result<impl Stream<Item = Result<User>>>`. Pass `max_items` to cap the total
+    /// number of users yielded.
+    pub fn list_likers(&self, max_items: Option<usize>) -> Result<impl Stream<Item = Result<User>> + '_> {
+        let segment = constants::repo_type_api_segment(Some(self.repo_type));
+        let url_str = format!("{}/api/{}/{}/likers", self.client.inner.endpoint, segment, self.repo_path());
+        let url = Url::parse(&url_str)?;
+        Ok(self.client.paginate(url, vec![], max_items))
+    }
+}
+
+impl HFClient {
     pub async fn list_liked_repos(&self, params: &ListLikedReposParams) -> Result<Vec<LikedRepo>> {
         let url = format!("{}/api/users/{}/likes", self.inner.endpoint, params.username);
         let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;
@@ -31,25 +64,10 @@ impl HfApi {
             .await?;
         Ok(response.json().await?)
     }
-
-    pub fn list_repo_likers(&self, params: &ListRepoLikersParams) -> impl Stream<Item = Result<User>> + '_ {
-        let segment = constants::repo_type_api_segment(params.repo_type);
-        let url_str = format!("{}/api/{}/{}/likers", self.inner.endpoint, segment, params.repo_id);
-        let url = Url::parse(&url_str).unwrap();
-        self.paginate(url, vec![])
-    }
 }
 
 sync_api! {
     impl HfApiSync {
-        fn like(&self, params: &LikeParams) -> Result<()>;
-        fn unlike(&self, params: &LikeParams) -> Result<()>;
         fn list_liked_repos(&self, params: &ListLikedReposParams) -> Result<Vec<LikedRepo>>;
-    }
-}
-
-sync_api_stream! {
-    impl HfApiSync {
-        fn list_repo_likers(&self, params: &ListRepoLikersParams) -> User;
     }
 }
