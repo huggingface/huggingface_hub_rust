@@ -4,8 +4,7 @@
 //! Read-only operations require no auth.
 //! Run: cargo run -p huggingface-hub --example repo_handles
 
-use huggingface_hub::types::FileExistsParams;
-use huggingface_hub::{HFClient, HFSpace, RepoInfo, RepoInfoParams, RepoType};
+use huggingface_hub::{HFClient, HFSpace, RepoFileExistsParams, RepoInfo, RepoInfoParams, RepoType};
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
@@ -25,12 +24,7 @@ async fn main() -> huggingface_hub::Result<()> {
     }
 
     let config_exists = model
-        .file_exists(
-            &FileExistsParams::builder()
-                .repo_id(model.repo_path())
-                .filename("config.json")
-                .build(),
-        )
+        .file_exists(&RepoFileExistsParams::builder().filename("config.json").build())
         .await?;
     println!("config.json exists on {}: {config_exists}", model.repo_path());
 

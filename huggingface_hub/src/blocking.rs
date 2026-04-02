@@ -214,20 +214,11 @@ impl HFRepositorySync {
     }
 
     pub fn revision_exists(&self, params: &repo::RepoRevisionExistsParams) -> Result<bool> {
-        self.runtime.block_on(self.inner.revision_exists(&types::RevisionExistsParams {
-            repo_id: self.inner.repo_path(),
-            revision: params.revision.clone(),
-            repo_type: Some(self.inner.repo_type()),
-        }))
+        self.runtime.block_on(self.inner.revision_exists(params))
     }
 
     pub fn file_exists(&self, params: &repo::RepoFileExistsParams) -> Result<bool> {
-        self.runtime.block_on(self.inner.file_exists(&types::FileExistsParams {
-            repo_id: self.inner.repo_path(),
-            filename: params.filename.clone(),
-            revision: params.revision.clone(),
-            repo_type: Some(self.inner.repo_type()),
-        }))
+        self.runtime.block_on(self.inner.file_exists(params))
     }
 
     pub fn list_files(&self, params: &repo::RepoListFilesParams) -> Result<Vec<String>> {
@@ -239,24 +230,11 @@ impl HFRepositorySync {
     }
 
     pub fn get_paths_info(&self, params: &repo::RepoGetPathsInfoParams) -> Result<Vec<types::RepoTreeEntry>> {
-        self.runtime.block_on(self.inner.get_paths_info(&types::GetPathsInfoParams {
-            repo_id: self.inner.repo_path(),
-            paths: params.paths.clone(),
-            revision: params.revision.clone(),
-            repo_type: Some(self.inner.repo_type()),
-        }))
+        self.runtime.block_on(self.inner.get_paths_info(params))
     }
 
     pub fn download_file(&self, params: &repo::RepoDownloadFileParams) -> Result<std::path::PathBuf> {
-        self.runtime.block_on(self.inner.download_file(&types::DownloadFileParams {
-            repo_id: self.inner.repo_path(),
-            filename: params.filename.clone(),
-            local_dir: params.local_dir.clone(),
-            repo_type: Some(self.inner.repo_type()),
-            revision: self.inner.resolve_revision(params.revision.as_deref()),
-            force_download: params.force_download,
-            local_files_only: params.local_files_only,
-        }))
+        self.runtime.block_on(self.inner.download_file(params))
     }
 
     pub fn download_file_stream(
@@ -264,15 +242,7 @@ impl HFRepositorySync {
         params: &repo::RepoDownloadFileStreamParams,
     ) -> Result<(Option<u64>, Vec<bytes::Bytes>)> {
         self.runtime.block_on(async {
-            let (content_length, stream) = self
-                .inner
-                .download_file_stream(&types::DownloadFileStreamParams {
-                    repo_id: self.inner.repo_path(),
-                    filename: params.filename.clone(),
-                    repo_type: Some(self.inner.repo_type()),
-                    revision: self.inner.resolve_revision(params.revision.as_deref()),
-                })
-                .await?;
+            let (content_length, stream) = self.inner.download_file_stream(params).await?;
             futures::pin_mut!(stream);
             let mut chunks = Vec::new();
             while let Some(chunk) = stream.next().await {
@@ -283,83 +253,27 @@ impl HFRepositorySync {
     }
 
     pub fn snapshot_download(&self, params: &repo::RepoSnapshotDownloadParams) -> Result<std::path::PathBuf> {
-        self.runtime
-            .block_on(self.inner.snapshot_download(&types::SnapshotDownloadParams {
-                repo_id: self.inner.repo_path(),
-                repo_type: Some(self.inner.repo_type()),
-                revision: self.inner.resolve_revision(params.revision.as_deref()),
-                allow_patterns: params.allow_patterns.clone(),
-                ignore_patterns: params.ignore_patterns.clone(),
-                local_dir: params.local_dir.clone(),
-                force_download: params.force_download,
-                local_files_only: params.local_files_only,
-                max_workers: params.max_workers,
-            }))
+        self.runtime.block_on(self.inner.snapshot_download(params))
     }
 
     pub fn create_commit(&self, params: &repo::RepoCreateCommitParams) -> Result<types::CommitInfo> {
-        self.runtime.block_on(self.inner.create_commit(&types::CreateCommitParams {
-            repo_id: self.inner.repo_path(),
-            operations: params.operations.clone(),
-            commit_message: params.commit_message.clone(),
-            commit_description: params.commit_description.clone(),
-            repo_type: Some(self.inner.repo_type()),
-            revision: self.inner.resolve_revision(params.revision.as_deref()),
-            create_pr: params.create_pr,
-            parent_commit: params.parent_commit.clone(),
-        }))
+        self.runtime.block_on(self.inner.create_commit(params))
     }
 
     pub fn upload_file(&self, params: &repo::RepoUploadFileParams) -> Result<types::CommitInfo> {
-        self.runtime.block_on(self.inner.upload_file(&types::UploadFileParams {
-            repo_id: self.inner.repo_path(),
-            source: params.source.clone(),
-            path_in_repo: params.path_in_repo.clone(),
-            repo_type: Some(self.inner.repo_type()),
-            revision: self.inner.resolve_revision(params.revision.as_deref()),
-            commit_message: params.commit_message.clone(),
-            commit_description: params.commit_description.clone(),
-            create_pr: params.create_pr,
-            parent_commit: params.parent_commit.clone(),
-        }))
+        self.runtime.block_on(self.inner.upload_file(params))
     }
 
     pub fn upload_folder(&self, params: &repo::RepoUploadFolderParams) -> Result<types::CommitInfo> {
-        self.runtime.block_on(self.inner.upload_folder(&types::UploadFolderParams {
-            repo_id: self.inner.repo_path(),
-            folder_path: params.folder_path.clone(),
-            path_in_repo: params.path_in_repo.clone(),
-            repo_type: Some(self.inner.repo_type()),
-            revision: self.inner.resolve_revision(params.revision.as_deref()),
-            commit_message: params.commit_message.clone(),
-            commit_description: params.commit_description.clone(),
-            create_pr: params.create_pr,
-            allow_patterns: params.allow_patterns.clone(),
-            ignore_patterns: params.ignore_patterns.clone(),
-            delete_patterns: params.delete_patterns.clone(),
-        }))
+        self.runtime.block_on(self.inner.upload_folder(params))
     }
 
     pub fn delete_file(&self, params: &repo::RepoDeleteFileParams) -> Result<types::CommitInfo> {
-        self.runtime.block_on(self.inner.delete_file(&types::DeleteFileParams {
-            repo_id: self.inner.repo_path(),
-            path_in_repo: params.path_in_repo.clone(),
-            repo_type: Some(self.inner.repo_type()),
-            revision: self.inner.resolve_revision(params.revision.as_deref()),
-            commit_message: params.commit_message.clone(),
-            create_pr: params.create_pr,
-        }))
+        self.runtime.block_on(self.inner.delete_file(params))
     }
 
     pub fn delete_folder(&self, params: &repo::RepoDeleteFolderParams) -> Result<types::CommitInfo> {
-        self.runtime.block_on(self.inner.delete_folder(&types::DeleteFolderParams {
-            repo_id: self.inner.repo_path(),
-            path_in_repo: params.path_in_repo.clone(),
-            repo_type: Some(self.inner.repo_type()),
-            revision: self.inner.resolve_revision(params.revision.as_deref()),
-            commit_message: params.commit_message.clone(),
-            create_pr: params.create_pr,
-        }))
+        self.runtime.block_on(self.inner.delete_folder(params))
     }
 
     pub fn list_commits(&self, params: &repo::RepoListCommitsParams) -> Result<Vec<types::GitCommitInfo>> {
@@ -413,13 +327,7 @@ impl HFRepositorySync {
 
     #[cfg(feature = "discussions")]
     pub fn create_discussion(&self, params: &repo::RepoCreateDiscussionParams) -> Result<types::DiscussionWithDetails> {
-        self.runtime
-            .block_on(self.inner.create_discussion(&types::CreateDiscussionParams {
-                repo_id: self.inner.repo_path(),
-                title: params.title.clone(),
-                description: params.description.clone(),
-                repo_type: Some(self.inner.repo_type()),
-            }))
+        self.runtime.block_on(self.inner.create_discussion(params))
     }
 
     #[cfg(feature = "discussions")]
@@ -427,24 +335,12 @@ impl HFRepositorySync {
         &self,
         params: &repo::RepoCreatePullRequestParams,
     ) -> Result<types::DiscussionWithDetails> {
-        self.runtime
-            .block_on(self.inner.create_pull_request(&types::CreatePullRequestParams {
-                repo_id: self.inner.repo_path(),
-                title: params.title.clone(),
-                description: params.description.clone(),
-                repo_type: Some(self.inner.repo_type()),
-            }))
+        self.runtime.block_on(self.inner.create_pull_request(params))
     }
 
     #[cfg(feature = "discussions")]
     pub fn comment_discussion(&self, params: &repo::RepoCommentDiscussionParams) -> Result<types::DiscussionComment> {
-        self.runtime
-            .block_on(self.inner.comment_discussion(&types::CommentDiscussionParams {
-                repo_id: self.inner.repo_path(),
-                discussion_num: params.discussion_num,
-                comment: params.comment.clone(),
-                repo_type: Some(self.inner.repo_type()),
-            }))
+        self.runtime.block_on(self.inner.comment_discussion(params))
     }
 
     #[cfg(feature = "discussions")]
@@ -452,14 +348,7 @@ impl HFRepositorySync {
         &self,
         params: &repo::RepoEditDiscussionCommentParams,
     ) -> Result<types::DiscussionComment> {
-        self.runtime
-            .block_on(self.inner.edit_discussion_comment(&types::EditDiscussionCommentParams {
-                repo_id: self.inner.repo_path(),
-                discussion_num: params.discussion_num,
-                comment_id: params.comment_id.clone(),
-                new_content: params.new_content.clone(),
-                repo_type: Some(self.inner.repo_type()),
-            }))
+        self.runtime.block_on(self.inner.edit_discussion_comment(params))
     }
 
     #[cfg(feature = "discussions")]
@@ -467,24 +356,12 @@ impl HFRepositorySync {
         &self,
         params: &repo::RepoHideDiscussionCommentParams,
     ) -> Result<types::DiscussionComment> {
-        self.runtime
-            .block_on(self.inner.hide_discussion_comment(&types::HideDiscussionCommentParams {
-                repo_id: self.inner.repo_path(),
-                discussion_num: params.discussion_num,
-                comment_id: params.comment_id.clone(),
-                repo_type: Some(self.inner.repo_type()),
-            }))
+        self.runtime.block_on(self.inner.hide_discussion_comment(params))
     }
 
     #[cfg(feature = "discussions")]
     pub fn rename_discussion(&self, params: &repo::RepoRenameDiscussionParams) -> Result<types::DiscussionWithDetails> {
-        self.runtime
-            .block_on(self.inner.rename_discussion(&types::RenameDiscussionParams {
-                repo_id: self.inner.repo_path(),
-                discussion_num: params.discussion_num,
-                new_title: params.new_title.clone(),
-                repo_type: Some(self.inner.repo_type()),
-            }))
+        self.runtime.block_on(self.inner.rename_discussion(params))
     }
 
     #[cfg(feature = "discussions")]
@@ -492,13 +369,7 @@ impl HFRepositorySync {
         &self,
         params: &repo::RepoChangeDiscussionStatusParams,
     ) -> Result<types::DiscussionWithDetails> {
-        self.runtime
-            .block_on(self.inner.change_discussion_status(&types::ChangeDiscussionStatusParams {
-                repo_id: self.inner.repo_path(),
-                discussion_num: params.discussion_num,
-                new_status: params.new_status.clone(),
-                repo_type: Some(self.inner.repo_type()),
-            }))
+        self.runtime.block_on(self.inner.change_discussion_status(params))
     }
 
     #[cfg(feature = "discussions")]
@@ -506,94 +377,52 @@ impl HFRepositorySync {
         &self,
         params: &repo::RepoMergePullRequestParams,
     ) -> Result<types::DiscussionWithDetails> {
-        self.runtime
-            .block_on(self.inner.merge_pull_request(&types::MergePullRequestParams {
-                repo_id: self.inner.repo_path(),
-                discussion_num: params.discussion_num,
-                repo_type: Some(self.inner.repo_type()),
-            }))
+        self.runtime.block_on(self.inner.merge_pull_request(params))
     }
 
     #[cfg(feature = "access_requests")]
     pub fn list_pending_access_requests(&self) -> Result<Vec<types::AccessRequest>> {
-        self.runtime
-            .block_on(self.inner.list_pending_access_requests(&types::ListAccessRequestsParams {
-                repo_id: self.inner.repo_path(),
-                repo_type: Some(self.inner.repo_type()),
-            }))
+        self.runtime.block_on(self.inner.list_pending_access_requests())
     }
 
     #[cfg(feature = "access_requests")]
     pub fn list_accepted_access_requests(&self) -> Result<Vec<types::AccessRequest>> {
-        self.runtime
-            .block_on(self.inner.list_accepted_access_requests(&types::ListAccessRequestsParams {
-                repo_id: self.inner.repo_path(),
-                repo_type: Some(self.inner.repo_type()),
-            }))
+        self.runtime.block_on(self.inner.list_accepted_access_requests())
     }
 
     #[cfg(feature = "access_requests")]
     pub fn list_rejected_access_requests(&self) -> Result<Vec<types::AccessRequest>> {
-        self.runtime
-            .block_on(self.inner.list_rejected_access_requests(&types::ListAccessRequestsParams {
-                repo_id: self.inner.repo_path(),
-                repo_type: Some(self.inner.repo_type()),
-            }))
+        self.runtime.block_on(self.inner.list_rejected_access_requests())
     }
 
     #[cfg(feature = "access_requests")]
     pub fn accept_access_request(&self, params: &repo::RepoAccessRequestUserParams) -> Result<()> {
-        self.runtime
-            .block_on(self.inner.accept_access_request(&types::HandleAccessRequestParams {
-                repo_id: self.inner.repo_path(),
-                user: params.user.clone(),
-                repo_type: Some(self.inner.repo_type()),
-            }))
+        self.runtime.block_on(self.inner.accept_access_request(params))
     }
 
     #[cfg(feature = "access_requests")]
     pub fn reject_access_request(&self, params: &repo::RepoAccessRequestUserParams) -> Result<()> {
-        self.runtime
-            .block_on(self.inner.reject_access_request(&types::HandleAccessRequestParams {
-                repo_id: self.inner.repo_path(),
-                user: params.user.clone(),
-                repo_type: Some(self.inner.repo_type()),
-            }))
+        self.runtime.block_on(self.inner.reject_access_request(params))
     }
 
     #[cfg(feature = "access_requests")]
     pub fn cancel_access_request(&self, params: &repo::RepoAccessRequestUserParams) -> Result<()> {
-        self.runtime
-            .block_on(self.inner.cancel_access_request(&types::HandleAccessRequestParams {
-                repo_id: self.inner.repo_path(),
-                user: params.user.clone(),
-                repo_type: Some(self.inner.repo_type()),
-            }))
+        self.runtime.block_on(self.inner.cancel_access_request(params))
     }
 
     #[cfg(feature = "access_requests")]
     pub fn grant_access(&self, params: &repo::RepoAccessRequestUserParams) -> Result<()> {
-        self.runtime.block_on(self.inner.grant_access(&types::GrantAccessParams {
-            repo_id: self.inner.repo_path(),
-            user: params.user.clone(),
-            repo_type: Some(self.inner.repo_type()),
-        }))
+        self.runtime.block_on(self.inner.grant_access(params))
     }
 
     #[cfg(feature = "likes")]
     pub fn like(&self) -> Result<()> {
-        self.runtime.block_on(self.inner.like(&types::LikeParams {
-            repo_id: self.inner.repo_path(),
-            repo_type: Some(self.inner.repo_type()),
-        }))
+        self.runtime.block_on(self.inner.like())
     }
 
     #[cfg(feature = "likes")]
     pub fn unlike(&self) -> Result<()> {
-        self.runtime.block_on(self.inner.unlike(&types::LikeParams {
-            repo_id: self.inner.repo_path(),
-            repo_type: Some(self.inner.repo_type()),
-        }))
+        self.runtime.block_on(self.inner.unlike())
     }
 
     #[cfg(feature = "likes")]

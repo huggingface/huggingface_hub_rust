@@ -4,19 +4,18 @@ use url::Url;
 use crate::client::HFClient;
 use crate::constants;
 use crate::error::{HfError, Result};
-use crate::repository::HFRepository;
+use crate::repository::{HFRepository, RepoFileExistsParams, RepoRevisionExistsParams, RepoUpdateSettingsParams};
 use crate::types::{
-    CreateRepoParams, DatasetInfo, DatasetInfoParams, DeleteRepoParams, FileExistsParams, ListDatasetsParams,
-    ListModelsParams, ListSpacesParams, ModelInfo, ModelInfoParams, MoveRepoParams, RepoExistsParams, RepoUrl,
-    RevisionExistsParams, SpaceInfo, SpaceInfoParams, UpdateRepoParams,
+    CreateRepoParams, DatasetInfo, DeleteRepoParams, ListDatasetsParams, ListModelsParams, ListSpacesParams, ModelInfo,
+    MoveRepoParams, RepoUrl, SpaceInfo,
 };
 
 impl HFRepository {
     /// Get info about a model repository.
     /// Endpoint: GET /api/models/{repo_id} or /api/models/{repo_id}/revision/{revision}
-    pub async fn model_info(&self, params: &ModelInfoParams) -> Result<ModelInfo> {
+    pub(crate) async fn model_info(&self, revision: Option<String>) -> Result<ModelInfo> {
         let mut url = self.client.api_url(Some(self.repo_type), &self.repo_path());
-        if let Some(ref revision) = params.revision {
+        if let Some(ref revision) = revision {
             url = format!("{url}/revision/{revision}");
         }
         let response = self
@@ -27,18 +26,19 @@ impl HFRepository {
             .headers(self.client.auth_headers())
             .send()
             .await?;
+        let repo_path = self.repo_path();
         let response = self
             .client
-            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
+            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(response.json().await?)
     }
 
     /// Get info about a dataset repository.
     /// Endpoint: GET /api/datasets/{repo_id} or /api/datasets/{repo_id}/revision/{revision}
-    pub async fn dataset_info(&self, params: &DatasetInfoParams) -> Result<DatasetInfo> {
+    pub(crate) async fn dataset_info(&self, revision: Option<String>) -> Result<DatasetInfo> {
         let mut url = self.client.api_url(Some(self.repo_type), &self.repo_path());
-        if let Some(ref revision) = params.revision {
+        if let Some(ref revision) = revision {
             url = format!("{url}/revision/{revision}");
         }
         let response = self
@@ -49,18 +49,19 @@ impl HFRepository {
             .headers(self.client.auth_headers())
             .send()
             .await?;
+        let repo_path = self.repo_path();
         let response = self
             .client
-            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
+            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(response.json().await?)
     }
 
     /// Get info about a space.
     /// Endpoint: GET /api/spaces/{repo_id} or /api/spaces/{repo_id}/revision/{revision}
-    pub async fn space_info(&self, params: &SpaceInfoParams) -> Result<SpaceInfo> {
+    pub(crate) async fn space_info(&self, revision: Option<String>) -> Result<SpaceInfo> {
         let mut url = self.client.api_url(Some(self.repo_type), &self.repo_path());
-        if let Some(ref revision) = params.revision {
+        if let Some(ref revision) = revision {
             url = format!("{url}/revision/{revision}");
         }
         let response = self
@@ -71,15 +72,16 @@ impl HFRepository {
             .headers(self.client.auth_headers())
             .send()
             .await?;
+        let repo_path = self.repo_path();
         let response = self
             .client
-            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
+            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(response.json().await?)
     }
 
-    /// Check if a repository exists.
-    pub async fn repo_exists(&self, _params: &RepoExistsParams) -> Result<bool> {
+    /// Return `true` if the repository exists and is accessible with the current credentials.
+    pub async fn exists(&self) -> Result<bool> {
         let url = self.client.api_url(Some(self.repo_type), &self.repo_path());
         let response = self
             .client
@@ -105,8 +107,8 @@ impl HFRepository {
         }
     }
 
-    /// Check if a specific revision exists in a repository.
-    pub async fn revision_exists(&self, params: &RevisionExistsParams) -> Result<bool> {
+    /// Return `true` if the given revision (branch, tag, or commit SHA) exists.
+    pub async fn revision_exists(&self, params: &RepoRevisionExistsParams) -> Result<bool> {
         let url =
             format!("{}/revision/{}", self.client.api_url(Some(self.repo_type), &self.repo_path()), params.revision);
         let response = self
@@ -133,10 +135,9 @@ impl HFRepository {
         }
     }
 
-    /// Check if a file exists in a repository by sending a HEAD request
-    /// to the download URL.
-    pub async fn file_exists(&self, params: &FileExistsParams) -> Result<bool> {
-        let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
+    /// Return `true` if the given file exists in the repository at the specified revision.
+    pub async fn file_exists(&self, params: &RepoFileExistsParams) -> Result<bool> {
+        let revision = self.effective_revision(params.revision.as_deref());
         let url = self
             .client
             .download_url(Some(self.repo_type), &self.repo_path(), revision, &params.filename);
@@ -164,9 +165,9 @@ impl HFRepository {
         }
     }
 
-    /// Update repository settings.
+    /// Update repository settings such as visibility, gating policy, or description.
     /// Endpoint: PUT /api/{repo_type}s/{repo_id}/settings
-    pub async fn update_repo_settings(&self, params: &UpdateRepoParams) -> Result<()> {
+    pub async fn update_settings(&self, params: &RepoUpdateSettingsParams) -> Result<()> {
         let url = format!("{}/settings", self.client.api_url(Some(self.repo_type), &self.repo_path()));
         let mut body = serde_json::Map::new();
 
@@ -190,8 +191,9 @@ impl HFRepository {
             .send()
             .await?;
 
+        let repo_path = self.repo_path();
         self.client
-            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
+            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(())
     }

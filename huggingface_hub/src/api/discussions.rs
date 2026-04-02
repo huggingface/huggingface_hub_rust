@@ -1,14 +1,15 @@
 use crate::error::Result;
-use crate::types::{
-    ChangeDiscussionStatusParams, CommentDiscussionParams, CreateDiscussionParams, CreatePullRequestParams,
-    DiscussionComment, DiscussionWithDetails, DiscussionsResponse, EditDiscussionCommentParams,
-    GetDiscussionDetailsParams, GetRepoDiscussionsParams, HideDiscussionCommentParams, MergePullRequestParams,
-    RenameDiscussionParams,
+use crate::repository::{
+    RepoChangeDiscussionStatusParams, RepoCommentDiscussionParams, RepoCreateDiscussionParams,
+    RepoCreatePullRequestParams, RepoDiscussionDetailsParams, RepoEditDiscussionCommentParams,
+    RepoHideDiscussionCommentParams, RepoListDiscussionsParams, RepoMergePullRequestParams, RepoRenameDiscussionParams,
 };
+use crate::types::{DiscussionComment, DiscussionWithDetails, DiscussionsResponse};
 
 impl crate::repository::HFRepository {
-    pub async fn get_repo_discussions(&self, params: &GetRepoDiscussionsParams) -> Result<DiscussionsResponse> {
-        let url = format!("{}/discussions", self.client.api_url(params.repo_type, &params.repo_id));
+    /// List discussions for this repository, with optional filters on author, type, and status.
+    pub async fn list_discussions(&self, params: &RepoListDiscussionsParams) -> Result<DiscussionsResponse> {
+        let url = format!("{}/discussions", self.client.api_url(Some(self.repo_type), &self.repo_path()));
         let mut query: Vec<(String, String)> = Vec::new();
         if let Some(ref author) = params.author {
             query.push(("author".into(), author.clone()));
@@ -28,16 +29,21 @@ impl crate::repository::HFRepository {
             .query(&query)
             .send()
             .await?;
+        let repo_path = self.repo_path();
         let response = self
             .client
-            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
+            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(response.json().await?)
     }
 
-    pub async fn get_discussion_details(&self, params: &GetDiscussionDetailsParams) -> Result<DiscussionWithDetails> {
-        let url =
-            format!("{}/discussions/{}", self.client.api_url(params.repo_type, &params.repo_id), params.discussion_num);
+    /// Fetch the full details and event timeline for a single discussion or pull request.
+    pub async fn discussion_details(&self, params: &RepoDiscussionDetailsParams) -> Result<DiscussionWithDetails> {
+        let url = format!(
+            "{}/discussions/{}",
+            self.client.api_url(Some(self.repo_type), &self.repo_path()),
+            params.discussion_num
+        );
         let response = self
             .client
             .inner
@@ -46,15 +52,16 @@ impl crate::repository::HFRepository {
             .headers(self.client.auth_headers())
             .send()
             .await?;
+        let repo_path = self.repo_path();
         let response = self
             .client
-            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Generic)
+            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Generic)
             .await?;
         Ok(response.json().await?)
     }
 
-    pub async fn create_discussion(&self, params: &CreateDiscussionParams) -> Result<DiscussionWithDetails> {
-        let url = format!("{}/discussions", self.client.api_url(params.repo_type, &params.repo_id));
+    pub async fn create_discussion(&self, params: &RepoCreateDiscussionParams) -> Result<DiscussionWithDetails> {
+        let url = format!("{}/discussions", self.client.api_url(Some(self.repo_type), &self.repo_path()));
         let mut body = serde_json::json!({ "title": params.title });
         if let Some(ref desc) = params.description {
             body["description"] = serde_json::json!(desc);
@@ -68,15 +75,16 @@ impl crate::repository::HFRepository {
             .json(&body)
             .send()
             .await?;
+        let repo_path = self.repo_path();
         let response = self
             .client
-            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
+            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(response.json().await?)
     }
 
-    pub async fn create_pull_request(&self, params: &CreatePullRequestParams) -> Result<DiscussionWithDetails> {
-        let url = format!("{}/discussions", self.client.api_url(params.repo_type, &params.repo_id));
+    pub async fn create_pull_request(&self, params: &RepoCreatePullRequestParams) -> Result<DiscussionWithDetails> {
+        let url = format!("{}/discussions", self.client.api_url(Some(self.repo_type), &self.repo_path()));
         let mut body = serde_json::json!({
             "title": params.title,
             "pullRequest": true,
@@ -93,17 +101,18 @@ impl crate::repository::HFRepository {
             .json(&body)
             .send()
             .await?;
+        let repo_path = self.repo_path();
         let response = self
             .client
-            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
+            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(response.json().await?)
     }
 
-    pub async fn comment_discussion(&self, params: &CommentDiscussionParams) -> Result<DiscussionComment> {
+    pub async fn comment_discussion(&self, params: &RepoCommentDiscussionParams) -> Result<DiscussionComment> {
         let url = format!(
             "{}/discussions/{}/comment",
-            self.client.api_url(params.repo_type, &params.repo_id),
+            self.client.api_url(Some(self.repo_type), &self.repo_path()),
             params.discussion_num
         );
         let body = serde_json::json!({ "comment": params.comment });
@@ -116,17 +125,18 @@ impl crate::repository::HFRepository {
             .json(&body)
             .send()
             .await?;
+        let repo_path = self.repo_path();
         let response = self
             .client
-            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Generic)
+            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Generic)
             .await?;
         Ok(response.json().await?)
     }
 
-    pub async fn edit_discussion_comment(&self, params: &EditDiscussionCommentParams) -> Result<DiscussionComment> {
+    pub async fn edit_discussion_comment(&self, params: &RepoEditDiscussionCommentParams) -> Result<DiscussionComment> {
         let url = format!(
             "{}/discussions/{}/comment/{}/edit",
-            self.client.api_url(params.repo_type, &params.repo_id),
+            self.client.api_url(Some(self.repo_type), &self.repo_path()),
             params.discussion_num,
             params.comment_id
         );
@@ -140,17 +150,18 @@ impl crate::repository::HFRepository {
             .json(&body)
             .send()
             .await?;
+        let repo_path = self.repo_path();
         let response = self
             .client
-            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Generic)
+            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Generic)
             .await?;
         Ok(response.json().await?)
     }
 
-    pub async fn hide_discussion_comment(&self, params: &HideDiscussionCommentParams) -> Result<DiscussionComment> {
+    pub async fn hide_discussion_comment(&self, params: &RepoHideDiscussionCommentParams) -> Result<DiscussionComment> {
         let url = format!(
             "{}/discussions/{}/comment/{}/hide",
-            self.client.api_url(params.repo_type, &params.repo_id),
+            self.client.api_url(Some(self.repo_type), &self.repo_path()),
             params.discussion_num,
             params.comment_id
         );
@@ -162,17 +173,18 @@ impl crate::repository::HFRepository {
             .headers(self.client.auth_headers())
             .send()
             .await?;
+        let repo_path = self.repo_path();
         let response = self
             .client
-            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Generic)
+            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Generic)
             .await?;
         Ok(response.json().await?)
     }
 
-    pub async fn rename_discussion(&self, params: &RenameDiscussionParams) -> Result<DiscussionWithDetails> {
+    pub async fn rename_discussion(&self, params: &RepoRenameDiscussionParams) -> Result<DiscussionWithDetails> {
         let url = format!(
             "{}/discussions/{}/title",
-            self.client.api_url(params.repo_type, &params.repo_id),
+            self.client.api_url(Some(self.repo_type), &self.repo_path()),
             params.discussion_num
         );
         let body = serde_json::json!({ "title": params.new_title });
@@ -185,20 +197,21 @@ impl crate::repository::HFRepository {
             .json(&body)
             .send()
             .await?;
+        let repo_path = self.repo_path();
         let response = self
             .client
-            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Generic)
+            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Generic)
             .await?;
         Ok(response.json().await?)
     }
 
     pub async fn change_discussion_status(
         &self,
-        params: &ChangeDiscussionStatusParams,
+        params: &RepoChangeDiscussionStatusParams,
     ) -> Result<DiscussionWithDetails> {
         let url = format!(
             "{}/discussions/{}/status",
-            self.client.api_url(params.repo_type, &params.repo_id),
+            self.client.api_url(Some(self.repo_type), &self.repo_path()),
             params.discussion_num
         );
         let body = serde_json::json!({ "status": params.new_status });
@@ -211,17 +224,18 @@ impl crate::repository::HFRepository {
             .json(&body)
             .send()
             .await?;
+        let repo_path = self.repo_path();
         let response = self
             .client
-            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Generic)
+            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Generic)
             .await?;
         Ok(response.json().await?)
     }
 
-    pub async fn merge_pull_request(&self, params: &MergePullRequestParams) -> Result<DiscussionWithDetails> {
+    pub async fn merge_pull_request(&self, params: &RepoMergePullRequestParams) -> Result<DiscussionWithDetails> {
         let url = format!(
             "{}/discussions/{}/merge",
-            self.client.api_url(params.repo_type, &params.repo_id),
+            self.client.api_url(Some(self.repo_type), &self.repo_path()),
             params.discussion_num
         );
         let response = self
@@ -232,9 +246,10 @@ impl crate::repository::HFRepository {
             .headers(self.client.auth_headers())
             .send()
             .await?;
+        let repo_path = self.repo_path();
         let response = self
             .client
-            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Generic)
+            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Generic)
             .await?;
         Ok(response.json().await?)
     }

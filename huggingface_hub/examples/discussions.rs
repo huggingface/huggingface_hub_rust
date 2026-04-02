@@ -3,12 +3,10 @@
 //! Requires HF_TOKEN and the "discussions" feature.
 //! Run: cargo run -p huggingface-hub --features discussions --example discussions
 
-use huggingface_hub::types::{
-    ChangeDiscussionStatusParams, CommentDiscussionParams, CreateDiscussionParams, EditDiscussionCommentParams,
-    RenameDiscussionParams,
-};
 use huggingface_hub::{
-    CreateRepoParams, DeleteRepoParams, HFClient, RepoDiscussionDetailsParams, RepoListDiscussionsParams,
+    CreateRepoParams, DeleteRepoParams, HFClient, RepoChangeDiscussionStatusParams, RepoCommentDiscussionParams,
+    RepoCreateDiscussionParams, RepoDiscussionDetailsParams, RepoEditDiscussionCommentParams,
+    RepoListDiscussionsParams, RepoRenameDiscussionParams,
 };
 
 #[tokio::main]
@@ -46,8 +44,7 @@ async fn main() -> huggingface_hub::Result<()> {
 
     let discussion = repo
         .create_discussion(
-            &CreateDiscussionParams::builder()
-                .repo_id(repo.repo_path())
+            &RepoCreateDiscussionParams::builder()
                 .title("Example Discussion")
                 .description("Created by Rust example")
                 .build(),
@@ -57,8 +54,7 @@ async fn main() -> huggingface_hub::Result<()> {
 
     let comment = repo
         .comment_discussion(
-            &CommentDiscussionParams::builder()
-                .repo_id(repo.repo_path())
+            &RepoCommentDiscussionParams::builder()
                 .discussion_num(discussion.num)
                 .comment("This is a test comment")
                 .build(),
@@ -69,8 +65,7 @@ async fn main() -> huggingface_hub::Result<()> {
 
     let edited = repo
         .edit_discussion_comment(
-            &EditDiscussionCommentParams::builder()
-                .repo_id(repo.repo_path())
+            &RepoEditDiscussionCommentParams::builder()
                 .discussion_num(discussion.num)
                 .comment_id(&comment_id)
                 .new_content("Edited test comment")
@@ -81,8 +76,7 @@ async fn main() -> huggingface_hub::Result<()> {
 
     let renamed = repo
         .rename_discussion(
-            &RenameDiscussionParams::builder()
-                .repo_id(repo.repo_path())
+            &RepoRenameDiscussionParams::builder()
                 .discussion_num(discussion.num)
                 .new_title("Renamed Example Discussion")
                 .build(),
@@ -91,8 +85,7 @@ async fn main() -> huggingface_hub::Result<()> {
     println!("Renamed discussion: {:?}", renamed.title);
 
     repo.change_discussion_status(
-        &ChangeDiscussionStatusParams::builder()
-            .repo_id(repo.repo_path())
+        &RepoChangeDiscussionStatusParams::builder()
             .discussion_num(discussion.num)
             .new_status("closed")
             .build(),

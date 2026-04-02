@@ -4,11 +4,13 @@ use url::Url;
 use crate::client::HFClient;
 use crate::constants;
 use crate::error::Result;
-use crate::types::{LikeParams, LikedRepo, ListLikedReposParams, ListRepoLikersParams, User};
+use crate::types::{LikedRepo, ListLikedReposParams, User};
 
 impl crate::repository::HFRepository {
-    pub async fn like(&self, params: &LikeParams) -> Result<()> {
-        let url = format!("{}/like", self.client.api_url(params.repo_type, &params.repo_id));
+    /// Like this repository.
+    pub async fn like(&self) -> Result<()> {
+        let repo_path = self.repo_path();
+        let url = format!("{}/like", self.client.api_url(Some(self.repo_type), &repo_path));
         let response = self
             .client
             .inner
@@ -18,13 +20,15 @@ impl crate::repository::HFRepository {
             .send()
             .await?;
         self.client
-            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
+            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(())
     }
 
-    pub async fn unlike(&self, params: &LikeParams) -> Result<()> {
-        let url = format!("{}/like", self.client.api_url(params.repo_type, &params.repo_id));
+    /// Unlike this repository.
+    pub async fn unlike(&self) -> Result<()> {
+        let repo_path = self.repo_path();
+        let url = format!("{}/like", self.client.api_url(Some(self.repo_type), &repo_path));
         let response = self
             .client
             .inner
@@ -34,16 +38,20 @@ impl crate::repository::HFRepository {
             .send()
             .await?;
         self.client
-            .check_response(response, Some(&params.repo_id), crate::error::NotFoundContext::Repo)
+            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(())
     }
 
-    pub fn list_repo_likers(&self, params: &ListRepoLikersParams) -> Result<impl Stream<Item = Result<User>> + '_> {
-        let segment = constants::repo_type_api_segment(params.repo_type);
-        let url_str = format!("{}/api/{}/{}/likers", self.client.inner.endpoint, segment, params.repo_id);
+    /// Stream users who have liked this repository.
+    ///
+    /// Returns `Result<impl Stream<Item = Result<User>>>`. Pass `max_items` to cap the total
+    /// number of users yielded.
+    pub fn list_likers(&self, max_items: Option<usize>) -> Result<impl Stream<Item = Result<User>> + '_> {
+        let segment = constants::repo_type_api_segment(Some(self.repo_type));
+        let url_str = format!("{}/api/{}/{}/likers", self.client.inner.endpoint, segment, self.repo_path());
         let url = Url::parse(&url_str)?;
-        Ok(self.client.paginate(url, vec![], params.max_items))
+        Ok(self.client.paginate(url, vec![], max_items))
     }
 }
 

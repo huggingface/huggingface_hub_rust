@@ -4,10 +4,9 @@
 //! Run: cargo run -p huggingface-hub --example repo
 
 use futures::StreamExt;
-use huggingface_hub::types::{FileExistsParams, RevisionExistsParams};
 use huggingface_hub::{
     CreateRepoParams, DeleteRepoParams, HFClient, ListDatasetsParams, ListModelsParams, ListSpacesParams,
-    MoveRepoParams, RepoInfo, RepoInfoParams, RepoUpdateSettingsParams,
+    MoveRepoParams, RepoFileExistsParams, RepoInfo, RepoInfoParams, RepoRevisionExistsParams, RepoUpdateSettingsParams,
 };
 
 #[tokio::main]
@@ -38,22 +37,12 @@ async fn main() -> huggingface_hub::Result<()> {
     println!("gpt2 exists: {exists}");
 
     let rev_exists = model
-        .revision_exists(
-            &RevisionExistsParams::builder()
-                .repo_id(model.repo_path())
-                .revision("main")
-                .build(),
-        )
+        .revision_exists(&RepoRevisionExistsParams::builder().revision("main").build())
         .await?;
     println!("gpt2@main exists: {rev_exists}");
 
     let file_exists = model
-        .file_exists(
-            &FileExistsParams::builder()
-                .repo_id(model.repo_path())
-                .filename("config.json")
-                .build(),
-        )
+        .file_exists(&RepoFileExistsParams::builder().filename("config.json").build())
         .await?;
     println!("gpt2/config.json exists: {file_exists}");
 

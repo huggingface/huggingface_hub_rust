@@ -2,22 +2,12 @@ use std::fmt;
 use std::ops::Deref;
 use std::path::PathBuf;
 
-use futures::Stream;
 use typed_builder::TypedBuilder;
-use url::Url;
 
 use crate::client::HFClient;
 use crate::constants;
 use crate::error::{HfError, Result};
-use crate::types::{
-    AddSource, CommitOperation, CreateBranchParams, CreateTagParams, DatasetInfoParams, DeleteBranchParams,
-    DeleteTagParams, GetCommitDiffParams, GetRawDiffParams, GitCommitInfo, GitRefs, ListRepoFilesParams,
-    ListRepoRefsParams, ModelInfoParams, RepoInfo, RepoTreeEntry, RepoType, SpaceInfoParams, UpdateRepoParams,
-};
-#[cfg(feature = "discussions")]
-use crate::types::{DiscussionWithDetails, DiscussionsResponse, GetDiscussionDetailsParams, GetRepoDiscussionsParams};
-#[cfg(feature = "likes")]
-use crate::types::{ListRepoLikersParams, User};
+use crate::types::{AddSource, CommitOperation, RepoInfo, RepoType};
 
 /// A handle for a single repository on the Hugging Face Hub.
 ///
@@ -555,201 +545,16 @@ impl HFRepository {
 
     /// Fetch repository metadata, returning the appropriate [`RepoInfo`] variant.
     pub async fn info(&self, params: &RepoInfoParams) -> Result<RepoInfo> {
-        let repo_id = self.repo_path();
         let revision = self.resolve_revision(params.revision.as_deref());
 
         match self.repo_type {
-            RepoType::Model => self
-                .model_info(&ModelInfoParams { repo_id, revision })
-                .await
-                .map(RepoInfo::Model),
-            RepoType::Dataset => self
-                .dataset_info(&DatasetInfoParams { repo_id, revision })
-                .await
-                .map(RepoInfo::Dataset),
-            RepoType::Space => self
-                .space_info(&SpaceInfoParams { repo_id, revision })
-                .await
-                .map(RepoInfo::Space),
+            RepoType::Model => self.model_info(revision).await.map(RepoInfo::Model),
+            RepoType::Dataset => self.dataset_info(revision).await.map(RepoInfo::Dataset),
+            RepoType::Space => self.space_info(revision).await.map(RepoInfo::Space),
             RepoType::Kernel => {
                 Err(HfError::Other("Repository info is not implemented yet for kernel repositories".to_string()))
             },
         }
-    }
-
-    /// Return `true` if the repository exists and is accessible with the current credentials.
-    pub async fn exists(&self) -> Result<bool> {
-        self.repo_exists(&crate::types::RepoExistsParams {
-            repo_id: self.repo_path(),
-            repo_type: Some(self.repo_type),
-        })
-        .await
-    }
-
-    /// Return a flat list of all file paths in the repository at the given revision.
-    pub async fn list_files(&self, params: &RepoListFilesParams) -> Result<Vec<String>> {
-        self.list_repo_files(&ListRepoFilesParams {
-            repo_id: self.repo_path(),
-            revision: self.resolve_revision(params.revision.as_deref()),
-            repo_type: Some(self.repo_type),
-        })
-        .await
-    }
-
-    /// Stream file and directory entries in the repository tree.
-    ///
-    /// Returns `Result<impl Stream<Item = Result<RepoTreeEntry>>>`. Set `recursive` to traverse
-    /// subdirectories. Use `max_items` to cap the total number of entries yielded.
-    pub fn list_tree(&self, params: &RepoListTreeParams) -> Result<impl Stream<Item = Result<RepoTreeEntry>> + '_> {
-        let revision = self.effective_revision(params.revision.as_deref());
-        let url_str = format!("{}/tree/{}", self.client.api_url(Some(self.repo_type), &self.repo_path()), revision);
-        let url = Url::parse(&url_str)?;
-
-        let mut query: Vec<(String, String)> = Vec::new();
-        if params.recursive {
-            query.push(("recursive".into(), "true".into()));
-        }
-        if params.expand {
-            query.push(("expand".into(), "true".into()));
-        }
-
-        Ok(self.client.paginate(url, query, params.max_items))
-    }
-
-    /// Stream commit history for the repository at a given revision.
-    ///
-    /// Returns `Result<impl Stream<Item = Result<GitCommitInfo>>>`. Use `max_items` to limit
-    /// the total number of commits yielded.
-    pub fn list_commits(
-        &self,
-        params: &RepoListCommitsParams,
-    ) -> Result<impl Stream<Item = Result<GitCommitInfo>> + '_> {
-        let revision = self.effective_revision(params.revision.as_deref());
-        let url_str = format!("{}/commits/{}", self.client.api_url(Some(self.repo_type), &self.repo_path()), revision);
-        let url = Url::parse(&url_str)?;
-        Ok(self.client.paginate(url, vec![], params.max_items))
-    }
-
-    /// Fetch all branches, tags, and optionally pull request refs for the repository.
-    pub async fn list_refs(&self, params: &RepoListRefsParams) -> Result<GitRefs> {
-        self.list_repo_refs(&ListRepoRefsParams {
-            repo_id: self.repo_path(),
-            repo_type: Some(self.repo_type),
-            include_pull_requests: params.include_pull_requests,
-        })
-        .await
-    }
-
-    /// Fetch a structured diff between two revisions (HEAD..compare or a commit SHA).
-    pub async fn get_commit_diff(&self, params: &RepoGetCommitDiffParams) -> Result<String> {
-        self.list_repo_commit_diff(&GetCommitDiffParams {
-            repo_id: self.repo_path(),
-            compare: params.compare.clone(),
-            repo_type: Some(self.repo_type),
-        })
-        .await
-    }
-
-    /// Fetch the raw unified diff between two revisions as a string.
-    pub async fn get_raw_diff(&self, params: &RepoGetRawDiffParams) -> Result<String> {
-        self.list_repo_raw_diff(&GetRawDiffParams {
-            repo_id: self.repo_path(),
-            compare: params.compare.clone(),
-            repo_type: Some(self.repo_type),
-        })
-        .await
-    }
-
-    /// Create a new branch, optionally starting from a specific revision.
-    pub async fn create_branch(&self, params: &RepoCreateBranchParams) -> Result<()> {
-        self.create_repo_branch(&CreateBranchParams {
-            repo_id: self.repo_path(),
-            branch: params.branch.clone(),
-            revision: self.resolve_revision(params.revision.as_deref()),
-            repo_type: Some(self.repo_type),
-        })
-        .await
-    }
-
-    /// Delete a branch from the repository.
-    pub async fn delete_branch(&self, params: &RepoDeleteBranchParams) -> Result<()> {
-        self.delete_repo_branch(&DeleteBranchParams {
-            repo_id: self.repo_path(),
-            branch: params.branch.clone(),
-            repo_type: Some(self.repo_type),
-        })
-        .await
-    }
-
-    /// Create a lightweight or annotated tag, optionally at a specific revision.
-    pub async fn create_tag(&self, params: &RepoCreateTagParams) -> Result<()> {
-        self.create_repo_tag(&CreateTagParams {
-            repo_id: self.repo_path(),
-            tag: params.tag.clone(),
-            revision: self.resolve_revision(params.revision.as_deref()),
-            message: params.message.clone(),
-            repo_type: Some(self.repo_type),
-        })
-        .await
-    }
-
-    /// Delete a tag from the repository.
-    pub async fn delete_tag(&self, params: &RepoDeleteTagParams) -> Result<()> {
-        self.delete_repo_tag(&DeleteTagParams {
-            repo_id: self.repo_path(),
-            tag: params.tag.clone(),
-            repo_type: Some(self.repo_type),
-        })
-        .await
-    }
-
-    /// Update repository settings such as visibility, gating policy, or description.
-    pub async fn update_settings(&self, params: &RepoUpdateSettingsParams) -> Result<()> {
-        self.update_repo_settings(&UpdateRepoParams {
-            repo_id: self.repo_path(),
-            repo_type: Some(self.repo_type),
-            private: params.private,
-            gated: params.gated.clone(),
-            description: params.description.clone(),
-        })
-        .await
-    }
-
-    /// List discussions for this repository, with optional filters on author, type, and status.
-    #[cfg(feature = "discussions")]
-    pub async fn list_discussions(&self, params: &RepoListDiscussionsParams) -> Result<DiscussionsResponse> {
-        self.get_repo_discussions(&GetRepoDiscussionsParams {
-            repo_id: self.repo_path(),
-            repo_type: Some(self.repo_type),
-            author: params.author.clone(),
-            discussion_type: params.discussion_type.clone(),
-            discussion_status: params.discussion_status.clone(),
-        })
-        .await
-    }
-
-    /// Fetch the full details and event timeline for a single discussion or pull request.
-    #[cfg(feature = "discussions")]
-    pub async fn discussion_details(&self, params: &RepoDiscussionDetailsParams) -> Result<DiscussionWithDetails> {
-        self.get_discussion_details(&GetDiscussionDetailsParams {
-            repo_id: self.repo_path(),
-            discussion_num: params.discussion_num,
-            repo_type: Some(self.repo_type),
-        })
-        .await
-    }
-
-    /// Stream users who have liked this repository.
-    ///
-    /// Returns `Result<impl Stream<Item = Result<User>>>`. Pass `max_items` to cap the total
-    /// number of users yielded.
-    #[cfg(feature = "likes")]
-    pub fn list_likers(&self, max_items: Option<usize>) -> Result<impl Stream<Item = Result<User>> + '_> {
-        self.list_repo_likers(&ListRepoLikersParams {
-            repo_id: self.repo_path(),
-            repo_type: Some(self.repo_type),
-            max_items,
-        })
     }
 
     pub(crate) fn resolve_revision(&self, revision: Option<&str>) -> Option<String> {
