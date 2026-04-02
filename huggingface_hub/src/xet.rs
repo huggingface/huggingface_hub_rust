@@ -65,9 +65,8 @@ fn xet_token_url(
     format!("{}/api/{}/{}/xet-{}-token/{}", api.inner.endpoint, segment, repo_id, token_type, revision)
 }
 
-fn build_xet_session(endpoint: &str) -> Result<XetSession> {
+fn build_xet_session() -> Result<XetSession> {
     XetSessionBuilder::new()
-        .with_endpoint(endpoint.to_string())
         .build()
         .map_err(|e| HfError::Other(format!("Failed to build xet session: {e}")))
 }
@@ -96,7 +95,7 @@ pub(crate) async fn xet_download_to_local_dir(
         .unwrap_or(0);
 
     let conn = fetch_xet_connection_info(api, "read", repo_id, repo_type, revision).await?;
-    let session = build_xet_session(&conn.endpoint)?;
+    let session = build_xet_session()?;
 
     tokio::fs::create_dir_all(local_dir).await?;
     let dest_path = local_dir.join(filename);
@@ -107,6 +106,7 @@ pub(crate) async fn xet_download_to_local_dir(
     let group = session
         .new_file_download_group()
         .map_err(|e| HfError::Other(format!("Xet download failed: {e}")))?
+        .with_endpoint(conn.endpoint.clone())
         .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
         .with_token_refresh_url(xet_token_url(api, "read", repo_id, repo_type, revision), api.auth_headers())
         .build()
@@ -138,7 +138,7 @@ pub(crate) async fn xet_download_to_blob(
     path: &std::path::Path,
 ) -> Result<()> {
     let conn = fetch_xet_connection_info(api, "read", repo_id, repo_type, revision).await?;
-    let session = build_xet_session(&conn.endpoint)?;
+    let session = build_xet_session()?;
 
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await?;
@@ -149,6 +149,7 @@ pub(crate) async fn xet_download_to_blob(
     let group = session
         .new_file_download_group()
         .map_err(|e| HfError::Other(format!("Xet download failed: {e}")))?
+        .with_endpoint(conn.endpoint.clone())
         .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
         .with_token_refresh_url(xet_token_url(api, "read", repo_id, repo_type, revision), api.auth_headers())
         .build()
@@ -189,11 +190,12 @@ pub(crate) async fn xet_download_batch(
     }
 
     let conn = fetch_xet_connection_info(api, "read", repo_id, repo_type, revision).await?;
-    let session = build_xet_session(&conn.endpoint)?;
+    let session = build_xet_session()?;
 
     let group = session
         .new_file_download_group()
         .map_err(|e| HfError::Other(format!("Xet batch download failed: {e}")))?
+        .with_endpoint(conn.endpoint.clone())
         .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
         .with_token_refresh_url(xet_token_url(api, "read", repo_id, repo_type, revision), api.auth_headers())
         .build()
@@ -241,11 +243,12 @@ pub(crate) async fn xet_upload(
     revision: &str,
 ) -> Result<Vec<XetFileInfo>> {
     let conn = fetch_xet_connection_info(api, "write", repo_id, repo_type, revision).await?;
-    let session = build_xet_session(&conn.endpoint)?;
+    let session = build_xet_session()?;
 
     let commit = session
         .new_upload_commit()
         .map_err(|e| HfError::Other(format!("Xet upload failed: {e}")))?
+        .with_endpoint(conn.endpoint.clone())
         .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
         .with_token_refresh_url(xet_token_url(api, "write", repo_id, repo_type, revision), api.auth_headers())
         .build()
