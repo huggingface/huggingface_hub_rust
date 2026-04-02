@@ -1,4 +1,4 @@
-use crate::client::HfApi;
+use crate::client::HFClient;
 use crate::error::Result;
 use crate::types::{
     AddCollectionItemParams, Collection, CollectionItem, CreateCollectionParams, DeleteCollectionItemParams,
@@ -6,7 +6,7 @@ use crate::types::{
     UpdateCollectionMetadataParams,
 };
 
-impl HfApi {
+impl HFClient {
     pub async fn get_collection(&self, params: &GetCollectionParams) -> Result<Collection> {
         let url = format!("{}/api/collections/{}", self.inner.endpoint, params.slug);
         let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;

@@ -3,11 +3,11 @@
 //! Requires HF_TOKEN and the "jobs" feature.
 //! Run: cargo run -p huggingface-hub --features jobs --example jobs
 
-use huggingface_hub::{CreateScheduledJobParams, HfApi, ListJobsParams, RunJobParams};
+use huggingface_hub::{CreateScheduledJobParams, HFClient, ListJobsParams, RunJobParams};
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
-    let api = HfApi::new()?;
+    let api = HFClient::new()?;
 
     let hardware = api.list_job_hardware().await?;
     println!("Available job hardware:");

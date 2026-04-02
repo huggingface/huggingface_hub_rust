@@ -7,14 +7,14 @@
 //! Run: cargo run -p huggingface-hub --features inference_endpoints --example inference_endpoints
 
 use huggingface_hub::{
-    CreateInferenceEndpointParams, DeleteInferenceEndpointParams, GetInferenceEndpointParams, HfApi,
+    CreateInferenceEndpointParams, DeleteInferenceEndpointParams, GetInferenceEndpointParams, HFClient,
     ListInferenceEndpointsParams, PauseInferenceEndpointParams, ResumeInferenceEndpointParams,
     ScaleToZeroInferenceEndpointParams, UpdateInferenceEndpointParams,
 };
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
-    let api = HfApi::new()?;
+    let api = HFClient::new()?;
 
     let endpoints = api
         .list_inference_endpoints(&ListInferenceEndpointsParams::builder().build())

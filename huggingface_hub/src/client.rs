@@ -8,29 +8,50 @@ use reqwest_retry::RetryTransientMiddleware;
 use crate::constants;
 use crate::error::{HfError, Result};
 
-pub struct HfApi {
-    pub(crate) inner: Arc<HfApiInner>,
+/// Async client for the Hugging Face Hub API.
+///
+/// `HFClient` wraps an `Arc<HFClientInner>` so it is cheap to clone — all clones
+/// share the same underlying HTTP connection pool, token, and configuration.
+///
+/// # Creating a client
+///
+/// ```rust,no_run
+/// use huggingface_hub::HFClient;
+///
+/// // Reads token and settings from the environment (HF_TOKEN, HF_ENDPOINT, …).
+/// let client = HFClient::new()?;
+///
+/// // Or configure explicitly:
+/// let client = HFClient::builder().token("hf_…").endpoint("https://huggingface.co").build()?;
+/// # Ok::<(), huggingface_hub::HfError>(())
+/// ```
+///
+/// The type aliases [`HfApi`] and [`HfClient`] are provided for compatibility.
+pub struct HFClient {
+    pub(crate) inner: Arc<HFClientInner>,
 }
 
-impl Clone for HfApi {
+impl Clone for HFClient {
     fn clone(&self) -> Self {
-        HfApi {
+        Self {
             inner: Arc::clone(&self.inner),
         }
     }
 }
 
-pub(crate) struct HfApiInner {
+pub(crate) struct HFClientInner {
     pub(crate) client: ClientWithMiddleware,
     pub(crate) endpoint: String,
     pub(crate) token: Option<String>,
     pub(crate) cache_dir: std::path::PathBuf,
     pub(crate) cache_enabled: bool,
-    #[cfg(feature = "xet")]
-    pub(crate) xet_session: std::sync::Mutex<Option<xet::xet_session::XetSession>>,
 }
 
-pub struct HfApiBuilder {
+/// Builder for [`HFClient`].
+///
+/// Obtain one via [`HFClient::builder()`] or [`HFClientBuilder::new()`].
+/// Call [`build()`](HFClientBuilder::build) when all options are set.
+pub struct HFClientBuilder {
     endpoint: Option<String>,
     token: Option<String>,
     user_agent: Option<String>,
@@ -40,7 +61,8 @@ pub struct HfApiBuilder {
     cache_enabled: Option<bool>,
 }
 
-impl HfApiBuilder {
+impl HFClientBuilder {
+    /// Creates a builder with all options unset; defaults are applied at [`build`](Self::build) time.
     pub fn new() -> Self {
         Self {
             endpoint: None,
@@ -53,45 +75,60 @@ impl HfApiBuilder {
         }
     }
 
+    /// Overrides the Hub base URL (default: `https://huggingface.co`, or `HF_ENDPOINT` env var).
     pub fn endpoint(mut self, endpoint: impl Into<String>) -> Self {
         self.endpoint = Some(endpoint.into());
         self
     }
 
+    /// Sets the authentication token. Without this, the client falls back to the `HF_TOKEN` env
+    /// var and the cached token file written by `huggingface-cli login`.
     pub fn token(mut self, token: impl Into<String>) -> Self {
         self.token = Some(token.into());
         self
     }
 
+    /// Overrides the `User-Agent` header sent with every request.
     pub fn user_agent(mut self, user_agent: impl Into<String>) -> Self {
         self.user_agent = Some(user_agent.into());
         self
     }
 
+    /// Merges additional default headers into every request. Ignored when a custom
+    /// [`client`](Self::client) is supplied (configure headers on that client directly).
     pub fn headers(mut self, headers: HeaderMap) -> Self {
         self.headers = Some(headers);
         self
     }
 
-    /// Provide a pre-configured reqwest::Client. The retry middleware will
-    /// still be applied on top. Caller is responsible for setting User-Agent
-    /// and other default headers on this client.
+    /// Supplies a pre-configured `reqwest::Client`. Retry middleware is still applied on top.
+    /// The caller is responsible for any default headers (including `User-Agent`) on this client;
+    /// the [`headers`](Self::headers) and [`user_agent`](Self::user_agent) options are ignored.
     pub fn client(mut self, client: reqwest::Client) -> Self {
         self.client = Some(client);
         self
     }
 
+    /// Sets the local cache directory. Defaults to `HF_HUB_CACHE` → `$HF_HOME/hub` →
+    /// `~/.cache/huggingface/hub`.
     pub fn cache_dir(mut self, path: impl Into<std::path::PathBuf>) -> Self {
         self.cache_dir = Some(path.into());
         self
     }
 
+    /// Enables or disables the local file cache. Caching is on by default.
     pub fn cache_enabled(mut self, enabled: bool) -> Self {
         self.cache_enabled = Some(enabled);
         self
     }
 
-    pub fn build(self) -> Result<HfApi> {
+    /// Builds the [`HFClient`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the endpoint URL is not a valid URL or if the `reqwest` client
+    /// cannot be constructed (e.g. an invalid `User-Agent` string was provided).
+    pub fn build(self) -> Result<HFClient> {
         let endpoint = self
             .endpoint
             .or_else(|| std::env::var(constants::HF_ENDPOINT).ok())
@@ -127,33 +164,38 @@ impl HfApiBuilder {
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build();
 
-        Ok(HfApi {
-            inner: Arc::new(HfApiInner {
+        Ok(HFClient {
+            inner: Arc::new(HFClientInner {
                 client,
                 endpoint: endpoint.trim_end_matches('/').to_string(),
                 token,
                 cache_dir,
                 cache_enabled: self.cache_enabled.unwrap_or(true),
-                #[cfg(feature = "xet")]
-                xet_session: std::sync::Mutex::new(None),
             }),
         })
     }
 }
 
-impl Default for HfApiBuilder {
+impl Default for HFClientBuilder {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl HfApi {
+impl HFClient {
+    /// Creates a client with default settings, reading the token and endpoint from the
+    /// environment. Equivalent to `HFClient::builder().build()`.
+    ///
+    /// # Errors
+    ///
+    /// Fails if the resolved endpoint URL is invalid or the HTTP client cannot be built.
     pub fn new() -> Result<Self> {
-        HfApiBuilder::new().build()
+        HFClientBuilder::new().build()
     }
 
-    pub fn builder() -> HfApiBuilder {
-        HfApiBuilder::new()
+    /// Returns an [`HFClientBuilder`] for fine-grained configuration.
+    pub fn builder() -> HFClientBuilder {
+        HFClientBuilder::new()
     }
 
     /// Build authorization headers for requests
@@ -227,6 +269,15 @@ impl HfApi {
     }
 }
 
+/// Compatibility alias for [`HFClient`].
+pub type HfApi = HFClient;
+/// Compatibility alias for [`HFClientBuilder`].
+pub type HfApiBuilder = HFClientBuilder;
+/// Compatibility alias for [`HFClient`].
+pub type HfClient = HFClient;
+/// Compatibility alias for [`HFClientBuilder`].
+pub type HfClientBuilder = HFClientBuilder;
+
 /// Resolve token from environment or token file.
 /// Priority: HF_TOKEN env → HF_TOKEN_PATH file → $HF_HOME/token file.
 fn resolve_token() -> Option<String> {
@@ -288,17 +339,17 @@ fn resolve_cache_dir() -> std::path::PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::HfApiBuilder;
+    use super::HFClientBuilder;
 
     #[test]
     fn test_builder_cache_dir_explicit() {
-        let api = HfApiBuilder::new().cache_dir("/tmp/my-cache").build().unwrap();
+        let api = HFClientBuilder::new().cache_dir("/tmp/my-cache").build().unwrap();
         assert_eq!(api.inner.cache_dir, std::path::PathBuf::from("/tmp/my-cache"));
     }
 
     #[test]
     fn test_builder_cache_dir_default() {
-        let api = HfApiBuilder::new().build().unwrap();
+        let api = HFClientBuilder::new().build().unwrap();
         let path_str = api.inner.cache_dir.to_string_lossy();
         assert!(path_str.contains("huggingface") && path_str.ends_with("hub"));
     }

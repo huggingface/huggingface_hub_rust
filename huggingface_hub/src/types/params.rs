@@ -1,63 +1,6 @@
-use std::path::PathBuf;
-
 use typed_builder::TypedBuilder;
 
-use super::commit::{AddSource, CommitOperation};
 use super::repo::RepoType;
-
-#[derive(TypedBuilder)]
-pub struct ModelInfoParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(default, setter(into, strip_option))]
-    pub revision: Option<String>,
-}
-
-#[derive(TypedBuilder)]
-pub struct DatasetInfoParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(default, setter(into, strip_option))]
-    pub revision: Option<String>,
-}
-
-#[derive(TypedBuilder)]
-pub struct SpaceInfoParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(default, setter(into, strip_option))]
-    pub revision: Option<String>,
-}
-
-#[derive(TypedBuilder)]
-pub struct RepoExistsParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[derive(TypedBuilder)]
-pub struct RevisionExistsParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(setter(into))]
-    pub revision: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[derive(TypedBuilder)]
-pub struct FileExistsParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(setter(into))]
-    pub filename: String,
-    #[builder(default, setter(into, strip_option))]
-    pub revision: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
 
 #[derive(TypedBuilder)]
 pub struct ListModelsParams {
@@ -79,6 +22,8 @@ pub struct ListModelsParams {
     pub card_data: Option<bool>,
     #[builder(default, setter(strip_option))]
     pub fetch_config: Option<bool>,
+    #[builder(default, setter(strip_option))]
+    pub max_items: Option<usize>,
 }
 
 #[derive(TypedBuilder)]
@@ -95,6 +40,8 @@ pub struct ListDatasetsParams {
     pub limit: Option<usize>,
     #[builder(default, setter(strip_option))]
     pub full: Option<bool>,
+    #[builder(default, setter(strip_option))]
+    pub max_items: Option<usize>,
 }
 
 #[derive(TypedBuilder)]
@@ -111,6 +58,8 @@ pub struct ListSpacesParams {
     pub limit: Option<usize>,
     #[builder(default, setter(strip_option))]
     pub full: Option<bool>,
+    #[builder(default, setter(strip_option))]
+    pub max_items: Option<usize>,
 }
 
 #[derive(TypedBuilder)]
@@ -138,297 +87,11 @@ pub struct DeleteRepoParams {
 }
 
 #[derive(TypedBuilder)]
-pub struct UpdateRepoParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-    #[builder(default, setter(strip_option))]
-    pub private: Option<bool>,
-    #[builder(default, setter(into, strip_option))]
-    pub gated: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub description: Option<String>,
-}
-
-#[derive(TypedBuilder)]
 pub struct MoveRepoParams {
     #[builder(setter(into))]
     pub from_id: String,
     #[builder(setter(into))]
     pub to_id: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[derive(TypedBuilder)]
-pub struct ListRepoFilesParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(default, setter(into, strip_option))]
-    pub revision: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[derive(TypedBuilder)]
-pub struct ListRepoTreeParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(default, setter(into, strip_option))]
-    pub revision: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-    #[builder(default)]
-    pub recursive: bool,
-    #[builder(default)]
-    pub expand: bool,
-}
-
-#[derive(TypedBuilder)]
-pub struct GetPathsInfoParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    pub paths: Vec<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub revision: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[derive(TypedBuilder)]
-pub struct DownloadFileParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(setter(into))]
-    pub filename: String,
-    #[builder(default, setter(strip_option))]
-    pub local_dir: Option<PathBuf>,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-    #[builder(default, setter(into, strip_option))]
-    pub revision: Option<String>,
-    #[builder(default, setter(strip_option))]
-    pub force_download: Option<bool>,
-    #[builder(default, setter(strip_option))]
-    pub local_files_only: Option<bool>,
-}
-
-#[derive(TypedBuilder)]
-pub struct DownloadFileStreamParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(setter(into))]
-    pub filename: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-    #[builder(default, setter(into, strip_option))]
-    pub revision: Option<String>,
-}
-
-#[derive(TypedBuilder)]
-pub struct SnapshotDownloadParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-    #[builder(default, setter(into, strip_option))]
-    pub revision: Option<String>,
-    #[builder(default, setter(strip_option))]
-    pub allow_patterns: Option<Vec<String>>,
-    #[builder(default, setter(strip_option))]
-    pub ignore_patterns: Option<Vec<String>>,
-    #[builder(default, setter(strip_option))]
-    pub local_dir: Option<PathBuf>,
-    #[builder(default, setter(strip_option))]
-    pub force_download: Option<bool>,
-    #[builder(default, setter(strip_option))]
-    pub local_files_only: Option<bool>,
-    #[builder(default, setter(strip_option))]
-    pub max_workers: Option<usize>,
-}
-
-#[derive(TypedBuilder)]
-pub struct UploadFileParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    pub source: AddSource,
-    #[builder(setter(into))]
-    pub path_in_repo: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-    #[builder(default, setter(into, strip_option))]
-    pub revision: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub commit_message: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub commit_description: Option<String>,
-    #[builder(default, setter(strip_option))]
-    pub create_pr: Option<bool>,
-    #[builder(default, setter(into, strip_option))]
-    pub parent_commit: Option<String>,
-}
-
-#[derive(TypedBuilder)]
-pub struct UploadFolderParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    pub folder_path: PathBuf,
-    #[builder(default, setter(into, strip_option))]
-    pub path_in_repo: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-    #[builder(default, setter(into, strip_option))]
-    pub revision: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub commit_message: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub commit_description: Option<String>,
-    #[builder(default, setter(strip_option))]
-    pub create_pr: Option<bool>,
-    #[builder(default, setter(into, strip_option))]
-    pub allow_patterns: Option<Vec<String>>,
-    #[builder(default, setter(into, strip_option))]
-    pub ignore_patterns: Option<Vec<String>>,
-    #[builder(default, setter(into, strip_option))]
-    pub delete_patterns: Option<Vec<String>>,
-}
-
-#[derive(TypedBuilder)]
-pub struct DeleteFileParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(setter(into))]
-    pub path_in_repo: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-    #[builder(default, setter(into, strip_option))]
-    pub revision: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub commit_message: Option<String>,
-    #[builder(default, setter(strip_option))]
-    pub create_pr: Option<bool>,
-}
-
-#[derive(TypedBuilder)]
-pub struct DeleteFolderParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(setter(into))]
-    pub path_in_repo: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-    #[builder(default, setter(into, strip_option))]
-    pub revision: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub commit_message: Option<String>,
-    #[builder(default, setter(strip_option))]
-    pub create_pr: Option<bool>,
-}
-
-#[derive(TypedBuilder)]
-pub struct CreateCommitParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    pub operations: Vec<CommitOperation>,
-    #[builder(setter(into))]
-    pub commit_message: String,
-    #[builder(default, setter(into, strip_option))]
-    pub commit_description: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-    #[builder(default, setter(into, strip_option))]
-    pub revision: Option<String>,
-    #[builder(default, setter(strip_option))]
-    pub create_pr: Option<bool>,
-    #[builder(default, setter(into, strip_option))]
-    pub parent_commit: Option<String>,
-}
-
-#[derive(TypedBuilder)]
-pub struct ListRepoCommitsParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(default, setter(into, strip_option))]
-    pub revision: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[derive(TypedBuilder)]
-pub struct ListRepoRefsParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-    #[builder(default)]
-    pub include_pull_requests: bool,
-}
-
-#[derive(TypedBuilder)]
-pub struct GetCommitDiffParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    /// Revision range in the format "revA...revB"
-    #[builder(setter(into))]
-    pub compare: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[derive(TypedBuilder)]
-pub struct GetRawDiffParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    /// Revision range in the format "revA...revB"
-    #[builder(setter(into))]
-    pub compare: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[derive(TypedBuilder)]
-pub struct CreateBranchParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(setter(into))]
-    pub branch: String,
-    #[builder(default, setter(into, strip_option))]
-    pub revision: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[derive(TypedBuilder)]
-pub struct DeleteBranchParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(setter(into))]
-    pub branch: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[derive(TypedBuilder)]
-pub struct CreateTagParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(setter(into))]
-    pub tag: String,
-    #[builder(default, setter(into, strip_option))]
-    pub revision: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub message: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[derive(TypedBuilder)]
-pub struct DeleteTagParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(setter(into))]
-    pub tag: String,
     #[builder(default, setter(into, strip_option))]
     pub repo_type: Option<RepoType>,
 }
@@ -461,93 +124,7 @@ pub struct GetXetTokenParams {
 
 #[cfg(feature = "spaces")]
 #[derive(TypedBuilder)]
-pub struct GetSpaceRuntimeParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-}
-
-#[cfg(feature = "spaces")]
-#[derive(TypedBuilder)]
-pub struct RequestSpaceHardwareParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(setter(into))]
-    pub hardware: String,
-    #[builder(default, setter(strip_option))]
-    pub sleep_time: Option<u64>,
-}
-
-#[cfg(feature = "spaces")]
-#[derive(TypedBuilder)]
-pub struct SetSpaceSleepTimeParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    pub sleep_time: u64,
-}
-
-#[cfg(feature = "spaces")]
-#[derive(TypedBuilder)]
-pub struct PauseSpaceParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-}
-
-#[cfg(feature = "spaces")]
-#[derive(TypedBuilder)]
-pub struct RestartSpaceParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-}
-
-#[cfg(feature = "spaces")]
-#[derive(TypedBuilder)]
-pub struct AddSpaceSecretParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(setter(into))]
-    pub key: String,
-    #[builder(setter(into))]
-    pub value: String,
-    #[builder(default, setter(into, strip_option))]
-    pub description: Option<String>,
-}
-
-#[cfg(feature = "spaces")]
-#[derive(TypedBuilder)]
-pub struct DeleteSpaceSecretParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(setter(into))]
-    pub key: String,
-}
-
-#[cfg(feature = "spaces")]
-#[derive(TypedBuilder)]
-pub struct AddSpaceVariableParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(setter(into))]
-    pub key: String,
-    #[builder(setter(into))]
-    pub value: String,
-    #[builder(default, setter(into, strip_option))]
-    pub description: Option<String>,
-}
-
-#[cfg(feature = "spaces")]
-#[derive(TypedBuilder)]
-pub struct DeleteSpaceVariableParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(setter(into))]
-    pub key: String,
-}
-
-#[cfg(feature = "spaces")]
-#[derive(TypedBuilder)]
 pub struct DuplicateSpaceParams {
-    #[builder(setter(into))]
-    pub from_id: String,
     #[builder(default, setter(into, strip_option))]
     pub to_id: Option<String>,
     #[builder(default, setter(strip_option))]
@@ -786,129 +363,6 @@ pub struct DeleteCollectionItemParams {
     pub item_object_id: String,
 }
 
-#[cfg(feature = "discussions")]
-#[derive(TypedBuilder)]
-pub struct GetRepoDiscussionsParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-    #[builder(default, setter(into, strip_option))]
-    pub author: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub discussion_type: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub discussion_status: Option<String>,
-}
-
-#[cfg(feature = "discussions")]
-#[derive(TypedBuilder)]
-pub struct GetDiscussionDetailsParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    pub discussion_num: u64,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[cfg(feature = "discussions")]
-#[derive(TypedBuilder)]
-pub struct CreateDiscussionParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(setter(into))]
-    pub title: String,
-    #[builder(default, setter(into, strip_option))]
-    pub description: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[cfg(feature = "discussions")]
-#[derive(TypedBuilder)]
-pub struct CreatePullRequestParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(setter(into))]
-    pub title: String,
-    #[builder(default, setter(into, strip_option))]
-    pub description: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[cfg(feature = "discussions")]
-#[derive(TypedBuilder)]
-pub struct CommentDiscussionParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    pub discussion_num: u64,
-    #[builder(setter(into))]
-    pub comment: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[cfg(feature = "discussions")]
-#[derive(TypedBuilder)]
-pub struct EditDiscussionCommentParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    pub discussion_num: u64,
-    #[builder(setter(into))]
-    pub comment_id: String,
-    #[builder(setter(into))]
-    pub new_content: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[cfg(feature = "discussions")]
-#[derive(TypedBuilder)]
-pub struct HideDiscussionCommentParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    pub discussion_num: u64,
-    #[builder(setter(into))]
-    pub comment_id: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[cfg(feature = "discussions")]
-#[derive(TypedBuilder)]
-pub struct RenameDiscussionParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    pub discussion_num: u64,
-    #[builder(setter(into))]
-    pub new_title: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[cfg(feature = "discussions")]
-#[derive(TypedBuilder)]
-pub struct ChangeDiscussionStatusParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    pub discussion_num: u64,
-    #[builder(setter(into))]
-    pub new_status: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[cfg(feature = "discussions")]
-#[derive(TypedBuilder)]
-pub struct MergePullRequestParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    pub discussion_num: u64,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
 #[cfg(feature = "webhooks")]
 #[derive(TypedBuilder)]
 pub struct CreateWebhookParams {
@@ -987,60 +441,11 @@ pub struct CreateScheduledJobParams {
     pub concurrency: Option<bool>,
 }
 
-#[cfg(feature = "access_requests")]
-#[derive(TypedBuilder)]
-pub struct ListAccessRequestsParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[cfg(feature = "access_requests")]
-#[derive(TypedBuilder)]
-pub struct HandleAccessRequestParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(setter(into))]
-    pub user: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[cfg(feature = "access_requests")]
-#[derive(TypedBuilder)]
-pub struct GrantAccessParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(setter(into))]
-    pub user: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
-#[cfg(feature = "likes")]
-#[derive(TypedBuilder)]
-pub struct LikeParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
-}
-
 #[cfg(feature = "likes")]
 #[derive(TypedBuilder)]
 pub struct ListLikedReposParams {
     #[builder(setter(into))]
     pub username: String,
-}
-
-#[cfg(feature = "likes")]
-#[derive(TypedBuilder)]
-pub struct ListRepoLikersParams {
-    #[builder(setter(into))]
-    pub repo_id: String,
-    #[builder(default, setter(into, strip_option))]
-    pub repo_type: Option<RepoType>,
 }
 
 #[cfg(feature = "papers")]

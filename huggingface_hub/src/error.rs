@@ -21,13 +21,21 @@ pub enum HfError {
     #[error("Entry not found: {path} in {repo_id}")]
     EntryNotFound { path: String, repo_id: String },
 
+    #[error("Invalid repository type: expected {expected}, got {actual}")]
+    InvalidRepoType {
+        expected: crate::types::RepoType,
+        actual: crate::types::RepoType,
+    },
+
     #[error("Xet feature required but not enabled")]
     XetNotEnabled,
 
     #[error("File not found in local cache: {path}")]
     LocalEntryNotFound { path: String },
 
-    #[error("Cache is not enabled — set cache_enabled(true) on HfApiBuilder, or provide local_dir in download params")]
+    #[error(
+        "Cache is not enabled — set cache_enabled(true) on HFClientBuilder, or provide local_dir in download params"
+    )]
     CacheNotEnabled,
 
     #[error("Cache lock timed out: {}", path.display())]

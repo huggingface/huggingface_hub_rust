@@ -4,11 +4,11 @@
 //! Run: cargo run -p huggingface-hub --example users
 
 use futures::StreamExt;
-use huggingface_hub::HfApi;
+use huggingface_hub::HFClient;
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
-    let api = HfApi::new()?;
+    let api = HFClient::new()?;
 
     api.auth_check().await?;
     println!("Token is valid");
@@ -22,7 +22,7 @@ async fn main() -> huggingface_hub::Result<()> {
     let org = api.get_organization_overview("huggingface").await?;
     println!("Org overview: {} (fullname: {:?})", org.name, org.fullname);
 
-    let followers = api.list_user_followers("julien-c");
+    let followers = api.list_user_followers("julien-c", None)?;
     futures::pin_mut!(followers);
     println!("\nFollowers of julien-c:");
     let mut count = 0;
@@ -34,7 +34,7 @@ async fn main() -> huggingface_hub::Result<()> {
         }
     }
 
-    let following = api.list_user_following("julien-c");
+    let following = api.list_user_following("julien-c", None)?;
     futures::pin_mut!(following);
     println!("\njulien-c is following:");
     let mut count = 0;
@@ -46,7 +46,7 @@ async fn main() -> huggingface_hub::Result<()> {
         }
     }
 
-    let members = api.list_organization_members("huggingface");
+    let members = api.list_organization_members("huggingface", None)?;
     futures::pin_mut!(members);
     println!("\nMembers of huggingface:");
     let mut count = 0;

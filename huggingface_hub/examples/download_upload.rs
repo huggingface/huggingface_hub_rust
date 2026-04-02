@@ -11,35 +11,32 @@
 //! Run: cargo run -p huggingface-hub --example download_upload
 
 use futures::StreamExt;
+use huggingface_hub::types::AddSource;
 use huggingface_hub::{
-    AddSource, CreateRepoParams, DeleteRepoParams, DownloadFileParams, DownloadFileStreamParams, HfApi,
-    SnapshotDownloadParams, UploadFileParams, UploadFolderParams,
+    CreateRepoParams, DeleteRepoParams, HFClient, RepoDownloadFileParams, RepoDownloadFileStreamParams,
+    RepoSnapshotDownloadParams, RepoUploadFileParams, RepoUploadFolderParams,
 };
 use tokio::io::AsyncWriteExt;
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
-    let api = HfApi::new()?;
+    let api = HFClient::new()?;
     let tmp_dir = tempfile::tempdir().expect("failed to create tempdir");
+    let model = api.model("openai-community", "gpt2");
 
     // --- Download to HF cache ---
 
-    let cached_path = api
-        .download_file(
-            &DownloadFileParams::builder()
-                .repo_id("openai-community/gpt2")
-                .filename("config.json")
-                .build(),
-        )
+    let cached_path = model
+        .download_file(&RepoDownloadFileParams::builder().filename("config.json").build())
         .await?;
     println!("Downloaded to cache: {}", cached_path.display());
 
     // --- Download a large xet-backed file to local directory ---
 
-    let xet_path = api
+    let xet_repo = api.model("Lightricks", "LTX-2.3");
+    let xet_path = xet_repo
         .download_file(
-            &DownloadFileParams::builder()
-                .repo_id("Lightricks/LTX-2.3")
+            &RepoDownloadFileParams::builder()
                 .filename("ltx-2.3-spatial-upscaler-x1.5-1.0.safetensors")
                 .local_dir(tmp_dir.path().to_path_buf())
                 .build(),
@@ -50,10 +47,9 @@ async fn main() -> huggingface_hub::Result<()> {
 
     // --- Download to local directory ---
 
-    let local_path = api
+    let local_path = model
         .download_file(
-            &DownloadFileParams::builder()
-                .repo_id("openai-community/gpt2")
+            &RepoDownloadFileParams::builder()
                 .filename("config.json")
                 .local_dir(tmp_dir.path().to_path_buf())
                 .build(),
@@ -64,13 +60,8 @@ async fn main() -> huggingface_hub::Result<()> {
 
     // --- Download as stream ---
 
-    let (content_length, mut stream) = api
-        .download_file_stream(
-            &DownloadFileStreamParams::builder()
-                .repo_id("openai-community/gpt2")
-                .filename("config.json")
-                .build(),
-        )
+    let (content_length, mut stream) = model
+        .download_file_stream(&RepoDownloadFileStreamParams::builder().filename("config.json").build())
         .await?;
     println!(
         "Streaming config.json (content-length: {})",
@@ -90,13 +81,8 @@ async fn main() -> huggingface_hub::Result<()> {
 
     // --- Download as stream and process in memory ---
 
-    let (_content_length, mut stream) = api
-        .download_file_stream(
-            &DownloadFileStreamParams::builder()
-                .repo_id("openai-community/gpt2")
-                .filename("config.json")
-                .build(),
-        )
+    let (_content_length, mut stream) = model
+        .download_file_stream(&RepoDownloadFileStreamParams::builder().filename("config.json").build())
         .await?;
 
     let mut buf = Vec::new();
@@ -110,10 +96,9 @@ async fn main() -> huggingface_hub::Result<()> {
     // --- Download a folder (snapshot) ---
 
     let snapshot_dir = tmp_dir.path().join("snapshot");
-    let snapshot_path = api
+    let snapshot_path = model
         .snapshot_download(
-            &SnapshotDownloadParams::builder()
-                .repo_id("openai-community/gpt2")
+            &RepoSnapshotDownloadParams::builder()
                 .local_dir(snapshot_dir)
                 .allow_patterns(vec!["*.json".to_string()])
                 .build(),
@@ -133,23 +118,22 @@ async fn main() -> huggingface_hub::Result<()> {
     }
 
     let user = api.whoami().await?;
-    let repo_name = format!("{}/example-download-upload-{}", user.username, std::process::id());
+    let repo = api.model(&user.username, format!("example-download-upload-{}", std::process::id()));
 
     api.create_repo(
         &CreateRepoParams::builder()
-            .repo_id(&repo_name)
+            .repo_id(repo.repo_path())
             .private(true)
             .exist_ok(true)
             .build(),
     )
     .await?;
-    println!("\nCreated repo: {repo_name}");
+    println!("\nCreated repo: {}", repo.repo_path());
 
     // Upload from bytes
-    let commit = api
+    let commit = repo
         .upload_file(
-            &UploadFileParams::builder()
-                .repo_id(&repo_name)
+            &RepoUploadFileParams::builder()
                 .source(AddSource::Bytes(b"Hello from Rust!".to_vec()))
                 .path_in_repo("hello.txt")
                 .commit_message("Add hello.txt from bytes")
@@ -162,10 +146,9 @@ async fn main() -> huggingface_hub::Result<()> {
     let local_file = tmp_dir.path().join("local_data.txt");
     std::fs::write(&local_file, "Data from a local file").expect("failed to write local file");
 
-    let commit = api
+    let commit = repo
         .upload_file(
-            &UploadFileParams::builder()
-                .repo_id(&repo_name)
+            &RepoUploadFileParams::builder()
                 .source(AddSource::File(local_file))
                 .path_in_repo("data/local_data.txt")
                 .commit_message("Add local_data.txt from file path")
@@ -180,10 +163,9 @@ async fn main() -> huggingface_hub::Result<()> {
     std::fs::write(upload_dir.join("root.txt"), "root file").expect("failed to write");
     std::fs::write(upload_dir.join("subdir/nested.txt"), "nested file").expect("failed to write");
 
-    let commit = api
+    let commit = repo
         .upload_folder(
-            &UploadFolderParams::builder()
-                .repo_id(&repo_name)
+            &RepoUploadFolderParams::builder()
                 .folder_path(upload_dir)
                 .path_in_repo("uploaded")
                 .commit_message("Upload folder with nested files")
@@ -193,9 +175,9 @@ async fn main() -> huggingface_hub::Result<()> {
     println!("Uploaded folder: {:?}", commit.commit_url);
 
     // Cleanup
-    api.delete_repo(&DeleteRepoParams::builder().repo_id(&repo_name).missing_ok(true).build())
+    api.delete_repo(&DeleteRepoParams::builder().repo_id(repo.repo_path()).missing_ok(true).build())
         .await?;
-    println!("Cleaned up repo: {repo_name}");
+    println!("Cleaned up repo: {}", repo.repo_path());
 
     Ok(())
 }

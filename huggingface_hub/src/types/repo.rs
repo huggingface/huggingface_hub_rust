@@ -146,6 +146,25 @@ pub struct SpaceInfo {
     pub trending_score: Option<f64>,
 }
 
+#[derive(Debug, Clone)]
+pub enum RepoInfo {
+    Model(ModelInfo),
+    Dataset(DatasetInfo),
+    Space(SpaceInfo),
+}
+
+pub type HfRepoInfo = RepoInfo;
+
+impl RepoInfo {
+    pub fn repo_type(&self) -> RepoType {
+        match self {
+            RepoInfo::Model(_) => RepoType::Model,
+            RepoInfo::Dataset(_) => RepoType::Dataset,
+            RepoInfo::Space(_) => RepoType::Space,
+        }
+    }
+}
+
 /// URL returned by create_repo/move_repo
 #[derive(Debug, Clone, Deserialize)]
 pub struct RepoUrl {

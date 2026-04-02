@@ -1,3 +1,5 @@
+#![cfg(feature = "xet")]
+
 //! Integration tests for xet-based file transfers.
 //!
 //! Tests uploading large/binary files that require xet storage, and
@@ -16,18 +18,21 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use huggingface_hub::types::{
-    AddSource, CreateRepoParams, DeleteRepoParams, DownloadFileParams, FileExistsParams, UploadFileParams,
+use huggingface_hub::types::{AddSource, CreateRepoParams, DeleteRepoParams};
+use huggingface_hub::{
+    HFClient, HFClientBuilder, HFRepository, RepoDownloadFileParams, RepoFileExistsParams, RepoUploadFileParams,
 };
-use huggingface_hub::{HfApi, HfApiBuilder};
 use rand::Rng;
 use sha2::{Digest, Sha256};
+use tokio::sync::OnceCell;
 
-fn api() -> Option<HfApi> {
+static WHOAMI_USERNAME: OnceCell<String> = OnceCell::const_new();
+
+fn api() -> Option<HFClient> {
     if std::env::var("HF_TOKEN").is_err() {
         return None;
     }
-    Some(HfApiBuilder::new().build().expect("Failed to create HfApi"))
+    Some(HFClientBuilder::new().build().expect("Failed to create HFClient"))
 }
 
 fn write_enabled() -> bool {
@@ -42,19 +47,27 @@ fn unique_suffix() -> String {
     format!("{:x}{:x}-{count}", t.as_secs(), t.subsec_nanos())
 }
 
-async fn create_test_repo(api: &HfApi, suffix: &str) -> String {
-    let whoami = api.whoami().await.expect("whoami failed");
-    let repo_id = format!("{}/hf-hub-xet-test-{suffix}", whoami.username);
+/// Split a `"owner/name"` repo_id into an [`HFRepository`] handle.
+fn repo_handle(api: &HFClient, owner: &str, name: &str) -> HFRepository {
+    api.model(owner, name)
+}
+
+async fn create_test_repo(api: &HFClient, suffix: &str) -> (String, String) {
+    let username = WHOAMI_USERNAME
+        .get_or_init(|| async { api.whoami().await.expect("whoami failed").username })
+        .await;
+    let name = format!("hf-hub-xet-test-{suffix}");
+    let repo_id = format!("{username}/{name}");
     let params = CreateRepoParams::builder()
         .repo_id(&repo_id)
         .private(true)
         .exist_ok(true)
         .build();
     api.create_repo(&params).await.expect("create_repo failed");
-    repo_id
+    (username.clone(), name)
 }
 
-async fn delete_test_repo(api: &HfApi, repo_id: &str) {
+async fn delete_test_repo(api: &HFClient, repo_id: &str) {
     let params = DeleteRepoParams::builder().repo_id(repo_id).build();
     let _ = api.delete_repo(&params).await;
 }
@@ -80,25 +93,33 @@ async fn test_upload_small_text_file_roundtrip() {
         return;
     }
 
-    let repo_id = create_test_repo(&api, &unique_suffix()).await;
+    let (owner, name) = create_test_repo(&api, &unique_suffix()).await;
+    let repo_id = format!("{owner}/{name}");
+    let repo = repo_handle(&api, &owner, &name);
 
     let data = b"Hello from the xet transfer test!".to_vec();
-    let params = UploadFileParams::builder()
-        .repo_id(&repo_id)
-        .source(AddSource::Bytes(data.clone()))
-        .path_in_repo("greeting.txt")
-        .commit_message("upload small text file")
-        .build();
-    let commit = api.upload_file(&params).await.unwrap();
+    let commit = repo
+        .upload_file(
+            &RepoUploadFileParams::builder()
+                .source(AddSource::Bytes(data.clone()))
+                .path_in_repo("greeting.txt")
+                .commit_message("upload small text file")
+                .build(),
+        )
+        .await
+        .unwrap();
     assert!(commit.commit_oid.is_some());
 
     let dir = tempfile::tempdir().unwrap();
-    let dl_params = DownloadFileParams::builder()
-        .repo_id(&repo_id)
-        .filename("greeting.txt")
-        .local_dir(dir.path().to_path_buf())
-        .build();
-    let path = api.download_file(&dl_params).await.unwrap();
+    let path = repo
+        .download_file(
+            &RepoDownloadFileParams::builder()
+                .filename("greeting.txt")
+                .local_dir(dir.path().to_path_buf())
+                .build(),
+        )
+        .await
+        .unwrap();
     assert_eq!(std::fs::read(&path).unwrap(), data);
 
     delete_test_repo(&api, &repo_id).await;
@@ -111,23 +132,30 @@ async fn test_upload_empty_file() {
         return;
     }
 
-    let repo_id = create_test_repo(&api, &unique_suffix()).await;
+    let (owner, name) = create_test_repo(&api, &unique_suffix()).await;
+    let repo_id = format!("{owner}/{name}");
+    let repo = repo_handle(&api, &owner, &name);
 
-    let params = UploadFileParams::builder()
-        .repo_id(&repo_id)
-        .source(AddSource::Bytes(vec![]))
-        .path_in_repo("empty.bin")
-        .commit_message("upload empty file")
-        .build();
-    api.upload_file(&params).await.unwrap();
+    repo.upload_file(
+        &RepoUploadFileParams::builder()
+            .source(AddSource::Bytes(vec![]))
+            .path_in_repo("empty.bin")
+            .commit_message("upload empty file")
+            .build(),
+    )
+    .await
+    .unwrap();
 
     let dir = tempfile::tempdir().unwrap();
-    let dl_params = DownloadFileParams::builder()
-        .repo_id(&repo_id)
-        .filename("empty.bin")
-        .local_dir(dir.path().to_path_buf())
-        .build();
-    let path = api.download_file(&dl_params).await.unwrap();
+    let path = repo
+        .download_file(
+            &RepoDownloadFileParams::builder()
+                .filename("empty.bin")
+                .local_dir(dir.path().to_path_buf())
+                .build(),
+        )
+        .await
+        .unwrap();
     assert!(std::fs::read(&path).unwrap().is_empty());
 
     delete_test_repo(&api, &repo_id).await;
@@ -140,31 +168,40 @@ async fn test_upload_then_overwrite_same_path() {
         return;
     }
 
-    let repo_id = create_test_repo(&api, &unique_suffix()).await;
+    let (owner, name) = create_test_repo(&api, &unique_suffix()).await;
+    let repo_id = format!("{owner}/{name}");
+    let repo = repo_handle(&api, &owner, &name);
 
-    let params = UploadFileParams::builder()
-        .repo_id(&repo_id)
-        .source(AddSource::Bytes(b"version 1".to_vec()))
-        .path_in_repo("versioned.txt")
-        .commit_message("v1")
-        .build();
-    api.upload_file(&params).await.unwrap();
+    repo.upload_file(
+        &RepoUploadFileParams::builder()
+            .source(AddSource::Bytes(b"version 1".to_vec()))
+            .path_in_repo("versioned.txt")
+            .commit_message("v1")
+            .build(),
+    )
+    .await
+    .unwrap();
 
-    let params = UploadFileParams::builder()
-        .repo_id(&repo_id)
-        .source(AddSource::Bytes(b"version 2 updated".to_vec()))
-        .path_in_repo("versioned.txt")
-        .commit_message("v2")
-        .build();
-    api.upload_file(&params).await.unwrap();
+    repo.upload_file(
+        &RepoUploadFileParams::builder()
+            .source(AddSource::Bytes(b"version 2 updated".to_vec()))
+            .path_in_repo("versioned.txt")
+            .commit_message("v2")
+            .build(),
+    )
+    .await
+    .unwrap();
 
     let dir = tempfile::tempdir().unwrap();
-    let dl_params = DownloadFileParams::builder()
-        .repo_id(&repo_id)
-        .filename("versioned.txt")
-        .local_dir(dir.path().to_path_buf())
-        .build();
-    let path = api.download_file(&dl_params).await.unwrap();
+    let path = repo
+        .download_file(
+            &RepoDownloadFileParams::builder()
+                .filename("versioned.txt")
+                .local_dir(dir.path().to_path_buf())
+                .build(),
+        )
+        .await
+        .unwrap();
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "version 2 updated");
 
     delete_test_repo(&api, &repo_id).await;
@@ -177,24 +214,31 @@ async fn test_upload_file_with_nested_path() {
         return;
     }
 
-    let repo_id = create_test_repo(&api, &unique_suffix()).await;
+    let (owner, name) = create_test_repo(&api, &unique_suffix()).await;
+    let repo_id = format!("{owner}/{name}");
+    let repo = repo_handle(&api, &owner, &name);
 
     let data = b"deeply nested content".to_vec();
-    let params = UploadFileParams::builder()
-        .repo_id(&repo_id)
-        .source(AddSource::Bytes(data.clone()))
-        .path_in_repo("a/b/c/d/deep.txt")
-        .commit_message("upload nested file")
-        .build();
-    api.upload_file(&params).await.unwrap();
+    repo.upload_file(
+        &RepoUploadFileParams::builder()
+            .source(AddSource::Bytes(data.clone()))
+            .path_in_repo("a/b/c/d/deep.txt")
+            .commit_message("upload nested file")
+            .build(),
+    )
+    .await
+    .unwrap();
 
     let dir = tempfile::tempdir().unwrap();
-    let dl_params = DownloadFileParams::builder()
-        .repo_id(&repo_id)
-        .filename("a/b/c/d/deep.txt")
-        .local_dir(dir.path().to_path_buf())
-        .build();
-    let path = api.download_file(&dl_params).await.unwrap();
+    let path = repo
+        .download_file(
+            &RepoDownloadFileParams::builder()
+                .filename("a/b/c/d/deep.txt")
+                .local_dir(dir.path().to_path_buf())
+                .build(),
+        )
+        .await
+        .unwrap();
     assert_eq!(path, dir.path().join("a/b/c/d/deep.txt"));
     assert_eq!(std::fs::read(&path).unwrap(), data);
 
@@ -208,7 +252,9 @@ async fn test_upload_from_file_path() {
         return;
     }
 
-    let repo_id = create_test_repo(&api, &unique_suffix()).await;
+    let (owner, name) = create_test_repo(&api, &unique_suffix()).await;
+    let repo_id = format!("{owner}/{name}");
+    let repo = repo_handle(&api, &owner, &name);
 
     let tmp = tempfile::tempdir().unwrap();
     let data = b"content from a local file on disk".to_vec();
@@ -216,21 +262,26 @@ async fn test_upload_from_file_path() {
     let local_file = tmp.path().join("upload_me.txt");
     std::fs::write(&local_file, &data).unwrap();
 
-    let params = UploadFileParams::builder()
-        .repo_id(&repo_id)
-        .source(AddSource::File(local_file))
-        .path_in_repo("uploaded_from_path.txt")
-        .commit_message("upload from file path")
-        .build();
-    api.upload_file(&params).await.unwrap();
+    repo.upload_file(
+        &RepoUploadFileParams::builder()
+            .source(AddSource::File(local_file))
+            .path_in_repo("uploaded_from_path.txt")
+            .commit_message("upload from file path")
+            .build(),
+    )
+    .await
+    .unwrap();
 
     let dir = tempfile::tempdir().unwrap();
-    let dl_params = DownloadFileParams::builder()
-        .repo_id(&repo_id)
-        .filename("uploaded_from_path.txt")
-        .local_dir(dir.path().to_path_buf())
-        .build();
-    let path = api.download_file(&dl_params).await.unwrap();
+    let path = repo
+        .download_file(
+            &RepoDownloadFileParams::builder()
+                .filename("uploaded_from_path.txt")
+                .local_dir(dir.path().to_path_buf())
+                .build(),
+        )
+        .await
+        .unwrap();
     assert_eq!(sha256_hex(&std::fs::read(&path).unwrap()), expected_hash);
 
     delete_test_repo(&api, &repo_id).await;
@@ -245,13 +296,14 @@ async fn test_download_from_known_xet_repo() {
     let Some(api) = api() else { return };
 
     let dir = tempfile::tempdir().unwrap();
-    let params = DownloadFileParams::builder()
-        .repo_id("mcpotato/42-xet-test-repo")
-        .filename("large_random.bin")
-        .local_dir(dir.path().to_path_buf())
-        .build();
-
-    let result = api.download_file(&params).await;
+    let result = repo_handle(&api, "mcpotato", "42-xet-test-repo")
+        .download_file(
+            &RepoDownloadFileParams::builder()
+                .filename("large_random.bin")
+                .local_dir(dir.path().to_path_buf())
+                .build(),
+        )
+        .await;
     match result {
         Ok(path) => {
             assert!(path.exists());
@@ -275,7 +327,9 @@ async fn test_upload_200mb_random_data_and_verify() {
         return;
     }
 
-    let repo_id = create_test_repo(&api, &unique_suffix()).await;
+    let (owner, name) = create_test_repo(&api, &unique_suffix()).await;
+    let repo_id = format!("{owner}/{name}");
+    let repo = repo_handle(&api, &owner, &name);
 
     let data_200mb = generate_random_bytes(200 * 1024 * 1024);
     let expected_hash = sha256_hex(&data_200mb);
@@ -285,32 +339,33 @@ async fn test_upload_200mb_random_data_and_verify() {
     std::fs::write(&local_file, &data_200mb).unwrap();
     drop(data_200mb);
 
-    let params = UploadFileParams::builder()
-        .repo_id(&repo_id)
-        .source(AddSource::File(local_file))
-        .path_in_repo("large_random.bin")
-        .commit_message("upload 200MB random data")
-        .build();
-
-    let commit = api
-        .upload_file(&params)
+    let commit = repo
+        .upload_file(
+            &RepoUploadFileParams::builder()
+                .source(AddSource::File(local_file))
+                .path_in_repo("large_random.bin")
+                .commit_message("upload 200MB random data")
+                .build(),
+        )
         .await
         .expect("Large file upload via xet should succeed");
     assert!(commit.commit_oid.is_some());
 
-    let exists_params = FileExistsParams::builder()
-        .repo_id(&repo_id)
-        .filename("large_random.bin")
-        .build();
-    assert!(api.file_exists(&exists_params).await.unwrap());
+    assert!(repo
+        .file_exists(&RepoFileExistsParams::builder().filename("large_random.bin").build())
+        .await
+        .unwrap());
 
     let dl_dir = tempfile::tempdir().unwrap();
-    let dl_params = DownloadFileParams::builder()
-        .repo_id(&repo_id)
-        .filename("large_random.bin")
-        .local_dir(dl_dir.path().to_path_buf())
-        .build();
-    let downloaded_path = api.download_file(&dl_params).await.unwrap();
+    let downloaded_path = repo
+        .download_file(
+            &RepoDownloadFileParams::builder()
+                .filename("large_random.bin")
+                .local_dir(dl_dir.path().to_path_buf())
+                .build(),
+        )
+        .await
+        .unwrap();
     assert!(downloaded_path.exists());
 
     let downloaded_data = std::fs::read(&downloaded_path).unwrap();

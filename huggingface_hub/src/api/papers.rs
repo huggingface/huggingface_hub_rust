@@ -1,10 +1,10 @@
-use crate::client::HfApi;
+use crate::client::HFClient;
 use crate::error::Result;
 use crate::types::{
     DailyPaper, ListDailyPapersParams, ListPapersParams, PaperInfo, PaperInfoParams, PaperSearchResult,
 };
 
-impl HfApi {
+impl HFClient {
     pub async fn list_papers(&self, params: &ListPapersParams) -> Result<Vec<PaperSearchResult>> {
         let url = format!("{}/api/papers/search", self.inner.endpoint);
         let mut query: Vec<(String, String)> = Vec::new();
