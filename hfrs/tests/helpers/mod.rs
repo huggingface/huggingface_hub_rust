@@ -9,18 +9,6 @@ pub struct CliRunner {
     env_remove: Vec<String>,
 }
 
-pub const VOLATILE_FIELDS: &[&str] = &[
-    "downloads",
-    "downloadsAllTime",
-    "trendingScore",
-    "lastModified",
-    "likes",
-    "sha",
-    "trending_score",
-    "downloads_all_time",
-    "last_modified",
-];
-
 impl CliRunner {
     pub fn new(bin: &str) -> Self {
         Self {
@@ -174,55 +162,5 @@ pub fn require_token() {
 pub fn require_write() {
     if std::env::var("HF_TEST_WRITE").is_err() {
         panic!("HF_TEST_WRITE=1 is required for write operation tests.");
-    }
-}
-
-pub fn assert_json_equivalent(actual: &serde_json::Value, expected: &serde_json::Value, ignore_fields: &[&str]) {
-    assert_json_equivalent_at_path(actual, expected, ignore_fields, "");
-}
-
-fn assert_json_equivalent_at_path(
-    actual: &serde_json::Value,
-    expected: &serde_json::Value,
-    ignore_fields: &[&str],
-    path: &str,
-) {
-    match (actual, expected) {
-        (serde_json::Value::Object(a), serde_json::Value::Object(e)) => {
-            for (key, e_val) in e {
-                if ignore_fields.contains(&key.as_str()) {
-                    continue;
-                }
-                let current_path = if path.is_empty() {
-                    key.clone()
-                } else {
-                    format!("{path}.{key}")
-                };
-                match a.get(key) {
-                    Some(a_val) => {
-                        assert_json_equivalent_at_path(a_val, e_val, ignore_fields, &current_path);
-                    },
-                    None => {
-                        panic!("Missing key at '{current_path}': expected {e_val}");
-                    },
-                }
-            }
-        },
-        (serde_json::Value::Array(a), serde_json::Value::Array(e)) => {
-            assert_eq!(
-                a.len(),
-                e.len(),
-                "Array length mismatch at '{path}': actual {} vs expected {}",
-                a.len(),
-                e.len()
-            );
-            for (i, (a_item, e_item)) in a.iter().zip(e.iter()).enumerate() {
-                let current_path = format!("{path}[{i}]");
-                assert_json_equivalent_at_path(a_item, e_item, ignore_fields, &current_path);
-            }
-        },
-        _ => {
-            assert_eq!(actual, expected, "Value mismatch at '{path}': actual {actual} vs expected {expected}");
-        },
     }
 }
