@@ -1,4 +1,4 @@
-pub(crate) mod cache;
+pub mod cache;
 pub mod commit;
 pub mod params;
 pub mod repo;

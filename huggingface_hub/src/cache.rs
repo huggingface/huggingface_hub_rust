@@ -229,7 +229,7 @@ async fn scan_snapshot(snap_path: &Path, warnings: &mut Vec<String>) -> Vec<crat
     files
 }
 
-pub(crate) async fn scan_cache_dir(cache_dir: &Path) -> crate::error::Result<crate::types::cache::HfCacheInfo> {
+pub async fn scan_cache_dir(cache_dir: &Path) -> crate::error::Result<crate::types::cache::HfCacheInfo> {
     use std::time::SystemTime;
 
     use crate::types::cache::{CachedRepoInfo, CachedRevisionInfo, HfCacheInfo};

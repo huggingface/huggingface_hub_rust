@@ -9,12 +9,10 @@ pub const HF_TOKEN: &str = "HF_TOKEN";
 pub const HF_TOKEN_PATH: &str = "HF_TOKEN_PATH";
 pub const HF_HOME: &str = "HF_HOME";
 pub const HF_HUB_CACHE: &str = "HF_HUB_CACHE";
+pub const HUGGINGFACE_HUB_CACHE: &str = "HUGGINGFACE_HUB_CACHE";
 pub const XDG_CACHE_HOME: &str = "XDG_CACHE_HOME";
 pub const HF_HUB_DISABLE_IMPLICIT_TOKEN: &str = "HF_HUB_DISABLE_IMPLICIT_TOKEN";
 pub const HF_HUB_USER_AGENT_ORIGIN: &str = "HF_HUB_USER_AGENT_ORIGIN";
-
-/// Default HF home directory
-pub const DEFAULT_HF_HOME: &str = "~/.cache/huggingface";
 
 /// Token filename within HF_HOME
 pub const TOKEN_FILENAME: &str = "token";

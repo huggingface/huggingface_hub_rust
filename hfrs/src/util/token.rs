@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -27,15 +25,7 @@ pub struct TokenEntry {
 }
 
 fn hf_home() -> PathBuf {
-    if let Ok(path) = std::env::var("HF_HOME") {
-        return PathBuf::from(path);
-    }
-    if let Ok(path) = std::env::var("XDG_CACHE_HOME") {
-        return PathBuf::from(path).join("huggingface");
-    }
-    dirs::cache_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.cache"))
-        .join("huggingface")
+    super::paths::hf_home()
 }
 
 fn token_file_path() -> PathBuf {
@@ -92,17 +82,6 @@ fn write_active_token_file(token: &str) -> anyhow::Result<()> {
     }
     fs::write(&path, token)?;
     Ok(())
-}
-
-pub fn read_active_token() -> Option<String> {
-    let stored = read_stored_tokens();
-    if let Some(active_name) = &stored.active {
-        if let Some(entry) = stored.tokens.get(active_name) {
-            return Some(entry.token.clone());
-        }
-    }
-    let path = token_file_path();
-    fs::read_to_string(path).ok().map(|s| s.trim().to_string())
 }
 
 pub fn save_token(name: &str, token: &str) -> anyhow::Result<()> {

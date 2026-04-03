@@ -5,6 +5,8 @@ use reqwest_middleware::ClientWithMiddleware;
 use reqwest_retry::policies::ExponentialBackoff;
 use reqwest_retry::RetryTransientMiddleware;
 
+use tracing::debug;
+
 use crate::constants;
 use crate::error::{HfError, Result};
 
@@ -283,12 +285,14 @@ pub type HfClientBuilder = HFClientBuilder;
 fn resolve_token() -> Option<String> {
     if let Ok(val) = std::env::var(constants::HF_HUB_DISABLE_IMPLICIT_TOKEN) {
         if !val.is_empty() {
+            debug!("implicit token disabled via HF_HUB_DISABLE_IMPLICIT_TOKEN");
             return None;
         }
     }
 
     if let Ok(token) = std::env::var(constants::HF_TOKEN) {
         if !token.is_empty() {
+            debug!("resolved token from HF_TOKEN env var");
             return Some(token);
         }
     }
@@ -297,6 +301,7 @@ fn resolve_token() -> Option<String> {
         if let Ok(token) = std::fs::read_to_string(&path) {
             let token = token.trim().to_string();
             if !token.is_empty() {
+                debug!("resolved token from HF_TOKEN_PATH file");
                 return Some(token);
             }
         }
@@ -310,10 +315,12 @@ fn resolve_token() -> Option<String> {
     if let Ok(token) = std::fs::read_to_string(&token_path) {
         let token = token.trim().to_string();
         if !token.is_empty() {
+            debug!("resolved token from stored token file");
             return Some(token);
         }
     }
 
+    debug!("no token found");
     None
 }
 
@@ -322,9 +329,12 @@ fn dirs_or_home() -> String {
 }
 
 /// Resolve cache directory from environment.
-/// Priority: HF_HUB_CACHE env → $HF_HOME/hub → ~/.cache/huggingface/hub.
+/// Priority: HF_HUB_CACHE → HUGGINGFACE_HUB_CACHE → $HF_HOME/hub → $XDG_CACHE_HOME/huggingface/hub → ~/.cache/huggingface/hub.
 fn resolve_cache_dir() -> std::path::PathBuf {
     if let Ok(cache) = std::env::var(constants::HF_HUB_CACHE) {
+        return std::path::PathBuf::from(cache);
+    }
+    if let Ok(cache) = std::env::var(constants::HUGGINGFACE_HUB_CACHE) {
         return std::path::PathBuf::from(cache);
     }
     if let Ok(hf_home) = std::env::var(constants::HF_HOME) {

@@ -12,7 +12,6 @@ use huggingface_hub::{HfApiBuilder, HfError};
 use output::render;
 use owo_colors::OwoColorize;
 use tracing::{debug, info};
-use util::token::read_active_token;
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -21,26 +20,9 @@ async fn main() -> ExitCode {
     let color = should_use_color(cli.no_color);
     init_logging(color);
 
-    let token = cli
-        .token
-        .clone()
-        .or_else(|| std::env::var("HF_TOKEN").ok())
-        .or_else(read_active_token);
-
-    debug!(
-        token_source = if cli.token.is_some() {
-            "cli_flag"
-        } else if std::env::var("HF_TOKEN").is_ok() {
-            "env_var"
-        } else {
-            "stored_file"
-        },
-        has_token = token.is_some(),
-        "resolved authentication token"
-    );
-
     let mut builder = HfApiBuilder::new();
-    if let Some(t) = token {
+    if let Some(t) = cli.token {
+        debug!("using token from --token flag");
         builder = builder.token(t);
     }
     if let Some(ref endpoint) = cli.endpoint {
