@@ -23,7 +23,7 @@ async fn main() -> huggingface_hub::Result<()> {
         let details = repo
             .discussion_details(&RepoDiscussionDetailsParams::builder().discussion_num(first.num).build())
             .await?;
-        println!("Discussion #{}: {:?} (status: {:?})", details.num, details.title, details.status);
+        println!("Discussion #{}: {} (status: {})", details.num, details.title, details.status);
     }
 
     // --- Write operations ---
@@ -60,19 +60,19 @@ async fn main() -> huggingface_hub::Result<()> {
                 .build(),
         )
         .await?;
-    let comment_id = comment.id.expect("comment should have an id");
+    let comment_id = &comment.new_message.id;
     println!("Added comment: {comment_id}");
 
     let edited = repo
         .edit_discussion_comment(
             &RepoEditDiscussionCommentParams::builder()
                 .discussion_num(discussion.num)
-                .comment_id(&comment_id)
+                .comment_id(comment_id)
                 .new_content("Edited test comment")
                 .build(),
         )
         .await?;
-    println!("Edited comment: {:?}", edited.id);
+    println!("Edited comment: {}", edited.new_message.id);
 
     let renamed = repo
         .rename_discussion(
@@ -82,7 +82,7 @@ async fn main() -> huggingface_hub::Result<()> {
                 .build(),
         )
         .await?;
-    println!("Renamed discussion: {:?}", renamed.title);
+    println!("Renamed discussion: {}", renamed.new_title.event_type);
 
     repo.change_discussion_status(
         &RepoChangeDiscussionStatusParams::builder()
