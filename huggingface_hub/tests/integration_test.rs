@@ -162,7 +162,11 @@ async fn test_file_exists() {
 #[tokio::test]
 async fn test_list_models() {
     let Some(api) = api() else { return };
-    let params = ListModelsParams::builder().author("openai-community").limit(3_usize).build();
+    let params = ListModelsParams::builder()
+        .author("openai-community")
+        .limit(3_usize)
+        .max_items(3_usize)
+        .build();
     let stream = api.list_models(&params).unwrap();
     futures::pin_mut!(stream);
 
@@ -171,9 +175,6 @@ async fn test_list_models() {
         let model = model.unwrap();
         assert!(model.id.starts_with("openai-community/"));
         count += 1;
-        if count >= 3 {
-            break;
-        }
     }
     assert!(count > 0);
 }
@@ -337,7 +338,11 @@ async fn test_space_info() {
 #[tokio::test]
 async fn test_list_datasets() {
     let Some(api) = api() else { return };
-    let params = ListDatasetsParams::builder().author("huggingface").limit(3_usize).build();
+    let params = ListDatasetsParams::builder()
+        .author("huggingface")
+        .limit(3_usize)
+        .max_items(3_usize)
+        .build();
     let stream = api.list_datasets(&params).unwrap();
     futures::pin_mut!(stream);
 
@@ -345,9 +350,6 @@ async fn test_list_datasets() {
     while let Some(ds) = stream.next().await {
         ds.unwrap();
         count += 1;
-        if count >= 3 {
-            break;
-        }
     }
     assert!(count > 0);
 }
@@ -355,7 +357,11 @@ async fn test_list_datasets() {
 #[tokio::test]
 async fn test_list_spaces() {
     let Some(api) = api() else { return };
-    let params = ListSpacesParams::builder().author("huggingface").limit(3_usize).build();
+    let params = ListSpacesParams::builder()
+        .author("huggingface")
+        .limit(3_usize)
+        .max_items(3_usize)
+        .build();
     let stream = api.list_spaces(&params).unwrap();
     futures::pin_mut!(stream);
 
@@ -363,9 +369,6 @@ async fn test_list_spaces() {
     while let Some(space) = stream.next().await {
         space.unwrap();
         count += 1;
-        if count >= 3 {
-            break;
-        }
     }
     assert!(count > 0);
 }
