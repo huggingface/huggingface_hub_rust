@@ -62,10 +62,8 @@ impl crate::repository::HFRepository {
 
     pub async fn create_discussion(&self, params: &RepoCreateDiscussionParams) -> Result<DiscussionWithDetails> {
         let url = format!("{}/discussions", self.client.api_url(Some(self.repo_type), &self.repo_path()));
-        let mut body = serde_json::json!({ "title": params.title });
-        if let Some(ref desc) = params.description {
-            body["description"] = serde_json::json!(desc);
-        }
+        let description = params.description.as_deref().unwrap_or("");
+        let body = serde_json::json!({ "title": params.title, "description": description });
         let response = self
             .client
             .inner
@@ -85,13 +83,12 @@ impl crate::repository::HFRepository {
 
     pub async fn create_pull_request(&self, params: &RepoCreatePullRequestParams) -> Result<DiscussionWithDetails> {
         let url = format!("{}/discussions", self.client.api_url(Some(self.repo_type), &self.repo_path()));
-        let mut body = serde_json::json!({
+        let description = params.description.as_deref().unwrap_or("");
+        let body = serde_json::json!({
             "title": params.title,
             "pullRequest": true,
+            "description": description,
         });
-        if let Some(ref desc) = params.description {
-            body["description"] = serde_json::json!(desc);
-        }
         let response = self
             .client
             .inner

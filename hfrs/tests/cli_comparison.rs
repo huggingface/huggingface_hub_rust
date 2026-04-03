@@ -1,6 +1,28 @@
 mod helpers;
 
+use std::sync::OnceLock;
+
 use helpers::{require_cli, require_token, require_write, CliRunner};
+
+/// Cached whoami username, fetched once and reused across all tests.
+fn whoami_username() -> &'static str {
+    static USERNAME: OnceLock<String> = OnceLock::new();
+    USERNAME.get_or_init(|| {
+        let hfrs = CliRunner::hfrs();
+        let out = hfrs
+            .run_json(&["auth", "whoami"])
+            .expect("whoami should succeed for test setup");
+        out.get("username")
+            .and_then(|v| v.as_str())
+            .expect("whoami response should have a username field")
+            .to_string()
+    })
+}
+
+/// Build a full repo ID like "username/repo-name" using the cached whoami username.
+fn full_repo(repo_name: &str) -> String {
+    format!("{}/{repo_name}", whoami_username())
+}
 
 // --- Basic smoke tests (no token needed) ---
 
@@ -685,7 +707,7 @@ fn write_repo_create_and_delete() {
     let create_result = hfrs.run_raw(&["repos", "create", &repo_name, "--type", "model"]);
     assert!(create_result.is_ok(), "repo creation should succeed: {:?}", create_result.err());
 
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
     let info_result = hfrs.run_json(&["models", "info", &full_repo]);
     let delete_result = hfrs.run_raw(&["repos", "delete", &full_repo]);
 
@@ -710,7 +732,7 @@ fn write_repo_create_private() {
     let create_result = hfrs.run_raw(&["repos", "create", &repo_name, "--type", "model", "--private"]);
     assert!(create_result.is_ok(), "private repo creation should succeed: {:?}", create_result.err());
 
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
     let info_result = hfrs.run_json(&["models", "info", &full_repo]);
     let delete_result = hfrs.run_raw(&["repos", "delete", &full_repo]);
 
@@ -732,7 +754,7 @@ fn write_branch_create_and_delete() {
             .unwrap()
             .as_millis()
     );
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
 
     hfrs.run_raw(&["repos", "create", &repo_name, "--type", "model"])
         .expect("repo creation should succeed");
@@ -760,7 +782,7 @@ fn write_tag_create_and_delete() {
             .unwrap()
             .as_millis()
     );
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
 
     hfrs.run_raw(&["repos", "create", &repo_name, "--type", "model"])
         .expect("repo creation should succeed");
@@ -799,7 +821,7 @@ fn write_discussion_create_and_close() {
             .unwrap()
             .as_millis()
     );
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
 
     hfrs.run_raw(&["repos", "create", &repo_name, "--type", "model"])
         .expect("repo creation should succeed");
@@ -1635,7 +1657,7 @@ fn write_upload_single_file() {
     let hfrs = CliRunner::hfrs();
 
     let repo_name = unique_repo_name("hfrs-upload-file");
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
 
     hfrs.run_raw(&["repos", "create", &repo_name]).expect("repo creation");
 
@@ -1658,7 +1680,7 @@ fn write_upload_auto_create() {
     let hfrs = CliRunner::hfrs();
 
     let repo_name = unique_repo_name("hfrs-upload-autocreate");
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
 
     let tmp = tempfile::tempdir().unwrap();
     let file_path = tmp.path().join("test.txt");
@@ -1680,7 +1702,7 @@ fn write_upload_private_auto_create() {
     let hfrs = CliRunner::hfrs();
 
     let repo_name = unique_repo_name("hfrs-upload-private");
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
 
     let tmp = tempfile::tempdir().unwrap();
     let file_path = tmp.path().join("test.txt");
@@ -1702,7 +1724,7 @@ fn write_upload_path_in_repo() {
     let hfrs = CliRunner::hfrs();
 
     let repo_name = unique_repo_name("hfrs-upload-path");
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
 
     hfrs.run_raw(&["repos", "create", &repo_name]).expect("repo creation");
 
@@ -1734,7 +1756,7 @@ fn write_upload_commit_message_and_description() {
     let hfrs = CliRunner::hfrs();
 
     let repo_name = unique_repo_name("hfrs-upload-commit");
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
 
     hfrs.run_raw(&["repos", "create", &repo_name]).expect("repo creation");
 
@@ -1763,7 +1785,7 @@ fn write_upload_create_pr() {
     let hfrs = CliRunner::hfrs();
 
     let repo_name = unique_repo_name("hfrs-upload-pr");
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
 
     hfrs.run_raw(&["repos", "create", &repo_name]).expect("repo creation");
 
@@ -1792,7 +1814,7 @@ fn write_upload_to_branch() {
     let hfrs = CliRunner::hfrs();
 
     let repo_name = unique_repo_name("hfrs-upload-branch");
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
 
     hfrs.run_raw(&["repos", "create", &repo_name]).expect("repo creation");
     hfrs.run_raw(&["repos", "branch", "create", &full_repo, "test-branch"])
@@ -1821,7 +1843,7 @@ fn write_upload_quiet() {
     let hfrs = CliRunner::hfrs();
 
     let repo_name = unique_repo_name("hfrs-upload-quiet");
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
 
     hfrs.run_raw(&["repos", "create", &repo_name]).expect("repo creation");
 
@@ -1845,7 +1867,7 @@ fn write_upload_nonexistent_path_fails() {
     let hfrs = CliRunner::hfrs();
 
     let repo_name = unique_repo_name("hfrs-upload-nopath");
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
 
     hfrs.run_raw(&["repos", "create", &repo_name]).expect("repo creation");
 
@@ -1865,7 +1887,7 @@ fn write_upload_folder() {
     let hfrs = CliRunner::hfrs();
 
     let repo_name = unique_repo_name("hfrs-upload-folder");
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
 
     hfrs.run_raw(&["repos", "create", &repo_name]).expect("repo creation");
 
@@ -1904,7 +1926,7 @@ fn write_upload_folder_include() {
     let hfrs = CliRunner::hfrs();
 
     let repo_name = unique_repo_name("hfrs-upload-include");
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
 
     hfrs.run_raw(&["repos", "create", &repo_name]).expect("repo creation");
 
@@ -1945,7 +1967,7 @@ fn write_upload_folder_exclude() {
     let hfrs = CliRunner::hfrs();
 
     let repo_name = unique_repo_name("hfrs-upload-exclude");
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
 
     hfrs.run_raw(&["repos", "create", &repo_name]).expect("repo creation");
 
@@ -1986,7 +2008,7 @@ fn write_upload_folder_delete() {
     let hfrs = CliRunner::hfrs();
 
     let repo_name = unique_repo_name("hfrs-upload-delete");
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
 
     hfrs.run_raw(&["repos", "create", &repo_name]).expect("repo creation");
 
@@ -2027,7 +2049,7 @@ fn write_upload_folder_path_in_repo() {
     let hfrs = CliRunner::hfrs();
 
     let repo_name = unique_repo_name("hfrs-upload-folder-path");
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
 
     hfrs.run_raw(&["repos", "create", &repo_name]).expect("repo creation");
 
@@ -2059,7 +2081,7 @@ fn write_upload_empty_excluded_folder() {
     let hfrs = CliRunner::hfrs();
 
     let repo_name = unique_repo_name("hfrs-upload-empty");
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
 
     hfrs.run_raw(&["repos", "create", &repo_name]).expect("repo creation");
 
@@ -2101,7 +2123,7 @@ fn write_upload_dataset_type() {
     let hfrs = CliRunner::hfrs();
 
     let repo_name = unique_repo_name("hfrs-upload-dataset");
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
 
     let tmp = tempfile::tempdir().unwrap();
     let file_path = tmp.path().join("data.csv");
@@ -2123,7 +2145,7 @@ fn write_upload_large_file() {
     let hfrs = CliRunner::hfrs();
 
     let repo_name = unique_repo_name("hfrs-upload-large");
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
 
     hfrs.run_raw(&["repos", "create", &repo_name]).expect("repo creation");
 
@@ -2147,7 +2169,7 @@ fn write_upload_special_chars() {
     let hfrs = CliRunner::hfrs();
 
     let repo_name = unique_repo_name("hfrs-upload-special");
-    let full_repo = format!("assafvayner/{repo_name}");
+    let full_repo = full_repo(&repo_name);
 
     hfrs.run_raw(&["repos", "create", &repo_name]).expect("repo creation");
 
