@@ -37,6 +37,17 @@ fn write_enabled() -> bool {
     std::env::var("HF_TEST_WRITE").ok().is_some_and(|v| v == "1")
 }
 
+/// Cached whoami username, fetched once and reused across all tests.
+async fn cached_username() -> &'static str {
+    static USERNAME: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
+    USERNAME
+        .get_or_init(|| async {
+            let client = HFClientBuilder::new().build().expect("Failed to create HFClient for whoami");
+            client.whoami().await.expect("whoami failed").username
+        })
+        .await
+}
+
 /// Create an HFRepository handle from a full `owner/name` repo_id string.
 fn repo(api: &HFClient, repo_id: &str) -> HFRepository {
     let parts: Vec<&str> = repo_id.splitn(2, '/').collect();
@@ -439,12 +450,9 @@ async fn test_create_and_delete_repo() {
         return;
     }
 
-    let whoami = api
-        .whoami()
-        .await
-        .expect("whoami should return something, make sure HF_TOKEN is set");
+    let username = cached_username().await;
 
-    let repo_id = format!("{}/huggingface-hub-rust-test-{}", whoami.username, uuid_v4_short());
+    let repo_id = format!("{}/huggingface-hub-rust-test-{}", username, uuid_v4_short());
 
     // Create
     let params = CreateRepoParams::builder()
@@ -485,8 +493,8 @@ fn uuid_v4_short() -> String {
 }
 
 async fn create_test_repo(api: &HFClient) -> String {
-    let whoami = api.whoami().await.expect("whoami failed");
-    let repo_id = format!("{}/huggingface-hub-rust-test-{}", whoami.username, uuid_v4_short());
+    let username = cached_username().await;
+    let repo_id = format!("{}/huggingface-hub-rust-test-{}", username, uuid_v4_short());
     let params = CreateRepoParams::builder()
         .repo_id(&repo_id)
         .private(true)
@@ -752,9 +760,9 @@ async fn test_move_repo() {
     if !write_enabled() {
         return;
     }
-    let whoami = api.whoami().await.unwrap();
-    let original_name = format!("{}/huggingface-hub-rust-move-src-{}", whoami.username, uuid_v4_short());
-    let new_name = format!("{}/huggingface-hub-rust-move-dst-{}", whoami.username, uuid_v4_short());
+    let username = cached_username().await;
+    let original_name = format!("{}/huggingface-hub-rust-move-src-{}", username, uuid_v4_short());
+    let new_name = format!("{}/huggingface-hub-rust-move-dst-{}", username, uuid_v4_short());
 
     let create_params = CreateRepoParams::builder().repo_id(&original_name).private(true).build();
     api.create_repo(&create_params).await.unwrap();
@@ -788,8 +796,8 @@ async fn test_duplicate_space() {
     if !write_enabled() {
         return;
     }
-    let whoami = api.whoami().await.unwrap();
-    let to_id = format!("{}/hub-rust-test-dup-space-{}", whoami.username, uuid_v4_short());
+    let username = cached_username().await;
+    let to_id = format!("{}/hub-rust-test-dup-space-{}", username, uuid_v4_short());
 
     let params = DuplicateSpaceParams::builder()
         .to_id(&to_id)
@@ -811,8 +819,8 @@ async fn test_space_secrets_and_variables() {
     if !write_enabled() {
         return;
     }
-    let whoami = api.whoami().await.unwrap();
-    let space = api.space(&whoami.username, format!("hub-rust-test-space-{}", uuid_v4_short()));
+    let username = cached_username().await;
+    let space = api.space(username, format!("hub-rust-test-space-{}", uuid_v4_short()));
     let create_params = CreateRepoParams::builder()
         .repo_id(space.repo_path())
         .repo_type(RepoType::Space)
@@ -889,11 +897,11 @@ async fn test_create_update_delete_collection() {
         return;
     }
 
-    let whoami = api.whoami().await.unwrap();
+    let username = cached_username().await;
     let title = format!("hub-rust-test-collection-{}", uuid_v4_short());
     let create_params = CreateCollectionParams::builder()
         .title(&title)
-        .namespace(&whoami.username)
+        .namespace(username)
         .private(true)
         .build();
     let coll = api.create_collection(&create_params).await.unwrap();
@@ -1018,10 +1026,10 @@ async fn test_create_and_delete_webhook() {
     let initial = api.list_webhooks().await.unwrap();
     let initial_count = initial.len();
 
-    let whoami = api.whoami().await.unwrap();
+    let username = cached_username().await;
     let create_params = CreateWebhookParams::builder()
         .url("https://example.com/test-webhook")
-        .watched(vec![serde_json::json!({"type": "user", "name": whoami.username})])
+        .watched(vec![serde_json::json!({"type": "user", "name": username})])
         .domains(vec!["repo".to_string()])
         .build();
     let webhook = api.create_webhook(&create_params).await.unwrap();
@@ -1161,8 +1169,8 @@ async fn test_like_and_unlike() {
         return;
     }
 
-    let whoami = api.whoami().await.unwrap();
-    let list_params = ListLikedReposParams::builder().username(&whoami.username).build();
+    let username = cached_username().await;
+    let list_params = ListLikedReposParams::builder().username(username).build();
     let likes = api.list_liked_repos(&list_params).await.unwrap();
     assert!(likes.iter().any(|l| {
         l.repo
