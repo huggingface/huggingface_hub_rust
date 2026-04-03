@@ -26,5 +26,5 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
         discussion_num: args.num,
     };
     let d = repo.discussion_details(&params).await?;
-    Ok(CommandResult::Raw(d.diff.unwrap_or_default()))
+    Ok(CommandResult::Raw(d.diff_url.unwrap_or_default()))
 }

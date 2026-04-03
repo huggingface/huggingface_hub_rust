@@ -4,7 +4,10 @@ use crate::repository::{
     RepoCreatePullRequestParams, RepoDiscussionDetailsParams, RepoEditDiscussionCommentParams,
     RepoHideDiscussionCommentParams, RepoListDiscussionsParams, RepoMergePullRequestParams, RepoRenameDiscussionParams,
 };
-use crate::types::{DiscussionComment, DiscussionWithDetails, DiscussionsResponse};
+use crate::types::{
+    DiscussionCommentResponse, DiscussionCreated, DiscussionMergeResponse, DiscussionStatusResponse,
+    DiscussionTitleResponse, DiscussionWithDetails, DiscussionsResponse,
+};
 
 impl crate::repository::HFRepository {
     /// List discussions for this repository, with optional filters on author, type, and status.
@@ -60,7 +63,7 @@ impl crate::repository::HFRepository {
         Ok(response.json().await?)
     }
 
-    pub async fn create_discussion(&self, params: &RepoCreateDiscussionParams) -> Result<DiscussionWithDetails> {
+    pub async fn create_discussion(&self, params: &RepoCreateDiscussionParams) -> Result<DiscussionCreated> {
         let url = format!("{}/discussions", self.client.api_url(Some(self.repo_type), &self.repo_path()));
         let description = params.description.as_deref().unwrap_or("");
         let body = serde_json::json!({ "title": params.title, "description": description });
@@ -81,7 +84,7 @@ impl crate::repository::HFRepository {
         Ok(response.json().await?)
     }
 
-    pub async fn create_pull_request(&self, params: &RepoCreatePullRequestParams) -> Result<DiscussionWithDetails> {
+    pub async fn create_pull_request(&self, params: &RepoCreatePullRequestParams) -> Result<DiscussionCreated> {
         let url = format!("{}/discussions", self.client.api_url(Some(self.repo_type), &self.repo_path()));
         let description = params.description.as_deref().unwrap_or("");
         let body = serde_json::json!({
@@ -106,7 +109,7 @@ impl crate::repository::HFRepository {
         Ok(response.json().await?)
     }
 
-    pub async fn comment_discussion(&self, params: &RepoCommentDiscussionParams) -> Result<DiscussionComment> {
+    pub async fn comment_discussion(&self, params: &RepoCommentDiscussionParams) -> Result<DiscussionCommentResponse> {
         let url = format!(
             "{}/discussions/{}/comment",
             self.client.api_url(Some(self.repo_type), &self.repo_path()),
@@ -130,7 +133,10 @@ impl crate::repository::HFRepository {
         Ok(response.json().await?)
     }
 
-    pub async fn edit_discussion_comment(&self, params: &RepoEditDiscussionCommentParams) -> Result<DiscussionComment> {
+    pub async fn edit_discussion_comment(
+        &self,
+        params: &RepoEditDiscussionCommentParams,
+    ) -> Result<DiscussionCommentResponse> {
         let url = format!(
             "{}/discussions/{}/comment/{}/edit",
             self.client.api_url(Some(self.repo_type), &self.repo_path()),
@@ -155,7 +161,10 @@ impl crate::repository::HFRepository {
         Ok(response.json().await?)
     }
 
-    pub async fn hide_discussion_comment(&self, params: &RepoHideDiscussionCommentParams) -> Result<DiscussionComment> {
+    pub async fn hide_discussion_comment(
+        &self,
+        params: &RepoHideDiscussionCommentParams,
+    ) -> Result<DiscussionCommentResponse> {
         let url = format!(
             "{}/discussions/{}/comment/{}/hide",
             self.client.api_url(Some(self.repo_type), &self.repo_path()),
@@ -178,7 +187,7 @@ impl crate::repository::HFRepository {
         Ok(response.json().await?)
     }
 
-    pub async fn rename_discussion(&self, params: &RepoRenameDiscussionParams) -> Result<DiscussionWithDetails> {
+    pub async fn rename_discussion(&self, params: &RepoRenameDiscussionParams) -> Result<DiscussionTitleResponse> {
         let url = format!(
             "{}/discussions/{}/title",
             self.client.api_url(Some(self.repo_type), &self.repo_path()),
@@ -205,7 +214,7 @@ impl crate::repository::HFRepository {
     pub async fn change_discussion_status(
         &self,
         params: &RepoChangeDiscussionStatusParams,
-    ) -> Result<DiscussionWithDetails> {
+    ) -> Result<DiscussionStatusResponse> {
         let url = format!(
             "{}/discussions/{}/status",
             self.client.api_url(Some(self.repo_type), &self.repo_path()),
@@ -229,7 +238,7 @@ impl crate::repository::HFRepository {
         Ok(response.json().await?)
     }
 
-    pub async fn merge_pull_request(&self, params: &RepoMergePullRequestParams) -> Result<DiscussionWithDetails> {
+    pub async fn merge_pull_request(&self, params: &RepoMergePullRequestParams) -> Result<DiscussionMergeResponse> {
         let url = format!(
             "{}/discussions/{}/merge",
             self.client.api_url(Some(self.repo_type), &self.repo_path()),

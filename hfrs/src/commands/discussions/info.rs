@@ -38,7 +38,7 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
         "is_pull_request": d.is_pull_request,
         "author": d.author,
         "created_at": d.created_at,
-        "target_branch": d.target_branch,
+        "target_branch": d.changes.as_ref().and_then(|c| c.base.as_deref()),
         "merge_commit_oid": d.merge_commit_oid,
         "events_count": d.events.len(),
     });

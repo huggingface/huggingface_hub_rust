@@ -60,11 +60,9 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
         .map(|d| {
             vec![
                 d.num.to_string(),
-                d.title.clone().unwrap_or_default(),
-                d.status.clone().unwrap_or_default(),
-                d.is_pull_request
-                    .map(|b| if b { "yes" } else { "no" }.to_string())
-                    .unwrap_or_default(),
+                d.title.clone(),
+                d.status.clone(),
+                if d.is_pull_request { "yes" } else { "no" }.to_string(),
             ]
         })
         .collect();

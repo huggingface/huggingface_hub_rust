@@ -941,7 +941,7 @@ async fn test_get_discussion_details() {
         .await
         .unwrap();
     assert_eq!(details.num, 1);
-    assert!(details.title.is_some());
+    assert!(!details.title.is_empty());
 }
 
 #[cfg(feature = "discussions")]
@@ -994,7 +994,7 @@ async fn test_create_and_merge_pull_request() {
         .unwrap();
 
     let disc_response = test_repo.list_discussions(&RepoListDiscussionsParams::default()).await.unwrap();
-    assert!(disc_response.discussions.iter().any(|d| d.is_pull_request == Some(true)));
+    assert!(disc_response.discussions.iter().any(|d| d.is_pull_request));
 
     delete_test_repo(&api, &repo_id).await;
 }

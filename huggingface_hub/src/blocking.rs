@@ -326,20 +326,20 @@ impl HFRepositorySync {
     }
 
     #[cfg(feature = "discussions")]
-    pub fn create_discussion(&self, params: &repo::RepoCreateDiscussionParams) -> Result<types::DiscussionWithDetails> {
+    pub fn create_discussion(&self, params: &repo::RepoCreateDiscussionParams) -> Result<types::DiscussionCreated> {
         self.runtime.block_on(self.inner.create_discussion(params))
     }
 
     #[cfg(feature = "discussions")]
-    pub fn create_pull_request(
-        &self,
-        params: &repo::RepoCreatePullRequestParams,
-    ) -> Result<types::DiscussionWithDetails> {
+    pub fn create_pull_request(&self, params: &repo::RepoCreatePullRequestParams) -> Result<types::DiscussionCreated> {
         self.runtime.block_on(self.inner.create_pull_request(params))
     }
 
     #[cfg(feature = "discussions")]
-    pub fn comment_discussion(&self, params: &repo::RepoCommentDiscussionParams) -> Result<types::DiscussionComment> {
+    pub fn comment_discussion(
+        &self,
+        params: &repo::RepoCommentDiscussionParams,
+    ) -> Result<types::DiscussionCommentResponse> {
         self.runtime.block_on(self.inner.comment_discussion(params))
     }
 
@@ -347,7 +347,7 @@ impl HFRepositorySync {
     pub fn edit_discussion_comment(
         &self,
         params: &repo::RepoEditDiscussionCommentParams,
-    ) -> Result<types::DiscussionComment> {
+    ) -> Result<types::DiscussionCommentResponse> {
         self.runtime.block_on(self.inner.edit_discussion_comment(params))
     }
 
@@ -355,12 +355,15 @@ impl HFRepositorySync {
     pub fn hide_discussion_comment(
         &self,
         params: &repo::RepoHideDiscussionCommentParams,
-    ) -> Result<types::DiscussionComment> {
+    ) -> Result<types::DiscussionCommentResponse> {
         self.runtime.block_on(self.inner.hide_discussion_comment(params))
     }
 
     #[cfg(feature = "discussions")]
-    pub fn rename_discussion(&self, params: &repo::RepoRenameDiscussionParams) -> Result<types::DiscussionWithDetails> {
+    pub fn rename_discussion(
+        &self,
+        params: &repo::RepoRenameDiscussionParams,
+    ) -> Result<types::DiscussionTitleResponse> {
         self.runtime.block_on(self.inner.rename_discussion(params))
     }
 
@@ -368,7 +371,7 @@ impl HFRepositorySync {
     pub fn change_discussion_status(
         &self,
         params: &repo::RepoChangeDiscussionStatusParams,
-    ) -> Result<types::DiscussionWithDetails> {
+    ) -> Result<types::DiscussionStatusResponse> {
         self.runtime.block_on(self.inner.change_discussion_status(params))
     }
 
@@ -376,7 +379,7 @@ impl HFRepositorySync {
     pub fn merge_pull_request(
         &self,
         params: &repo::RepoMergePullRequestParams,
-    ) -> Result<types::DiscussionWithDetails> {
+    ) -> Result<types::DiscussionMergeResponse> {
         self.runtime.block_on(self.inner.merge_pull_request(params))
     }
 

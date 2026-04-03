@@ -46,8 +46,5 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
         let d = repo.create_discussion(&params).await?;
         d.num
     };
-    match num {
-        Some(n) => Ok(CommandResult::Raw(n.to_string())),
-        None => anyhow::bail!("Server did not return a discussion number"),
-    }
+    Ok(CommandResult::Raw(num.to_string()))
 }
