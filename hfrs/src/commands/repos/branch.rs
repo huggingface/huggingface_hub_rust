@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Args as ClapArgs, Subcommand};
-use huggingface_hub::{CreateBranchParams, DeleteBranchParams, HfApi};
+use huggingface_hub::{HfApi, RepoCreateBranchParams, RepoDeleteBranchParams};
 
 use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
@@ -62,23 +62,19 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
 
 async fn create(api: &HfApi, args: BranchCreateArgs) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
-    let params = CreateBranchParams {
-        repo_id: args.repo_id,
+    let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
+    let params = RepoCreateBranchParams {
         branch: args.branch,
         revision: args.revision,
-        repo_type: Some(repo_type),
     };
-    api.create_branch(&params).await?;
+    repo.create_branch(&params).await?;
     Ok(CommandResult::Raw("Branch created.".to_string()))
 }
 
 async fn delete(api: &HfApi, args: BranchDeleteArgs) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
-    let params = DeleteBranchParams {
-        repo_id: args.repo_id,
-        branch: args.branch,
-        repo_type: Some(repo_type),
-    };
-    api.delete_branch(&params).await?;
+    let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
+    let params = RepoDeleteBranchParams { branch: args.branch };
+    repo.delete_branch(&params).await?;
     Ok(CommandResult::Silent)
 }

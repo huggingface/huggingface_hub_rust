@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{HfApi, RenameDiscussionParams};
+use huggingface_hub::{HfApi, RepoRenameDiscussionParams};
 
 use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
@@ -23,12 +23,12 @@ pub struct Args {
 }
 
 pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
-    let params = RenameDiscussionParams {
-        repo_id: args.repo_id,
+    let repo_type = args.r#type.map(Into::into).unwrap_or(huggingface_hub::RepoType::Model);
+    let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
+    let params = RepoRenameDiscussionParams {
         discussion_num: args.num,
         new_title: args.new_title,
-        repo_type: args.r#type.map(Into::into),
     };
-    api.rename_discussion(&params).await?;
+    repo.rename_discussion(&params).await?;
     Ok(CommandResult::Silent)
 }

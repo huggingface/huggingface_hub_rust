@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{CreateDiscussionParams, CreatePullRequestParams, HfApi};
+use huggingface_hub::{HfApi, RepoCreateDiscussionParams, RepoCreatePullRequestParams};
 
 use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
@@ -29,24 +29,21 @@ pub struct Args {
 }
 
 pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
-    let repo_type = args.r#type.map(Into::into);
+    let repo_type = args.r#type.map(Into::into).unwrap_or(huggingface_hub::RepoType::Model);
+    let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
     let num = if args.pull_request {
-        let params = CreatePullRequestParams {
-            repo_id: args.repo_id,
+        let params = RepoCreatePullRequestParams {
             title: args.title,
             description: args.body,
-            repo_type,
         };
-        let d = api.create_pull_request(&params).await?;
+        let d = repo.create_pull_request(&params).await?;
         d.num
     } else {
-        let params = CreateDiscussionParams {
-            repo_id: args.repo_id,
+        let params = RepoCreateDiscussionParams {
             title: args.title,
             description: args.body,
-            repo_type,
         };
-        let d = api.create_discussion(&params).await?;
+        let d = repo.create_discussion(&params).await?;
         d.num
     };
     match num {

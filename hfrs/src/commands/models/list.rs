@@ -56,9 +56,10 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
         full: None,
         card_data: None,
         fetch_config: None,
+        max_items: None,
     };
 
-    let stream = api.list_models(&params);
+    let stream = api.list_models(&params)?;
     futures::pin_mut!(stream);
 
     let mut models = Vec::new();

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Result};
 use clap::Args as ClapArgs;
-use huggingface_hub::{AddSource, CreateRepoParams, HfApi, RepoExistsParams, UploadFileParams, UploadFolderParams};
+use huggingface_hub::{AddSource, CreateRepoParams, HfApi, RepoUploadFileParams, RepoUploadFolderParams};
 use tracing::info;
 
 use crate::cli::RepoTypeArg;
@@ -64,13 +64,10 @@ pub struct Args {
 pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
     let local_path = args.local_path.unwrap_or_else(|| PathBuf::from("."));
+    let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
 
     // Ensure the repo exists, creating it if necessary
-    let exists_params = RepoExistsParams {
-        repo_id: args.repo_id.clone(),
-        repo_type: Some(repo_type),
-    };
-    if !api.repo_exists(&exists_params).await? {
+    if !repo.exists().await? {
         info!(repo_id = args.repo_id.as_str(), private = args.private, "creating repository");
         let create_params = CreateRepoParams {
             repo_id: args.repo_id.clone(),
@@ -89,18 +86,16 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default()
         });
-        let params = UploadFileParams {
-            repo_id: args.repo_id,
+        let params = RepoUploadFileParams {
             source: AddSource::File(local_path),
             path_in_repo,
-            repo_type: Some(repo_type),
             revision: args.revision,
             commit_message: args.commit_message,
             commit_description: args.commit_description,
             create_pr: if args.create_pr { Some(true) } else { None },
             parent_commit: None,
         };
-        api.upload_file(&params).await?
+        repo.upload_file(&params).await?
     } else if local_path.is_dir() {
         let allow_patterns = if !args.include.is_empty() {
             Some(args.include)
@@ -117,11 +112,9 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
         } else {
             None
         };
-        let params = UploadFolderParams {
-            repo_id: args.repo_id,
+        let params = RepoUploadFolderParams {
             folder_path: local_path,
             path_in_repo: args.path_in_repo,
-            repo_type: Some(repo_type),
             revision: args.revision,
             commit_message: args.commit_message,
             commit_description: args.commit_description,
@@ -130,7 +123,7 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
             ignore_patterns,
             delete_patterns,
         };
-        api.upload_folder(&params).await?
+        repo.upload_folder(&params).await?
     } else {
         bail!("local path does not exist: {}", local_path.display());
     };

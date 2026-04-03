@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{CommitOperation, CreateCommitParams, HfApi};
+use huggingface_hub::{CommitOperation, HfApi, RepoCreateCommitParams};
 
 use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
@@ -38,22 +38,21 @@ pub struct Args {
 
 pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
+    let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
     let operations = args
         .patterns
         .into_iter()
         .map(|path| CommitOperation::Delete { path_in_repo: path })
         .collect();
-    let params = CreateCommitParams {
-        repo_id: args.repo_id,
+    let params = RepoCreateCommitParams {
         operations,
         commit_message: args.commit_message,
         commit_description: args.commit_description,
-        repo_type: Some(repo_type),
         revision: args.revision,
         create_pr: if args.create_pr { Some(true) } else { None },
         parent_commit: None,
     };
-    let result = api.create_commit(&params).await?;
+    let result = repo.create_commit(&params).await?;
     let url = result.commit_url.or(result.pr_url).unwrap_or_default();
     Ok(CommandResult::Raw(url))
 }

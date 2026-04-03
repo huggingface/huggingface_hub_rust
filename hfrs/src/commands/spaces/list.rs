@@ -53,9 +53,10 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
         sort: args.sort,
         limit: Some(args.limit),
         full: None,
+        max_items: None,
     };
 
-    let stream = api.list_spaces(&params);
+    let stream = api.list_spaces(&params)?;
     futures::pin_mut!(stream);
 
     let mut spaces = Vec::new();

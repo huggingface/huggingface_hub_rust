@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{HfApi, LikeParams};
+use huggingface_hub::HfApi;
 
 use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
@@ -17,10 +17,8 @@ pub struct Args {
 }
 
 pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
-    let params = LikeParams {
-        repo_id: args.repo_id,
-        repo_type: args.repo_type.map(Into::into),
-    };
-    api.unlike(&params).await?;
+    let repo_type = args.repo_type.map(Into::into).unwrap_or(huggingface_hub::RepoType::Model);
+    let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
+    repo.unlike().await?;
     Ok(CommandResult::Silent)
 }

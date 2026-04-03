@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Args as ClapArgs, Subcommand};
-use huggingface_hub::{CreateTagParams, DeleteTagParams, HfApi, ListRepoRefsParams};
+use huggingface_hub::{HfApi, RepoCreateTagParams, RepoDeleteTagParams, RepoListRefsParams};
 use serde_json::json;
 
 use crate::cli::{OutputFormat, RepoTypeArg};
@@ -85,36 +85,31 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
 
 async fn create(api: &HfApi, args: TagCreateArgs) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
-    let params = CreateTagParams {
-        repo_id: args.repo_id,
+    let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
+    let params = RepoCreateTagParams {
         tag: args.tag,
         revision: args.revision,
         message: args.message,
-        repo_type: Some(repo_type),
     };
-    api.create_tag(&params).await?;
+    repo.create_tag(&params).await?;
     Ok(CommandResult::Raw("Tag created.".to_string()))
 }
 
 async fn delete(api: &HfApi, args: TagDeleteArgs) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
-    let params = DeleteTagParams {
-        repo_id: args.repo_id,
-        tag: args.tag,
-        repo_type: Some(repo_type),
-    };
-    api.delete_tag(&params).await?;
+    let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
+    let params = RepoDeleteTagParams { tag: args.tag };
+    repo.delete_tag(&params).await?;
     Ok(CommandResult::Silent)
 }
 
 async fn list(api: &HfApi, args: TagListArgs) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
-    let params = ListRepoRefsParams {
-        repo_id: args.repo_id,
-        repo_type: Some(repo_type),
+    let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
+    let params = RepoListRefsParams {
         include_pull_requests: false,
     };
-    let refs = api.list_repo_refs(&params).await?;
+    let refs = repo.list_refs(&params).await?;
 
     let headers = vec!["Name".to_string(), "Ref".to_string(), "Commit".to_string()];
     let rows = refs

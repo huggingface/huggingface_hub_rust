@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{HfApi, UpdateRepoParams};
+use huggingface_hub::{HfApi, RepoUpdateSettingsParams};
 
 use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
@@ -30,13 +30,12 @@ pub struct Args {
 
 pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
-    let params = UpdateRepoParams {
-        repo_id: args.repo_id,
-        repo_type: Some(repo_type),
+    let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
+    let params = RepoUpdateSettingsParams {
         private: args.private,
         gated: args.gated,
         description: args.description,
     };
-    api.update_repo_settings(&params).await?;
+    repo.update_settings(&params).await?;
     Ok(CommandResult::Silent)
 }

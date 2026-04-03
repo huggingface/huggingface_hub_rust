@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{HfApi, ListAccessRequestsParams};
+use huggingface_hub::HfApi;
 use serde_json::json;
 
 use crate::cli::{OutputFormat, RepoTypeArg};
@@ -30,14 +30,12 @@ pub struct Args {
 }
 
 pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
-    let params = ListAccessRequestsParams {
-        repo_id: args.repo_id,
-        repo_type: args.repo_type.map(Into::into),
-    };
+    let repo_type = args.repo_type.map(Into::into).unwrap_or(huggingface_hub::RepoType::Model);
+    let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
     let requests = match args.status.as_str() {
-        "accepted" => api.list_accepted_access_requests(&params).await?,
-        "rejected" => api.list_rejected_access_requests(&params).await?,
-        _ => api.list_pending_access_requests(&params).await?,
+        "accepted" => repo.list_accepted_access_requests().await?,
+        "rejected" => repo.list_rejected_access_requests().await?,
+        _ => repo.list_pending_access_requests().await?,
     };
 
     let headers = vec![

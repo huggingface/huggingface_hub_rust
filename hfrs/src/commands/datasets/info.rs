@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{DatasetInfoParams, HfApi};
+use huggingface_hub::{HfApi, RepoInfo, RepoInfoParams};
 use serde_json::json;
 
 use crate::cli::OutputFormat;
@@ -22,11 +22,16 @@ pub struct Args {
 }
 
 pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
-    let params = DatasetInfoParams {
-        repo_id: args.dataset_id,
+    let (owner, name) = crate::util::split_repo_id(&args.dataset_id);
+    let repo = api.dataset(owner, name);
+    let info_params = RepoInfoParams {
         revision: args.revision,
     };
-    let info = api.dataset_info(&params).await?;
+    let repo_info = repo.info(&info_params).await?;
+    let info = match repo_info {
+        RepoInfo::Dataset(d) => d,
+        _ => anyhow::bail!("Expected dataset info"),
+    };
     let json_value = json!({
         "id": info.id,
         "author": info.author,

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{GetDiscussionDetailsParams, HfApi};
+use huggingface_hub::{HfApi, RepoDiscussionDetailsParams};
 
 use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
@@ -20,11 +20,11 @@ pub struct Args {
 }
 
 pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
-    let params = GetDiscussionDetailsParams {
-        repo_id: args.repo_id,
+    let repo_type = args.r#type.map(Into::into).unwrap_or(huggingface_hub::RepoType::Model);
+    let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
+    let params = RepoDiscussionDetailsParams {
         discussion_num: args.num,
-        repo_type: args.r#type.map(Into::into),
     };
-    let d = api.get_discussion_details(&params).await?;
+    let d = repo.discussion_details(&params).await?;
     Ok(CommandResult::Raw(d.diff.unwrap_or_default()))
 }

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{GrantAccessParams, HfApi};
+use huggingface_hub::{HfApi, RepoAccessRequestUserParams};
 
 use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
@@ -20,11 +20,8 @@ pub struct Args {
 }
 
 pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
-    let params = GrantAccessParams {
-        repo_id: args.repo_id,
-        user: args.user,
-        repo_type: args.repo_type.map(Into::into),
-    };
-    api.grant_access(&params).await?;
+    let repo_type = args.repo_type.map(Into::into).unwrap_or(huggingface_hub::RepoType::Model);
+    let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
+    repo.grant_access(&RepoAccessRequestUserParams { user: args.user }).await?;
     Ok(CommandResult::Silent)
 }

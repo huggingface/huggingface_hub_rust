@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{DownloadFileParams, HfApi, SnapshotDownloadParams};
+use huggingface_hub::{HfApi, RepoDownloadFileParams, RepoSnapshotDownloadParams};
 
 use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
@@ -51,19 +51,17 @@ pub struct Args {
 
 pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
+    let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
 
     let path = if args.filenames.len() == 1 && args.include.is_empty() && args.exclude.is_empty() {
-        let params = DownloadFileParams {
-            repo_id: args.repo_id,
+        let params = RepoDownloadFileParams {
             filename: args.filenames.into_iter().next().unwrap(),
             local_dir: args.local_dir,
-            repo_type: Some(repo_type),
             revision: args.revision,
             force_download: if args.force_download { Some(true) } else { None },
             local_files_only: None,
-            cache_dir: args.cache_dir,
         };
-        api.download_file(&params).await?
+        repo.download_file(&params).await?
     } else {
         let allow_patterns = if !args.filenames.is_empty() {
             Some(args.filenames)
@@ -77,9 +75,7 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
         } else {
             None
         };
-        let params = SnapshotDownloadParams {
-            repo_id: args.repo_id,
-            repo_type: Some(repo_type),
+        let params = RepoSnapshotDownloadParams {
             revision: args.revision,
             allow_patterns,
             ignore_patterns,
@@ -87,9 +83,8 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
             force_download: if args.force_download { Some(true) } else { None },
             local_files_only: None,
             max_workers: None,
-            cache_dir: args.cache_dir,
         };
-        api.snapshot_download(&params).await?
+        repo.snapshot_download(&params).await?
     };
 
     if args.quiet {

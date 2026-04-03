@@ -47,6 +47,11 @@ async fn main() -> ExitCode {
         debug!(endpoint = endpoint.as_str(), "using custom API endpoint");
         builder = builder.endpoint(endpoint);
     }
+    if let Command::Download(ref args) = cli.command {
+        if let Some(ref cache_dir) = args.cache_dir {
+            builder = builder.cache_dir(cache_dir);
+        }
+    }
     let api = match builder.build() {
         Ok(api) => {
             info!("HfApi client initialized");
@@ -250,6 +255,9 @@ fn format_hf_error(err: &HfError) -> String {
         },
         HfError::Url(e) => {
             format!("Invalid URL: {e}")
+        },
+        HfError::InvalidRepoType { expected, actual } => {
+            format!("Invalid repository type: expected {expected:?}, got {actual:?}")
         },
         HfError::Other(msg) => msg.clone(),
     }

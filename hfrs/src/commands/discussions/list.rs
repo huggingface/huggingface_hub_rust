@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{GetRepoDiscussionsParams, HfApi};
+use huggingface_hub::{HfApi, RepoListDiscussionsParams};
 use serde_json::json;
 
 use crate::cli::{OutputFormat, RepoTypeArg};
@@ -38,14 +38,14 @@ pub struct Args {
 }
 
 pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
-    let params = GetRepoDiscussionsParams {
-        repo_id: args.repo_id,
-        repo_type: args.r#type.map(Into::into),
+    let repo_type = args.r#type.map(Into::into).unwrap_or(huggingface_hub::RepoType::Model);
+    let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
+    let params = RepoListDiscussionsParams {
         author: args.author,
         discussion_type: args.kind,
         discussion_status: args.status,
     };
-    let resp = api.get_repo_discussions(&params).await?;
+    let resp = repo.list_discussions(&params).await?;
 
     let headers = vec![
         "Num".to_string(),
