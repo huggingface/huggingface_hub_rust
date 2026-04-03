@@ -88,6 +88,9 @@ pub use blocking::{
     HfSpaceSync,
 };
 pub use client::{HFClient, HFClientBuilder, HfApi, HfApiBuilder, HfClient, HfClientBuilder};
+#[cfg(feature = "cli")]
+#[doc(hidden)]
+pub use constants::{hf_home, resolve_cache_dir};
 pub use error::{HfError, Result};
 pub use repository::*;
 pub use types::*;

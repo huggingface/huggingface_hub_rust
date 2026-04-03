@@ -1,4 +1,3 @@
-pub mod paths;
 pub mod token;
 
 use huggingface_hub::{HFClient, HFRepository, RepoType};

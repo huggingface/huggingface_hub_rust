@@ -93,7 +93,6 @@ pub(crate) enum NotFoundContext {
     /// 404 means a file/path does not exist within the repo
     Entry { path: String },
     /// 404 means the revision does not exist
-    #[allow(dead_code)]
     Revision { revision: String },
     /// No special mapping — use generic Http error
     Generic,

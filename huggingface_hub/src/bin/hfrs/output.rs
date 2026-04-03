@@ -4,7 +4,6 @@ use serde_json::Value;
 
 use crate::cli::OutputFormat;
 
-#[allow(dead_code)]
 pub enum CommandResult {
     Formatted {
         output: CommandOutput,
@@ -23,7 +22,6 @@ pub struct CommandOutput {
 }
 
 impl CommandOutput {
-    #[allow(dead_code)]
     pub fn single_item(json_value: Value) -> Self {
         let (headers, rows) = if let Value::Object(ref map) = json_value {
             let headers = vec!["Key".to_string(), "Value".to_string()];

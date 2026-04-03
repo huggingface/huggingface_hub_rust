@@ -24,10 +24,7 @@ fn format_bytes(bytes: u64) -> String {
 }
 
 fn format_system_time(t: SystemTime) -> String {
-    let secs = t
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let secs = t.duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     if secs == 0 {
         return String::new();
     }
@@ -43,7 +40,7 @@ pub struct Args {
 }
 
 pub async fn execute(_api: &HfApi, args: Args) -> Result<CommandResult> {
-    let cache_dir = crate::util::paths::resolve_cache_dir();
+    let cache_dir = huggingface_hub::resolve_cache_dir();
     let cache_info = huggingface_hub::cache::scan_cache_dir(&cache_dir).await?;
 
     let headers = vec![

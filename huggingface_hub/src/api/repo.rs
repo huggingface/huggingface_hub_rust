@@ -27,10 +27,11 @@ impl HFRepository {
             .send()
             .await?;
         let repo_path = self.repo_path();
-        let response = self
-            .client
-            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
-            .await?;
+        let not_found_ctx = match revision {
+            Some(rev) => crate::error::NotFoundContext::Revision { revision: rev },
+            None => crate::error::NotFoundContext::Repo,
+        };
+        let response = self.client.check_response(response, Some(&repo_path), not_found_ctx).await?;
         Ok(response.json().await?)
     }
 
@@ -50,10 +51,11 @@ impl HFRepository {
             .send()
             .await?;
         let repo_path = self.repo_path();
-        let response = self
-            .client
-            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
-            .await?;
+        let not_found_ctx = match revision {
+            Some(rev) => crate::error::NotFoundContext::Revision { revision: rev },
+            None => crate::error::NotFoundContext::Repo,
+        };
+        let response = self.client.check_response(response, Some(&repo_path), not_found_ctx).await?;
         Ok(response.json().await?)
     }
 
@@ -73,10 +75,11 @@ impl HFRepository {
             .send()
             .await?;
         let repo_path = self.repo_path();
-        let response = self
-            .client
-            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
-            .await?;
+        let not_found_ctx = match revision {
+            Some(rev) => crate::error::NotFoundContext::Revision { revision: rev },
+            None => crate::error::NotFoundContext::Repo,
+        };
+        let response = self.client.check_response(response, Some(&repo_path), not_found_ctx).await?;
         Ok(response.json().await?)
     }
 
@@ -151,7 +154,19 @@ impl HFRepository {
             .await?;
         match response.status().as_u16() {
             200..=299 => Ok(true),
-            404 => Ok(false),
+            404 => {
+                if self
+                    .revision_exists(&RepoRevisionExistsParams::builder().revision(revision.to_string()).build())
+                    .await?
+                {
+                    Ok(false)
+                } else {
+                    Err(HfError::RevisionNotFound {
+                        repo_id: self.repo_path(),
+                        revision: revision.to_string(),
+                    })
+                }
+            },
             401 => Err(HfError::AuthRequired),
             status => {
                 let url_str = response.url().to_string();

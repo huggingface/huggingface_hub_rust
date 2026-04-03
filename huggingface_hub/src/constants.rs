@@ -1,27 +1,28 @@
 /// Default Hugging Face Hub endpoint
-pub const DEFAULT_HF_ENDPOINT: &str = "https://huggingface.co";
+pub(crate) const DEFAULT_HF_ENDPOINT: &str = "https://huggingface.co";
 
 /// Default revision (branch)
-pub const DEFAULT_REVISION: &str = "main";
+pub(crate) const DEFAULT_REVISION: &str = "main";
 
-pub const HF_ENDPOINT: &str = "HF_ENDPOINT";
-pub const HF_TOKEN: &str = "HF_TOKEN";
-pub const HF_TOKEN_PATH: &str = "HF_TOKEN_PATH";
-pub const HF_HOME: &str = "HF_HOME";
-pub const HF_HUB_CACHE: &str = "HF_HUB_CACHE";
-pub const HUGGINGFACE_HUB_CACHE: &str = "HUGGINGFACE_HUB_CACHE";
-pub const XDG_CACHE_HOME: &str = "XDG_CACHE_HOME";
-pub const HF_HUB_DISABLE_IMPLICIT_TOKEN: &str = "HF_HUB_DISABLE_IMPLICIT_TOKEN";
-pub const HF_HUB_USER_AGENT_ORIGIN: &str = "HF_HUB_USER_AGENT_ORIGIN";
+pub(crate) const HF_ENDPOINT: &str = "HF_ENDPOINT";
+pub(crate) const HF_TOKEN: &str = "HF_TOKEN";
+pub(crate) const HF_TOKEN_PATH: &str = "HF_TOKEN_PATH";
+pub(crate) const HF_HOME: &str = "HF_HOME";
+pub(crate) const HF_HUB_CACHE: &str = "HF_HUB_CACHE";
+pub(crate) const HUGGINGFACE_HUB_CACHE: &str = "HUGGINGFACE_HUB_CACHE";
+pub(crate) const XDG_CACHE_HOME: &str = "XDG_CACHE_HOME";
+pub(crate) const HF_HUB_DISABLE_IMPLICIT_TOKEN: &str = "HF_HUB_DISABLE_IMPLICIT_TOKEN";
+pub(crate) const HF_HUB_USER_AGENT_ORIGIN: &str = "HF_HUB_USER_AGENT_ORIGIN";
 
 /// Token filename within HF_HOME
-pub const TOKEN_FILENAME: &str = "token";
+pub(crate) const TOKEN_FILENAME: &str = "token";
 
-pub const HEADER_X_XET_HASH: &str = "x-xet-hash";
+#[cfg(feature = "xet")]
+pub(crate) const HEADER_X_XET_HASH: &str = "x-xet-hash";
 
-pub const CACHE_LOCK_TIMEOUT_SECS: u64 = 10;
-pub const HEADER_X_REPO_COMMIT: &str = "x-repo-commit";
-pub const HEADER_X_LINKED_ETAG: &str = "x-linked-etag";
+pub(crate) const CACHE_LOCK_TIMEOUT_SECS: u64 = 10;
+pub(crate) const HEADER_X_REPO_COMMIT: &str = "x-repo-commit";
+pub(crate) const HEADER_X_LINKED_ETAG: &str = "x-linked-etag";
 
 /// URL prefixes for different repo types
 /// Models have no prefix, datasets use "datasets/", spaces use "spaces/", kernels use "kernels/"
@@ -42,6 +43,31 @@ pub fn repo_type_api_segment(repo_type: Option<crate::types::repo::RepoType>) ->
         Some(crate::types::repo::RepoType::Space) => "spaces",
         Some(crate::types::repo::RepoType::Kernel) => "kernels",
     }
+}
+
+pub(crate) fn dirs_or_home() -> String {
+    std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string())
+}
+
+pub fn hf_home() -> std::path::PathBuf {
+    if let Ok(path) = std::env::var(HF_HOME) {
+        return std::path::PathBuf::from(path);
+    }
+    if let Ok(xdg) = std::env::var(XDG_CACHE_HOME) {
+        return std::path::PathBuf::from(xdg).join("huggingface");
+    }
+    let home = dirs_or_home();
+    std::path::PathBuf::from(format!("{home}/.cache/huggingface"))
+}
+
+pub fn resolve_cache_dir() -> std::path::PathBuf {
+    if let Ok(cache) = std::env::var(HF_HUB_CACHE) {
+        return std::path::PathBuf::from(cache);
+    }
+    if let Ok(cache) = std::env::var(HUGGINGFACE_HUB_CACHE) {
+        return std::path::PathBuf::from(cache);
+    }
+    hf_home().join("hub")
 }
 
 #[cfg(test)]

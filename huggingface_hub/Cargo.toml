@@ -5,6 +5,9 @@ edition = "2021"
 description = "Rust client for the Hugging Face Hub API"
 license = "Apache-2.0"
 
+[package.metadata.docs.rs]
+features = ["blocking", "xet", "spaces", "inference_endpoints", "collections", "discussions", "webhooks", "jobs", "access_requests", "likes", "papers"]
+
 [dependencies]
 bytes = "1"
 reqwest = { version = "0.13", features = ["json", "stream", "multipart"] }
@@ -27,6 +30,13 @@ hf-xet = { git = "https://github.com/huggingface/xet-core.git", rev = "2659c69",
 xet-client = { git = "https://github.com/huggingface/xet-core.git", rev = "2659c69", optional = true }
 sha2 = { version = "0.10", optional = true }
 
+# cli deps
+clap = { version = "4", features = ["derive", "env", "color"], optional = true }
+owo-colors = { version = "4", optional = true }
+comfy-table = { version = "7", optional = true }
+anyhow = { version = "1", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
+
 [features]
 default = []
 blocking = ["tokio/rt"]
@@ -40,6 +50,37 @@ jobs = []
 access_requests = []
 likes = []
 papers = []
+cli = [
+    "blocking",
+    "xet",
+    "spaces",
+    "inference_endpoints",
+    "collections",
+    "discussions",
+    "webhooks",
+    "jobs",
+    "access_requests",
+    "likes",
+    "papers",
+    "tokio/macros",
+    "tokio/rt-multi-thread",
+    "dep:clap",
+    "dep:owo-colors",
+    "dep:comfy-table",
+    "dep:anyhow",
+    "dep:tracing-subscriber",
+]
+
+[[bin]]
+name = "hfrs"
+path = "src/bin/hfrs/main.rs"
+required-features = ["cli"]
+doc = false
+
+[[test]]
+name = "cli_comparison"
+path = "tests/cli/cli_comparison.rs"
+required-features = ["cli"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
@@ -47,6 +88,8 @@ tempfile = "3"
 rand = "0.9"
 sha2 = "0.10"
 serial_test = "3"
+assert_cmd = "2"
+anyhow = "1"
 
 [[example]]
 name = "repo"

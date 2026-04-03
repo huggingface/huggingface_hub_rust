@@ -3,7 +3,11 @@ use std::path::{Path, PathBuf};
 
 use futures::stream::{Stream, StreamExt};
 use futures::TryStreamExt;
+use globset::Glob;
 use reqwest::header::IF_NONE_MATCH;
+#[cfg(feature = "xet")]
+use sha2::{Digest, Sha256};
+use tokio::io::AsyncWriteExt;
 use url::Url;
 
 use crate::error::{HfError, Result};
@@ -887,7 +891,6 @@ async fn download_concurrently(
 }
 
 async fn stream_response_to_file(response: reqwest::Response, dest: &std::path::Path) -> Result<()> {
-    use tokio::io::AsyncWriteExt;
     let mut file = tokio::fs::File::create(dest).await?;
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
@@ -1366,7 +1369,6 @@ impl crate::repository::HFRepository {
 
 #[cfg(feature = "xet")]
 async fn sha256_of_source(source: &AddSource) -> Result<String> {
-    use sha2::{Digest, Sha256};
     match source {
         AddSource::Bytes(bytes) => {
             let hash = Sha256::digest(bytes);
@@ -1461,7 +1463,6 @@ async fn collect_files_recursive(
 
 /// Check if a path matches any of the given glob patterns using the `globset` crate.
 fn matches_any_glob(patterns: &[String], path: &str) -> bool {
-    use globset::Glob;
     patterns
         .iter()
         .any(|p| Glob::new(p).ok().map(|g| g.compile_matcher().is_match(path)).unwrap_or(false))

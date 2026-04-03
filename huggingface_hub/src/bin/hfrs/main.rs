@@ -12,6 +12,7 @@ use huggingface_hub::{HfApiBuilder, HfError};
 use output::render;
 use owo_colors::OwoColorize;
 use tracing::{debug, info};
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -248,8 +249,6 @@ fn format_hf_error(err: &HfError) -> String {
 const XET_CRATES: &[&str] = &["hf_xet", "xet_client", "xet_core_structures", "xet_data", "xet_runtime"];
 
 fn init_logging(color: bool) {
-    use tracing_subscriber::EnvFilter;
-
     let mut filter_str = if let Ok(level) = std::env::var("HF_LOG_LEVEL") {
         level
     } else if std::env::var("HF_DEBUG").is_ok() {
