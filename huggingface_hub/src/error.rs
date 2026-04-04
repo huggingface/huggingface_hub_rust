@@ -56,6 +56,9 @@ pub enum HfError {
     #[error(transparent)]
     Url(#[from] url::ParseError),
 
+    #[error("Invalid parameter: {0}")]
+    InvalidParameter(String),
+
     #[error("{0}")]
     Other(String),
 }

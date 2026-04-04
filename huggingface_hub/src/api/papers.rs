@@ -6,6 +6,9 @@ use crate::types::{
 
 impl HFClient {
     pub async fn list_papers(&self, params: &ListPapersParams) -> Result<Vec<PaperSearchResult>> {
+        if params.limit == Some(0) {
+            return Err(crate::error::HfError::InvalidParameter("limit must be greater than 0".into()));
+        }
         let url = format!("{}/api/papers/search", self.inner.endpoint);
         let mut query: Vec<(String, String)> = Vec::new();
         if let Some(ref q) = params.query {
@@ -29,6 +32,9 @@ impl HFClient {
     }
 
     pub async fn list_daily_papers(&self, params: &ListDailyPapersParams) -> Result<Vec<DailyPaper>> {
+        if params.limit == Some(0) {
+            return Err(crate::error::HfError::InvalidParameter("limit must be greater than 0".into()));
+        }
         let url = format!("{}/api/daily_papers", self.inner.endpoint);
         let mut query: Vec<(String, String)> = Vec::new();
         if let Some(ref date) = params.date {

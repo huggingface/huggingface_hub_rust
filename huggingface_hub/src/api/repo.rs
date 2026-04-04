@@ -218,6 +218,9 @@ impl HFClient {
     /// List models on the Hub.
     /// Endpoint: GET /api/models
     pub fn list_models(&self, params: &ListModelsParams) -> Result<impl Stream<Item = Result<ModelInfo>> + '_> {
+        if params.limit == Some(0) {
+            return Err(HfError::InvalidParameter("limit must be greater than 0".into()));
+        }
         let url = Url::parse(&format!("{}/api/models", self.inner.endpoint))?;
         let mut query: Vec<(String, String)> = Vec::new();
         if let Some(ref search) = params.search {
@@ -253,6 +256,9 @@ impl HFClient {
     /// List datasets on the Hub.
     /// Endpoint: GET /api/datasets
     pub fn list_datasets(&self, params: &ListDatasetsParams) -> Result<impl Stream<Item = Result<DatasetInfo>> + '_> {
+        if params.limit == Some(0) {
+            return Err(HfError::InvalidParameter("limit must be greater than 0".into()));
+        }
         let url = Url::parse(&format!("{}/api/datasets", self.inner.endpoint))?;
         let mut query: Vec<(String, String)> = Vec::new();
         if let Some(ref search) = params.search {
@@ -279,6 +285,9 @@ impl HFClient {
     /// List spaces on the Hub.
     /// Endpoint: GET /api/spaces
     pub fn list_spaces(&self, params: &ListSpacesParams) -> Result<impl Stream<Item = Result<SpaceInfo>> + '_> {
+        if params.limit == Some(0) {
+            return Err(HfError::InvalidParameter("limit must be greater than 0".into()));
+        }
         let url = Url::parse(&format!("{}/api/spaces", self.inner.endpoint))?;
         let mut query: Vec<(String, String)> = Vec::new();
         if let Some(ref search) = params.search {
@@ -420,13 +429,66 @@ fn split_repo_id(repo_id: &str) -> (Option<&str>, &str) {
 
 #[cfg(test)]
 mod tests {
+    use futures::StreamExt;
+
     use super::split_repo_id;
+    use crate::client::HFClient;
+    use crate::error::HfError;
+    use crate::types::{ListDatasetsParams, ListModelsParams, ListSpacesParams};
 
     #[test]
     fn test_split_repo_id() {
         assert_eq!(split_repo_id("user/repo"), (Some("user"), "repo"));
         assert_eq!(split_repo_id("repo"), (None, "repo"));
         assert_eq!(split_repo_id("org/sub/repo"), (Some("org"), "sub/repo"));
+    }
+
+    #[test]
+    fn test_list_models_limit_zero_errors() {
+        let client = HFClient::builder().build().unwrap();
+        let params = ListModelsParams::builder().limit(0_usize).build();
+        assert!(matches!(client.list_models(&params), Err(HfError::InvalidParameter(_))));
+    }
+
+    #[test]
+    fn test_list_datasets_limit_zero_errors() {
+        let client = HFClient::builder().build().unwrap();
+        let params = ListDatasetsParams::builder().limit(0_usize).build();
+        assert!(matches!(client.list_datasets(&params), Err(HfError::InvalidParameter(_))));
+    }
+
+    #[test]
+    fn test_list_spaces_limit_zero_errors() {
+        let client = HFClient::builder().build().unwrap();
+        let params = ListSpacesParams::builder().limit(0_usize).build();
+        assert!(matches!(client.list_spaces(&params), Err(HfError::InvalidParameter(_))));
+    }
+
+    #[tokio::test]
+    async fn test_list_models_max_items_zero_returns_empty() {
+        let client = HFClient::builder().build().unwrap();
+        let params = ListModelsParams::builder().max_items(0_usize).build();
+        let stream = client.list_models(&params).unwrap();
+        futures::pin_mut!(stream);
+        assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_list_datasets_max_items_zero_returns_empty() {
+        let client = HFClient::builder().build().unwrap();
+        let params = ListDatasetsParams::builder().max_items(0_usize).build();
+        let stream = client.list_datasets(&params).unwrap();
+        futures::pin_mut!(stream);
+        assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_list_spaces_max_items_zero_returns_empty() {
+        let client = HFClient::builder().build().unwrap();
+        let params = ListSpacesParams::builder().max_items(0_usize).build();
+        let stream = client.list_spaces(&params).unwrap();
+        futures::pin_mut!(stream);
+        assert!(stream.next().await.is_none());
     }
 }
 

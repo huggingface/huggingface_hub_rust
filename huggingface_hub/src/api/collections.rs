@@ -17,6 +17,9 @@ impl HFClient {
     }
 
     pub async fn list_collections(&self, params: &ListCollectionsParams) -> Result<Vec<Collection>> {
+        if params.limit == Some(0) {
+            return Err(crate::error::HfError::InvalidParameter("limit must be greater than 0".into()));
+        }
         let url = format!("{}/api/collections", self.inner.endpoint);
         let mut query: Vec<(String, String)> = Vec::new();
         if let Some(ref owner) = params.owner {

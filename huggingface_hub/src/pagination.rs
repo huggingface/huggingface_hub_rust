@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use futures::stream::{self, Stream};
+use futures::StreamExt;
 use reqwest::header::HeaderMap;
 use serde::de::DeserializeOwned;
 use url::Url;
@@ -28,6 +29,10 @@ impl HFClient {
         params: Vec<(String, String)>,
         max_items: Option<usize>,
     ) -> impl Stream<Item = Result<T>> + '_ {
+        if max_items == Some(0) {
+            return futures::stream::empty().left_stream();
+        }
+
         let state = PaginationState {
             buffer: VecDeque::new(),
             next_url: Some(initial_url),
@@ -96,6 +101,7 @@ impl HFClient {
                 }
             }
         })
+        .right_stream()
     }
 }
 

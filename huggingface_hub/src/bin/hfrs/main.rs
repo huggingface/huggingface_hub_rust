@@ -242,6 +242,7 @@ fn format_hf_error(err: &HfError) -> String {
         HfError::InvalidRepoType { expected, actual } => {
             format!("Invalid repository type: expected {expected:?}, got {actual:?}")
         },
+        HfError::InvalidParameter(msg) => msg.clone(),
         HfError::Other(msg) => msg.clone(),
     }
 }
