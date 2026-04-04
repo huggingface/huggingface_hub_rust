@@ -45,13 +45,13 @@ impl crate::repository::HFRepository {
 
     /// Stream users who have liked this repository.
     ///
-    /// Returns `Result<impl Stream<Item = Result<User>>>`. Pass `max_items` to cap the total
+    /// Returns `Result<impl Stream<Item = Result<User>>>`. Pass `limit` to cap the total
     /// number of users yielded.
-    pub fn list_likers(&self, max_items: Option<usize>) -> Result<impl Stream<Item = Result<User>> + '_> {
+    pub fn list_likers(&self, limit: Option<usize>) -> Result<impl Stream<Item = Result<User>> + '_> {
         let segment = constants::repo_type_api_segment(Some(self.repo_type));
         let url_str = format!("{}/api/{}/{}/likers", self.client.inner.endpoint, segment, self.repo_path());
         let url = Url::parse(&url_str)?;
-        Ok(self.client.paginate(url, vec![], max_items))
+        Ok(self.client.paginate(url, vec![], limit))
     }
 }
 

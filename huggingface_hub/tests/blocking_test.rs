@@ -105,11 +105,7 @@ fn test_sync_file_exists() {
 #[test]
 fn test_sync_list_models() {
     let Some(api) = sync_api() else { return };
-    let params = ListModelsParams::builder()
-        .author("openai-community")
-        .limit(3_usize)
-        .max_items(3_usize)
-        .build();
+    let params = ListModelsParams::builder().author("openai-community").limit(3_usize).build();
     let models = api.list_models(&params).unwrap();
     assert!(!models.is_empty());
     assert!(models[0].id.starts_with("openai-community/"));
@@ -118,11 +114,7 @@ fn test_sync_list_models() {
 #[test]
 fn test_sync_list_datasets() {
     let Some(api) = sync_api() else { return };
-    let params = ListDatasetsParams::builder()
-        .author("huggingface")
-        .limit(3_usize)
-        .max_items(3_usize)
-        .build();
+    let params = ListDatasetsParams::builder().author("huggingface").limit(3_usize).build();
     let datasets = api.list_datasets(&params).unwrap();
     assert!(!datasets.is_empty());
 }

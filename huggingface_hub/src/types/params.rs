@@ -12,10 +12,6 @@ pub struct ListModelsParams {
     pub filter: Option<String>,
     #[builder(default, setter(into, strip_option))]
     pub sort: Option<String>,
-    /// Server-side page size: how many items the Hub returns per request.
-    /// Does **not** cap the total number of results — use `max_items` for that.
-    #[builder(default, setter(strip_option))]
-    pub limit: Option<usize>,
     #[builder(default, setter(into, strip_option))]
     pub pipeline_tag: Option<String>,
     #[builder(default, setter(strip_option))]
@@ -24,10 +20,11 @@ pub struct ListModelsParams {
     pub card_data: Option<bool>,
     #[builder(default, setter(strip_option))]
     pub fetch_config: Option<bool>,
-    /// Client-side cap on the total number of items yielded by the stream.
-    /// Pagination stops once this many items have been returned.
+    /// Cap on the total number of items returned.
+    /// Pagination stops once this many items have been yielded.
+    /// When less than 1000, also used as the server page size for efficiency.
     #[builder(default, setter(strip_option))]
-    pub max_items: Option<usize>,
+    pub limit: Option<usize>,
 }
 
 #[derive(TypedBuilder)]
@@ -40,16 +37,13 @@ pub struct ListDatasetsParams {
     pub filter: Option<String>,
     #[builder(default, setter(into, strip_option))]
     pub sort: Option<String>,
-    /// Server-side page size: how many items the Hub returns per request.
-    /// Does **not** cap the total number of results — use `max_items` for that.
-    #[builder(default, setter(strip_option))]
-    pub limit: Option<usize>,
     #[builder(default, setter(strip_option))]
     pub full: Option<bool>,
-    /// Client-side cap on the total number of items yielded by the stream.
-    /// Pagination stops once this many items have been returned.
+    /// Cap on the total number of items returned.
+    /// Pagination stops once this many items have been yielded.
+    /// When less than 1000, also used as the server page size for efficiency.
     #[builder(default, setter(strip_option))]
-    pub max_items: Option<usize>,
+    pub limit: Option<usize>,
 }
 
 #[derive(TypedBuilder)]
@@ -62,16 +56,13 @@ pub struct ListSpacesParams {
     pub filter: Option<String>,
     #[builder(default, setter(into, strip_option))]
     pub sort: Option<String>,
-    /// Server-side page size: how many items the Hub returns per request.
-    /// Does **not** cap the total number of results — use `max_items` for that.
-    #[builder(default, setter(strip_option))]
-    pub limit: Option<usize>,
     #[builder(default, setter(strip_option))]
     pub full: Option<bool>,
-    /// Client-side cap on the total number of items yielded by the stream.
-    /// Pagination stops once this many items have been returned.
+    /// Cap on the total number of items returned.
+    /// Pagination stops once this many items have been yielded.
+    /// When less than 1000, also used as the server page size for efficiency.
     #[builder(default, setter(strip_option))]
-    pub max_items: Option<usize>,
+    pub limit: Option<usize>,
 }
 
 #[derive(TypedBuilder)]

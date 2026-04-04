@@ -122,7 +122,7 @@ pub struct RepoListTreeParams {
     #[builder(default)]
     pub expand: bool,
     #[builder(default, setter(strip_option))]
-    pub max_items: Option<usize>,
+    pub limit: Option<usize>,
 }
 
 #[derive(TypedBuilder)]
@@ -255,7 +255,7 @@ pub struct RepoListCommitsParams {
     #[builder(default, setter(into, strip_option))]
     pub revision: Option<String>,
     #[builder(default, setter(strip_option))]
-    pub max_items: Option<usize>,
+    pub limit: Option<usize>,
 }
 
 #[derive(Default, TypedBuilder)]

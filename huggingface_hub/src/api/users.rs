@@ -52,10 +52,10 @@ impl HFClient {
     pub fn list_user_followers(
         &self,
         username: &str,
-        max_items: Option<usize>,
+        limit: Option<usize>,
     ) -> Result<impl Stream<Item = Result<User>> + '_> {
         let url = Url::parse(&format!("{}/api/users/{}/followers", self.inner.endpoint, username))?;
-        Ok(self.paginate(url, vec![], max_items))
+        Ok(self.paginate(url, vec![], limit))
     }
 
     /// List users that a user is following.
@@ -63,10 +63,10 @@ impl HFClient {
     pub fn list_user_following(
         &self,
         username: &str,
-        max_items: Option<usize>,
+        limit: Option<usize>,
     ) -> Result<impl Stream<Item = Result<User>> + '_> {
         let url = Url::parse(&format!("{}/api/users/{}/following", self.inner.endpoint, username))?;
-        Ok(self.paginate(url, vec![], max_items))
+        Ok(self.paginate(url, vec![], limit))
     }
 
     /// List members of an organization.
@@ -74,10 +74,10 @@ impl HFClient {
     pub fn list_organization_members(
         &self,
         organization: &str,
-        max_items: Option<usize>,
+        limit: Option<usize>,
     ) -> Result<impl Stream<Item = Result<User>> + '_> {
         let url = Url::parse(&format!("{}/api/organizations/{}/members", self.inner.endpoint, organization))?;
-        Ok(self.paginate(url, vec![], max_items))
+        Ok(self.paginate(url, vec![], limit))
     }
 }
 
@@ -92,8 +92,8 @@ sync_api! {
 
 sync_api_stream! {
     impl HfApiSync {
-        fn list_user_followers(&self, username: &str, max_items: Option<usize>) -> User;
-        fn list_user_following(&self, username: &str, max_items: Option<usize>) -> User;
-        fn list_organization_members(&self, organization: &str, max_items: Option<usize>) -> User;
+        fn list_user_followers(&self, username: &str, limit: Option<usize>) -> User;
+        fn list_user_following(&self, username: &str, limit: Option<usize>) -> User;
+        fn list_organization_members(&self, organization: &str, limit: Option<usize>) -> User;
     }
 }

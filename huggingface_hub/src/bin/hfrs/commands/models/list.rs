@@ -51,12 +51,11 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
         author: args.author,
         filter,
         sort: args.sort,
-        limit: Some(args.limit),
         pipeline_tag: None,
         full: None,
         card_data: None,
         fetch_config: None,
-        max_items: None,
+        limit: Some(args.limit),
     };
 
     let stream = api.list_models(&params)?;
@@ -65,9 +64,6 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     let mut models = Vec::new();
     while let Some(item) = stream.next().await {
         models.push(item?);
-        if models.len() >= args.limit {
-            break;
-        }
     }
 
     let headers = vec![
@@ -83,7 +79,9 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
         .map(|m| {
             vec![
                 m.id.clone(),
-                m.author.clone().unwrap_or_default(),
+                m.author
+                    .clone()
+                    .unwrap_or_else(|| m.id.split('/').next().unwrap_or_default().to_string()),
                 m.downloads.map(|d| d.to_string()).unwrap_or_default(),
                 m.likes.map(|l| l.to_string()).unwrap_or_default(),
                 m.pipeline_tag.clone().unwrap_or_default(),
@@ -98,7 +96,7 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
         .map(|m| {
             json!({
                 "id": m.id,
-                "author": m.author,
+                "author": m.author.clone().unwrap_or_else(|| m.id.split('/').next().unwrap_or_default().to_string()),
                 "downloads": m.downloads,
                 "likes": m.likes,
                 "pipeline_tag": m.pipeline_tag,

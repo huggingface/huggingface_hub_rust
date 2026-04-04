@@ -27,7 +27,7 @@ impl crate::repository::HFRepository {
             revision,
             recursive: true,
             expand: false,
-            max_items: None,
+            limit: None,
         })?;
         futures::pin_mut!(stream);
 
@@ -44,7 +44,7 @@ impl crate::repository::HFRepository {
     /// Stream file and directory entries in the repository tree.
     ///
     /// Returns `Result<impl Stream<Item = Result<RepoTreeEntry>>>`. Set `recursive` to traverse
-    /// subdirectories. Use `max_items` to cap the total number of entries yielded.
+    /// subdirectories. Use `limit` to cap the total number of entries yielded.
     pub fn list_tree(&self, params: &RepoListTreeParams) -> Result<impl Stream<Item = Result<RepoTreeEntry>> + '_> {
         let revision = self.effective_revision(params.revision.as_deref());
         let url_str = format!("{}/tree/{}", self.client.api_url(Some(self.repo_type), &self.repo_path()), revision);
@@ -58,7 +58,7 @@ impl crate::repository::HFRepository {
             query.push(("expand".into(), "true".into()));
         }
 
-        Ok(self.client.paginate(url, query, params.max_items))
+        Ok(self.client.paginate(url, query, params.limit))
     }
 
     /// Get info about specific paths in a repository.
@@ -505,7 +505,7 @@ impl crate::repository::HFRepository {
             revision: Some(revision.to_string()),
             recursive: true,
             expand: false,
-            max_items: None,
+            limit: None,
         })?;
         futures::pin_mut!(stream);
 
@@ -1049,7 +1049,7 @@ impl crate::repository::HFRepository {
                 revision: Some(revision.to_string()),
                 recursive: true,
                 expand: false,
-                max_items: None,
+                limit: None,
             })?;
             futures::pin_mut!(stream);
             while let Some(entry) = stream.next().await {
@@ -1103,7 +1103,7 @@ impl crate::repository::HFRepository {
             revision: Some(revision.to_string()),
             recursive: true,
             expand: false,
-            max_items: None,
+            limit: None,
         })?;
         futures::pin_mut!(stream);
 

@@ -51,9 +51,8 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
         author: args.author,
         filter,
         sort: args.sort,
-        limit: Some(args.limit),
         full: None,
-        max_items: None,
+        limit: Some(args.limit),
     };
 
     let stream = api.list_spaces(&params)?;
@@ -62,9 +61,6 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     let mut spaces = Vec::new();
     while let Some(item) = stream.next().await {
         spaces.push(item?);
-        if spaces.len() >= args.limit {
-            break;
-        }
     }
 
     let headers = vec![
@@ -79,7 +75,9 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
         .map(|s| {
             vec![
                 s.id.clone(),
-                s.author.clone().unwrap_or_default(),
+                s.author
+                    .clone()
+                    .unwrap_or_else(|| s.id.split('/').next().unwrap_or_default().to_string()),
                 s.sdk.clone().unwrap_or_default(),
                 s.likes.map(|v| v.to_string()).unwrap_or_default(),
             ]
@@ -93,7 +91,7 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
         .map(|s| {
             json!({
                 "id": s.id,
-                "author": s.author,
+                "author": s.author.clone().unwrap_or_else(|| s.id.split('/').next().unwrap_or_default().to_string()),
                 "sdk": s.sdk,
                 "likes": s.likes,
                 "tags": s.tags,

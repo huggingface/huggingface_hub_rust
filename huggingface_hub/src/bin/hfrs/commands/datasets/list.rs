@@ -51,9 +51,8 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
         author: args.author,
         filter,
         sort: args.sort,
-        limit: Some(args.limit),
         full: None,
-        max_items: None,
+        limit: Some(args.limit),
     };
 
     let stream = api.list_datasets(&params)?;
@@ -62,9 +61,6 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     let mut datasets = Vec::new();
     while let Some(item) = stream.next().await {
         datasets.push(item?);
-        if datasets.len() >= args.limit {
-            break;
-        }
     }
 
     let headers = vec![

@@ -429,8 +429,8 @@ impl HFRepositorySync {
     }
 
     #[cfg(feature = "likes")]
-    pub fn list_likers(&self, max_items: Option<usize>) -> Result<Vec<types::User>> {
-        collect_stream(self.runtime.as_ref(), self.inner.list_likers(max_items)?)
+    pub fn list_likers(&self, limit: Option<usize>) -> Result<Vec<types::User>> {
+        collect_stream(self.runtime.as_ref(), self.inner.list_likers(limit)?)
     }
 }
 
