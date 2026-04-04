@@ -4,9 +4,9 @@
 //! Run: cargo run -p huggingface-hub --features discussions --example discussions
 
 use huggingface_hub::{
-    CreateRepoParams, DeleteRepoParams, HFClient, RepoChangeDiscussionStatusParams, RepoCommentDiscussionParams,
-    RepoCreateDiscussionParams, RepoDiscussionDetailsParams, RepoEditDiscussionCommentParams,
-    RepoListDiscussionsParams, RepoRenameDiscussionParams,
+    CreateRepoParams, DeleteRepoParams, DiscussionEventData, HFClient, RepoChangeDiscussionStatusParams,
+    RepoCommentDiscussionParams, RepoCreateDiscussionParams, RepoDiscussionDetailsParams,
+    RepoEditDiscussionCommentParams, RepoListDiscussionsParams, RepoRenameDiscussionParams,
 };
 
 #[tokio::main]
@@ -82,7 +82,9 @@ async fn main() -> huggingface_hub::Result<()> {
                 .build(),
         )
         .await?;
-    println!("Renamed discussion: {}", renamed.new_title.event_type);
+    if let DiscussionEventData::TitleChange(ref title_data) = renamed.new_title.data {
+        println!("Renamed discussion: '{}' -> '{}'", title_data.from, title_data.to);
+    }
 
     repo.change_discussion_status(
         &RepoChangeDiscussionStatusParams::builder()
