@@ -54,6 +54,10 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     };
     let papers = api.list_daily_papers(&params).await?;
 
+    if papers.is_empty() && matches!(args.format, OutputFormat::Table) {
+        return Ok(CommandResult::Raw("No papers found.".to_string()));
+    }
+
     let headers = vec!["Title".to_string(), "Paper ID".to_string(), "Upvotes".to_string()];
 
     let rows = papers

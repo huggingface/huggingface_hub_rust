@@ -219,7 +219,7 @@ impl HFClient {
 }
 
 sync_api! {
-    impl HfApiSync {
+    impl HFClientSync {
         fn create_inference_endpoint(&self, params: &CreateInferenceEndpointParams) -> Result<InferenceEndpointInfo>;
         fn get_inference_endpoint(&self, params: &GetInferenceEndpointParams) -> Result<InferenceEndpointInfo>;
         fn list_inference_endpoints(&self, params: &ListInferenceEndpointsParams) -> Result<Vec<InferenceEndpointInfo>>;

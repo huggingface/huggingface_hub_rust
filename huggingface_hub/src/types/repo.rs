@@ -37,14 +37,14 @@ impl FromStr for RepoType {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlobLfsInfo {
     pub size: Option<u64>,
     pub sha256: Option<String>,
     pub pointer_size: Option<u64>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LastCommitInfo {
     pub id: Option<String>,
@@ -52,7 +52,7 @@ pub struct LastCommitInfo {
     pub date: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoSibling {
     pub rfilename: String,
     pub size: Option<u64>,
@@ -93,7 +93,9 @@ pub struct ModelInfo {
     pub downloads_all_time: Option<u64>,
     pub likes: Option<u64>,
     pub tags: Option<Vec<String>>,
+    #[serde(rename = "pipeline_tag")]
     pub pipeline_tag: Option<String>,
+    #[serde(rename = "library_name")]
     pub library_name: Option<String>,
     pub created_at: Option<String>,
     pub last_modified: Option<String>,
@@ -101,6 +103,10 @@ pub struct ModelInfo {
     pub card_data: Option<serde_json::Value>,
     pub config: Option<serde_json::Value>,
     pub trending_score: Option<f64>,
+    pub gguf: Option<serde_json::Value>,
+    pub spaces: Option<Vec<String>>,
+    pub used_storage: Option<u64>,
+    pub widget_data: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -123,6 +129,8 @@ pub struct DatasetInfo {
     pub siblings: Option<Vec<RepoSibling>>,
     pub card_data: Option<serde_json::Value>,
     pub trending_score: Option<f64>,
+    pub description: Option<String>,
+    pub used_storage: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -144,6 +152,10 @@ pub struct SpaceInfo {
     pub card_data: Option<serde_json::Value>,
     pub sdk: Option<String>,
     pub trending_score: Option<f64>,
+    pub host: Option<String>,
+    pub subdomain: Option<String>,
+    pub runtime: Option<serde_json::Value>,
+    pub used_storage: Option<u64>,
 }
 
 #[derive(Debug, Clone)]

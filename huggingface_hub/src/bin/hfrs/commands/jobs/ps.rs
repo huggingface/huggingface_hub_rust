@@ -28,6 +28,10 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     };
     let jobs = api.list_jobs(&params).await?;
 
+    if jobs.is_empty() && matches!(args.format, OutputFormat::Table) {
+        return Ok(CommandResult::Raw("No jobs found.".to_string()));
+    }
+
     let headers = vec![
         "ID".to_string(),
         "Image".to_string(),

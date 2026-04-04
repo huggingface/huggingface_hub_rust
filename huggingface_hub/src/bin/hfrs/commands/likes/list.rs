@@ -27,6 +27,10 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     };
     let liked = api.list_liked_repos(&params).await?;
 
+    if liked.is_empty() && matches!(args.format, OutputFormat::Table) {
+        return Ok(CommandResult::Raw("No liked repos found.".to_string()));
+    }
+
     let headers = vec!["Repo".to_string(), "Type".to_string(), "Created".to_string()];
 
     let rows = liked

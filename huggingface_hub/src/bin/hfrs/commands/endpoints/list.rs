@@ -28,6 +28,10 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     };
     let endpoints = api.list_inference_endpoints(&params).await?;
 
+    if endpoints.is_empty() && matches!(args.format, OutputFormat::Table) {
+        return Ok(CommandResult::Raw("No endpoints found.".to_string()));
+    }
+
     let headers = vec!["Name".to_string(), "Status".to_string(), "URL".to_string()];
 
     let rows = endpoints

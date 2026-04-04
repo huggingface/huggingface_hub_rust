@@ -42,6 +42,7 @@ impl Clone for HFClient {
 
 pub(crate) struct HFClientInner {
     pub(crate) client: ClientWithMiddleware,
+    pub(crate) no_redirect_client: ClientWithMiddleware,
     pub(crate) endpoint: String,
     pub(crate) token: Option<String>,
     pub(crate) cache_dir: std::path::PathBuf,
@@ -157,17 +158,28 @@ impl HFClientBuilder {
 
         let raw_client = match self.client {
             Some(c) => c,
-            None => reqwest::Client::builder().default_headers(default_headers).build()?,
+            None => reqwest::Client::builder().default_headers(default_headers.clone()).build()?,
         };
+
+        let no_redirect_raw = reqwest::Client::builder()
+            .default_headers(default_headers)
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?;
 
         let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
         let client = reqwest_middleware::ClientBuilder::new(raw_client)
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build();
 
+        let no_redirect_retry = ExponentialBackoff::builder().build_with_max_retries(3);
+        let no_redirect_client = reqwest_middleware::ClientBuilder::new(no_redirect_raw)
+            .with(RetryTransientMiddleware::new_with_policy(no_redirect_retry))
+            .build();
+
         Ok(HFClient {
             inner: Arc::new(HFClientInner {
                 client,
+                no_redirect_client,
                 endpoint: endpoint.trim_end_matches('/').to_string(),
                 token,
                 cache_dir,

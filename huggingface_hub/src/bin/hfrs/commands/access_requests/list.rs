@@ -38,6 +38,10 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
         _ => repo.list_pending_access_requests().await?,
     };
 
+    if requests.is_empty() && matches!(args.format, OutputFormat::Table) {
+        return Ok(CommandResult::Raw("No access requests found.".to_string()));
+    }
+
     let headers = vec![
         "Username".to_string(),
         "Email".to_string(),

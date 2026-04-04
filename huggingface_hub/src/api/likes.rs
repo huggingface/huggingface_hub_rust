@@ -67,7 +67,7 @@ impl HFClient {
 }
 
 sync_api! {
-    impl HfApiSync {
+    impl HFClientSync {
         fn list_liked_repos(&self, params: &ListLikedReposParams) -> Result<Vec<LikedRepo>>;
     }
 }

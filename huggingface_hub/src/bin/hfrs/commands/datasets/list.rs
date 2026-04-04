@@ -31,7 +31,7 @@ pub struct Args {
     pub limit: usize,
 
     /// Output format
-    #[arg(long, value_enum, default_value = "table")]
+    #[arg(long, value_enum, default_value = "json")]
     pub format: OutputFormat,
 
     /// Print only dataset IDs
@@ -61,6 +61,10 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     let mut datasets = Vec::new();
     while let Some(item) = stream.next().await {
         datasets.push(item?);
+    }
+
+    if datasets.is_empty() && matches!(args.format, OutputFormat::Table) {
+        return Ok(CommandResult::Raw("No datasets found.".to_string()));
     }
 
     let headers = vec![

@@ -82,7 +82,7 @@ impl HFClient {
 }
 
 sync_api! {
-    impl HfApiSync {
+    impl HFClientSync {
         fn whoami(&self) -> Result<User>;
         fn auth_check(&self) -> Result<()>;
         fn get_user_overview(&self, username: &str) -> Result<User>;
@@ -91,7 +91,7 @@ sync_api! {
 }
 
 sync_api_stream! {
-    impl HfApiSync {
+    impl HFClientSync {
         fn list_user_followers(&self, username: &str, limit: Option<usize>) -> User;
         fn list_user_following(&self, username: &str, limit: Option<usize>) -> User;
         fn list_organization_members(&self, organization: &str, limit: Option<usize>) -> User;

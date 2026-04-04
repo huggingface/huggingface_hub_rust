@@ -47,6 +47,10 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     };
     let resp = repo.list_discussions(&params).await?;
 
+    if resp.discussions.is_empty() && matches!(args.format, OutputFormat::Table) {
+        return Ok(CommandResult::Raw("No discussions found.".to_string()));
+    }
+
     let headers = vec![
         "Num".to_string(),
         "Title".to_string(),

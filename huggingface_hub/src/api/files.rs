@@ -324,109 +324,36 @@ impl crate::repository::HFRepository {
             .client
             .download_url(Some(self.repo_type), &repo_path, revision, &params.filename);
 
-        #[cfg(feature = "xet")]
-        {
-            let head_response = self
-                .client
-                .inner
-                .client
-                .head(&url)
-                .headers(self.client.auth_headers())
-                .send()
-                .await?;
-
-            let status = head_response.status();
-            if status == reqwest::StatusCode::NOT_FOUND {
-                return Err(mark_no_exist_and_return_error(
-                    cache_dir,
-                    repo_folder,
-                    revision,
-                    &head_response,
-                    &repo_path,
-                    &params.filename,
-                )
-                .await);
-            }
-
-            let head_response = self
-                .client
-                .check_response(
-                    head_response,
-                    Some(&repo_path),
-                    crate::error::NotFoundContext::Entry {
-                        path: params.filename.clone(),
-                    },
-                )
-                .await?;
-
-            let has_xet_hash = head_response.headers().get(constants::HEADER_X_XET_HASH).is_some();
-
-            if has_xet_hash {
-                let etag = extract_etag(&head_response)
-                    .ok_or_else(|| HfError::Other("Missing ETag header on xet response".to_string()))?;
-                let commit_hash = extract_commit_hash(&head_response)
-                    .ok_or_else(|| HfError::Other("Missing X-Repo-Commit header".to_string()))?;
-
-                let blob = cache::blob_path(cache_dir, repo_folder, &etag);
-                if !blob.exists() || force_download {
-                    if let Some(parent) = blob.parent() {
-                        tokio::fs::create_dir_all(parent).await?;
-                    }
-                    let _lock = cache::acquire_lock(cache_dir, repo_folder, &etag).await?;
-
-                    let xet_hash = head_response
-                        .headers()
-                        .get(constants::HEADER_X_XET_HASH)
-                        .and_then(|v| v.to_str().ok())
-                        .ok_or_else(|| HfError::Other("Missing X-Xet-Hash header".to_string()))?
-                        .to_string();
-                    let file_size: u64 = head_response
-                        .headers()
-                        .get(reqwest::header::CONTENT_LENGTH)
-                        .and_then(|v| v.to_str().ok())
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(0);
-
-                    crate::xet::xet_download_to_blob(
-                        &self.client,
-                        &repo_path,
-                        Some(self.repo_type),
-                        revision,
-                        &xet_hash,
-                        file_size,
-                        &blob,
-                    )
-                    .await?;
-                }
-
-                return finalize_cached_file(cache_dir, repo_folder, revision, &commit_hash, &params.filename, &etag)
-                    .await;
-            }
-        }
-
         let cached_etag = if !force_download {
             self.find_cached_etag(repo_folder, revision, &params.filename)
         } else {
             None
         };
 
-        let mut headers = self.client.auth_headers();
+        let mut head_headers = self.client.auth_headers();
         if let Some(ref etag_val) = cached_etag {
             if let Ok(hv) = reqwest::header::HeaderValue::from_str(&format!("\"{etag_val}\"")) {
-                headers.insert(IF_NONE_MATCH, hv);
+                head_headers.insert(IF_NONE_MATCH, hv);
             }
         }
 
-        let response = self.client.inner.client.get(&url).headers(headers).send().await?;
+        let head_response = self
+            .client
+            .inner
+            .no_redirect_client
+            .head(&url)
+            .headers(head_headers)
+            .send()
+            .await?;
 
-        let status = response.status();
+        let status = head_response.status();
 
         if status == reqwest::StatusCode::NOT_FOUND {
             return Err(mark_no_exist_and_return_error(
                 cache_dir,
                 repo_folder,
                 revision,
-                &response,
+                &head_response,
                 &repo_path,
                 &params.filename,
             )
@@ -446,21 +373,73 @@ impl crate::repository::HFRepository {
             return finalize_cached_file(cache_dir, repo_folder, revision, &commit_hash, &params.filename, &etag).await;
         }
 
-        let response = self
-            .client
-            .check_response(
-                response,
-                Some(&repo_path),
-                crate::error::NotFoundContext::Entry {
-                    path: params.filename.clone(),
-                },
-            )
-            .await?;
-
         let etag =
-            extract_etag(&response).ok_or_else(|| HfError::Other("Missing ETag header in response".to_string()))?;
-        let commit_hash =
-            extract_commit_hash(&response).ok_or_else(|| HfError::Other("Missing X-Repo-Commit header".to_string()))?;
+            extract_etag(&head_response).ok_or_else(|| HfError::Other("Missing ETag header in response".to_string()));
+        let commit_hash = extract_commit_hash(&head_response);
+        let has_xet_hash = head_response.headers().get(constants::HEADER_X_XET_HASH).is_some();
+        #[cfg(feature = "xet")]
+        let xet_hash = head_response
+            .headers()
+            .get(constants::HEADER_X_XET_HASH)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+        #[cfg(feature = "xet")]
+        let file_size: u64 = head_response
+            .headers()
+            .get(constants::HEADER_X_LINKED_SIZE)
+            .or_else(|| head_response.headers().get(reqwest::header::CONTENT_LENGTH))
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+
+        if !status.is_success() && !status.is_redirection() {
+            self.client
+                .check_response(
+                    head_response,
+                    Some(&repo_path),
+                    crate::error::NotFoundContext::Entry {
+                        path: params.filename.clone(),
+                    },
+                )
+                .await?;
+        }
+
+        let etag = etag?;
+        let commit_hash = commit_hash.ok_or_else(|| HfError::Other("Missing X-Repo-Commit header".to_string()))?;
+
+        #[cfg(feature = "xet")]
+        if has_xet_hash {
+            let xet_hash = xet_hash.ok_or_else(|| HfError::Other("Missing X-Xet-Hash header".to_string()))?;
+            let blob = cache::blob_path(cache_dir, repo_folder, &etag);
+            if !blob.exists() || force_download {
+                if let Some(parent) = blob.parent() {
+                    tokio::fs::create_dir_all(parent).await?;
+                }
+                let _lock = cache::acquire_lock(cache_dir, repo_folder, &etag).await?;
+
+                crate::xet::xet_download_to_blob(
+                    &self.client,
+                    &repo_path,
+                    Some(self.repo_type),
+                    revision,
+                    &xet_hash,
+                    file_size,
+                    &blob,
+                )
+                .await?;
+            }
+
+            return finalize_cached_file(cache_dir, repo_folder, revision, &commit_hash, &params.filename, &etag).await;
+        }
+
+        #[cfg(not(feature = "xet"))]
+        if has_xet_hash {
+            return Err(HfError::Other(
+                "File requires xet transfer but the 'xet' feature is not enabled. \
+                 Rebuild with --features xet to download this file."
+                    .to_string(),
+            ));
+        }
 
         let blob = cache::blob_path(cache_dir, repo_folder, &etag);
 
@@ -474,6 +453,14 @@ impl crate::repository::HFRepository {
             tokio::fs::create_dir_all(parent).await?;
         }
 
+        let response = self
+            .client
+            .inner
+            .client
+            .get(&url)
+            .headers(self.client.auth_headers())
+            .send()
+            .await?;
         stream_response_to_file(response, &incomplete_path).await?;
         tokio::fs::rename(&incomplete_path, &blob).await?;
 
@@ -583,7 +570,7 @@ impl crate::repository::HFRepository {
                 let url = self
                     .client
                     .download_url(Some(self.repo_type), &repo_path, commit_hash_ref, filename);
-                let client = &self.client.inner.client;
+                let client = &self.client.inner.no_redirect_client;
                 let auth = self.client.auth_headers();
                 let filename = filename.clone();
                 let repo_folder_ref = &repo_folder;
@@ -604,7 +591,7 @@ impl crate::repository::HFRepository {
                             let _ = tokio::fs::write(&no_exist, b"").await;
                         }
                         return Ok::<_, HfError>(None);
-                    } else if !resp.status().is_success() {
+                    } else if !resp.status().is_success() && !resp.status().is_redirection() {
                         return Err(HfError::Http {
                             status: resp.status(),
                             url,
@@ -621,7 +608,8 @@ impl crate::repository::HFRepository {
                         .map(|s| s.to_string());
                     let file_size: u64 = resp
                         .headers()
-                        .get(reqwest::header::CONTENT_LENGTH)
+                        .get(constants::HEADER_X_LINKED_SIZE)
+                        .or_else(|| resp.headers().get(reqwest::header::CONTENT_LENGTH))
                         .and_then(|v| v.to_str().ok())
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(0);

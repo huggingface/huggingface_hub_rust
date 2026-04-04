@@ -83,7 +83,7 @@ impl HFClient {
 }
 
 sync_api! {
-    impl HfApiSync {
+    impl HFClientSync {
         fn list_papers(&self, params: &ListPapersParams) -> Result<Vec<PaperSearchResult>>;
         fn list_daily_papers(&self, params: &ListDailyPapersParams) -> Result<Vec<DailyPaper>>;
         fn paper_info(&self, params: &PaperInfoParams) -> Result<PaperInfo>;

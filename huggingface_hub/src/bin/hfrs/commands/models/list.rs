@@ -31,7 +31,7 @@ pub struct Args {
     pub limit: usize,
 
     /// Output format
-    #[arg(long, value_enum, default_value = "table")]
+    #[arg(long, value_enum, default_value = "json")]
     pub format: OutputFormat,
 
     /// Print only model IDs
@@ -64,6 +64,10 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     let mut models = Vec::new();
     while let Some(item) = stream.next().await {
         models.push(item?);
+    }
+
+    if models.is_empty() && matches!(args.format, OutputFormat::Table) {
+        return Ok(CommandResult::Raw("No models found.".to_string()));
     }
 
     let headers = vec![

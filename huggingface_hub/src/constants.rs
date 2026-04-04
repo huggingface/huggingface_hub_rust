@@ -17,12 +17,13 @@ pub(crate) const HF_HUB_USER_AGENT_ORIGIN: &str = "HF_HUB_USER_AGENT_ORIGIN";
 /// Token filename within HF_HOME
 pub(crate) const TOKEN_FILENAME: &str = "token";
 
-#[cfg(feature = "xet")]
 pub(crate) const HEADER_X_XET_HASH: &str = "x-xet-hash";
 
 pub(crate) const CACHE_LOCK_TIMEOUT_SECS: u64 = 10;
 pub(crate) const HEADER_X_REPO_COMMIT: &str = "x-repo-commit";
 pub(crate) const HEADER_X_LINKED_ETAG: &str = "x-linked-etag";
+#[cfg(feature = "xet")]
+pub(crate) const HEADER_X_LINKED_SIZE: &str = "x-linked-size";
 
 /// URL prefixes for different repo types
 /// Models have no prefix, datasets use "datasets/", spaces use "spaces/", kernels use "kernels/"

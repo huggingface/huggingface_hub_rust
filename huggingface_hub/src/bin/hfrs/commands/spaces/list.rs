@@ -31,7 +31,7 @@ pub struct Args {
     pub limit: usize,
 
     /// Output format
-    #[arg(long, value_enum, default_value = "table")]
+    #[arg(long, value_enum, default_value = "json")]
     pub format: OutputFormat,
 
     /// Print only Space IDs
@@ -61,6 +61,10 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     let mut spaces = Vec::new();
     while let Some(item) = stream.next().await {
         spaces.push(item?);
+    }
+
+    if spaces.is_empty() && matches!(args.format, OutputFormat::Table) {
+        return Ok(CommandResult::Raw("No spaces found.".to_string()));
     }
 
     let headers = vec![

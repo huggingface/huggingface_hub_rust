@@ -21,6 +21,10 @@ pub struct Args {
 pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     let webhooks = api.list_webhooks().await?;
 
+    if webhooks.is_empty() && matches!(args.format, OutputFormat::Table) {
+        return Ok(CommandResult::Raw("No webhooks found.".to_string()));
+    }
+
     let headers = vec!["ID".to_string(), "URL".to_string(), "Domains".to_string()];
 
     let rows = webhooks

@@ -43,6 +43,10 @@ pub async fn execute(_api: &HfApi, args: Args) -> Result<CommandResult> {
     let cache_dir = huggingface_hub::resolve_cache_dir();
     let cache_info = huggingface_hub::cache::scan_cache_dir(&cache_dir).await?;
 
+    if cache_info.repos.is_empty() && matches!(args.format, OutputFormat::Table) {
+        return Ok(CommandResult::Raw("No cached repos found.".to_string()));
+    }
+
     let headers = vec![
         "Repo".to_string(),
         "Type".to_string(),

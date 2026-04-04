@@ -21,6 +21,10 @@ pub struct Args {
 pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     let jobs = api.list_scheduled_jobs().await?;
 
+    if jobs.is_empty() && matches!(args.format, OutputFormat::Table) {
+        return Ok(CommandResult::Raw("No scheduled jobs found.".to_string()));
+    }
+
     let headers = vec![
         "ID".to_string(),
         "Schedule".to_string(),

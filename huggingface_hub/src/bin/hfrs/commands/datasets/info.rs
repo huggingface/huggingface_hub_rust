@@ -37,12 +37,18 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
         "author": info.author,
         "sha": info.sha,
         "private": info.private,
+        "gated": info.gated,
+        "disabled": info.disabled,
         "downloads": info.downloads,
         "likes": info.likes,
         "tags": info.tags,
         "created_at": info.created_at,
         "last_modified": info.last_modified,
+        "siblings": info.siblings,
+        "card_data": info.card_data,
         "trending_score": info.trending_score,
+        "description": info.description,
+        "used_storage": info.used_storage,
     });
     let output = CommandOutput::single_item(json_value);
     Ok(CommandResult::Formatted {

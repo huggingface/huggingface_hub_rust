@@ -181,7 +181,7 @@ impl HFClient {
 }
 
 sync_api! {
-    impl HfApiSync {
+    impl HFClientSync {
         fn get_collection(&self, params: &GetCollectionParams) -> Result<Collection>;
         fn list_collections(&self, params: &ListCollectionsParams) -> Result<Vec<Collection>>;
         fn create_collection(&self, params: &CreateCollectionParams) -> Result<Collection>;

@@ -37,6 +37,8 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
         "author": info.author,
         "sha": info.sha,
         "private": info.private,
+        "gated": info.gated,
+        "disabled": info.disabled,
         "downloads": info.downloads,
         "likes": info.likes,
         "pipeline_tag": info.pipeline_tag,
@@ -44,7 +46,14 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
         "tags": info.tags,
         "created_at": info.created_at,
         "last_modified": info.last_modified,
+        "siblings": info.siblings,
+        "card_data": info.card_data,
+        "config": info.config,
         "trending_score": info.trending_score,
+        "gguf": info.gguf,
+        "spaces": info.spaces,
+        "used_storage": info.used_storage,
+        "widget_data": info.widget_data,
     });
     let output = CommandOutput::single_item(json_value);
     Ok(CommandResult::Formatted {

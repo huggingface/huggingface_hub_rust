@@ -104,7 +104,7 @@ impl HFClient {
 }
 
 sync_api! {
-    impl HfApiSync {
+    impl HFClientSync {
         fn list_webhooks(&self) -> Result<Vec<WebhookInfo>>;
         fn get_webhook(&self, webhook_id: &str) -> Result<WebhookInfo>;
         fn create_webhook(&self, params: &CreateWebhookParams) -> Result<WebhookInfo>;

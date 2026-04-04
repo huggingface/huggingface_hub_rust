@@ -207,7 +207,7 @@ impl HFClient {
 }
 
 sync_api! {
-    impl HfApiSync {
+    impl HFClientSync {
         fn run_job(&self, params: &RunJobParams) -> Result<JobInfo>;
         fn list_jobs(&self, params: &ListJobsParams) -> Result<Vec<JobInfo>>;
         fn inspect_job(&self, job_id: &str, namespace: Option<&str>) -> Result<JobInfo>;

@@ -36,7 +36,7 @@ where
 /// that every async API method can be called from synchronous code. The runtime is
 /// shared with all repo/space handles derived from this client.
 #[derive(Clone)]
-pub struct HfApiSync {
+pub struct HFClientSync {
     pub(crate) inner: HFClient,
     pub(crate) runtime: Arc<tokio::runtime::Runtime>,
 }
@@ -63,7 +63,7 @@ pub struct HFSpaceSync {
     space: repo::HFSpace,
 }
 
-impl fmt::Debug for HfApiSync {
+impl fmt::Debug for HFClientSync {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HFClientSync").finish()
     }
@@ -81,8 +81,8 @@ impl fmt::Debug for HFSpaceSync {
     }
 }
 
-impl HfApiSync {
-    /// Creates an `HfApiSync` using default configuration from the environment.
+impl HFClientSync {
+    /// Creates an `HFClientSync` using default configuration from the environment.
     ///
     /// Reads `HF_TOKEN`, `HF_ENDPOINT`, and other standard environment variables.
     ///
@@ -96,7 +96,7 @@ impl HfApiSync {
         })
     }
 
-    /// Creates an `HfApiSync` wrapping an already-configured [`HFClient`].
+    /// Creates an `HFClientSync` wrapping an already-configured [`HFClient`].
     ///
     /// # Errors
     ///
@@ -142,7 +142,7 @@ impl HfApiSync {
 impl HFRepositorySync {
     /// Creates a blocking repository handle from a client, repo type, owner, and name.
     pub fn new(
-        client: HfApiSync,
+        client: HFClientSync,
         repo_type: types::RepoType,
         owner: impl Into<String>,
         name: impl Into<String>,
@@ -162,9 +162,9 @@ impl HFRepositorySync {
         &self.inner
     }
 
-    /// Returns the [`HfApiSync`] client this handle belongs to.
-    pub fn api(&self) -> HfApiSync {
-        HfApiSync {
+    /// Returns the [`HFClientSync`] client this handle belongs to.
+    pub fn api(&self) -> HFClientSync {
+        HFClientSync {
             inner: self.inner.client().clone(),
             runtime: self.runtime.clone(),
         }
@@ -436,7 +436,7 @@ impl HFRepositorySync {
 
 impl HFSpaceSync {
     /// Creates a blocking space handle for the given owner and name.
-    pub fn new(client: HfApiSync, owner: impl Into<String>, name: impl Into<String>) -> Self {
+    pub fn new(client: HFClientSync, owner: impl Into<String>, name: impl Into<String>) -> Self {
         let owner = owner.into();
         let name = name.into();
         let space = repo::HFSpace::new(client.inner.clone(), &owner, &name);
@@ -449,8 +449,8 @@ impl HFSpaceSync {
         self.space.clone()
     }
 
-    /// Returns the [`HfApiSync`] client this handle belongs to.
-    pub fn api(&self) -> HfApiSync {
+    /// Returns the [`HFClientSync`] client this handle belongs to.
+    pub fn api(&self) -> HFClientSync {
         self.repo.api()
     }
 
@@ -545,9 +545,9 @@ impl From<HFSpaceSync> for HFRepositorySync {
     }
 }
 
-/// Alias for [`HfApiSync`].
-pub type HFClientSync = HfApiSync;
-/// Alias for [`HfApiSync`].
+/// Alias for [`HFClientSync`].
+pub type HFClientSync = HFClientSync;
+/// Alias for [`HFClientSync`].
 pub type HfClientSync = HFClientSync;
 /// Alias for [`HFRepositorySync`].
 pub type HFRepoSync = HFRepositorySync;
@@ -564,20 +564,20 @@ mod tests {
 
     #[test]
     fn test_hfapisync_creation() {
-        let sync_api = HfApiSync::new();
+        let sync_api = HFClientSync::new();
         assert!(sync_api.is_ok());
     }
 
     #[test]
     fn test_hfapisync_from_api() {
         let api = HFClient::builder().build().unwrap();
-        let sync_api = HfApiSync::from_api(api);
+        let sync_api = HFClientSync::from_api(api);
         assert!(sync_api.is_ok());
     }
 
     #[test]
     fn test_sync_repo_constructors() {
-        let api = HfApiSync::from_api(HFClient::builder().build().unwrap()).unwrap();
+        let api = HFClientSync::from_api(HFClient::builder().build().unwrap()).unwrap();
         let repo = api.model("openai-community", "gpt2").with_revision("main");
         let space = api.space("huggingface", "transformers-benchmarks");
 
@@ -590,7 +590,7 @@ mod tests {
 
     #[test]
     fn test_sync_space_try_from_repo() {
-        let api = HfApiSync::from_api(HFClient::builder().build().unwrap()).unwrap();
+        let api = HFClientSync::from_api(HFClient::builder().build().unwrap()).unwrap();
         let space_repo = api.repo(types::RepoType::Space, "owner", "space");
         assert!(HFSpaceSync::try_from(space_repo).is_ok());
 

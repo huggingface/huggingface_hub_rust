@@ -468,7 +468,7 @@ mod tests {
 }
 
 sync_api! {
-    impl HfApiSync {
+    impl HFClientSync {
         fn create_repo(&self, params: &CreateRepoParams) -> Result<RepoUrl>;
         fn delete_repo(&self, params: &DeleteRepoParams) -> Result<()>;
         fn move_repo(&self, params: &MoveRepoParams) -> Result<RepoUrl>;
@@ -476,7 +476,7 @@ sync_api! {
 }
 
 sync_api_stream! {
-    impl HfApiSync {
+    impl HFClientSync {
         fn list_models(&self, params: &ListModelsParams) -> ModelInfo;
         fn list_datasets(&self, params: &ListDatasetsParams) -> DatasetInfo;
         fn list_spaces(&self, params: &ListSpacesParams) -> SpaceInfo;

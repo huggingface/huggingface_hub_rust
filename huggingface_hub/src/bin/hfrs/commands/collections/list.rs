@@ -44,6 +44,10 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     };
     let collections = api.list_collections(&params).await?;
 
+    if collections.is_empty() && matches!(args.format, OutputFormat::Table) {
+        return Ok(CommandResult::Raw("No collections found.".to_string()));
+    }
+
     let headers = vec![
         "Slug".to_string(),
         "Title".to_string(),

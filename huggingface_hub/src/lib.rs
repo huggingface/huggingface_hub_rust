@@ -19,7 +19,7 @@
 macro_rules! sync_api {
     (
         $(#[$impl_meta:meta])*
-        impl HfApiSync {
+        impl HFClientSync {
             $(
                 fn $name:ident(&self $(, $pname:ident : $ptype:ty)*) -> $ret:ty;
             )*
@@ -27,7 +27,7 @@ macro_rules! sync_api {
     ) => {
         #[cfg(feature = "blocking")]
         $(#[$impl_meta])*
-        impl $crate::blocking::HfApiSync {
+        impl $crate::blocking::HFClientSync {
             $(
                 #[doc = concat!("Synchronous version of [`HFClient::", stringify!($name), "`].")]
                 pub fn $name(&self $(, $pname : $ptype)*) -> $ret {
@@ -41,7 +41,7 @@ macro_rules! sync_api {
 macro_rules! sync_api_stream {
     (
         $(#[$impl_meta:meta])*
-        impl HfApiSync {
+        impl HFClientSync {
             $(
                 fn $name:ident(&self $(, $pname:ident : $ptype:ty)*) -> $item:ty;
             )*
@@ -49,7 +49,7 @@ macro_rules! sync_api_stream {
     ) => {
         #[cfg(feature = "blocking")]
         $(#[$impl_meta])*
-        impl $crate::blocking::HfApiSync {
+        impl $crate::blocking::HFClientSync {
             $(
                 #[doc = concat!("Synchronous version of [`HFClient::", stringify!($name), "`]. Collects all items into a `Vec`.")]
                 pub fn $name(&self $(, $pname : $ptype)*) -> $crate::error::Result<Vec<$item>> {
@@ -84,7 +84,7 @@ pub mod xet;
 
 #[cfg(feature = "blocking")]
 pub use blocking::{
-    HFClientSync, HFRepoSync, HFRepositorySync, HFSpaceSync, HfApiSync, HfClientSync, HfRepoSync, HfRepositorySync,
+    HFClientSync, HFClientSync, HFRepoSync, HFRepositorySync, HFSpaceSync, HfClientSync, HfRepoSync, HfRepositorySync,
     HfSpaceSync,
 };
 pub use client::{HFClient, HFClientBuilder, HfApi, HfApiBuilder, HfClient, HfClientBuilder};

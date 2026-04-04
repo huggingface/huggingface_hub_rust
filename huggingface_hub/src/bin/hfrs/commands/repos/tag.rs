@@ -111,6 +111,10 @@ async fn list(api: &HfApi, args: TagListArgs) -> Result<CommandResult> {
     };
     let refs = repo.list_refs(&params).await?;
 
+    if refs.tags.is_empty() && matches!(args.format, OutputFormat::Table) {
+        return Ok(CommandResult::Raw("No tags found.".to_string()));
+    }
+
     let headers = vec!["Name".to_string(), "Ref".to_string(), "Commit".to_string()];
     let rows = refs
         .tags
