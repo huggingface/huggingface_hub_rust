@@ -14,8 +14,8 @@ pub enum HFDiffParseError {
         line: String,
         source: std::num::ParseIntError,
     },
-    #[error("expected status character but line was truncated: {line:?}")]
-    MissingStatus { line: String },
+    #[error("incorrect diff line format: {line:?}")]
+    InvalidFormat { line: String },
     #[error("I/O error while reading diff stream: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -69,10 +69,13 @@ impl From<char> for GitStatus {
 /// Format reference: <https://git-scm.com/docs/diff-format#_raw_output_format>
 pub fn parse_hf_diff_line(line: &str) -> Result<HFFileDiff, HFDiffParseError> {
     let original_line = line;
+    let fmt_err = || HFDiffParseError::InvalidFormat {
+        line: original_line.to_owned(),
+    };
     let bin_or_text = line.chars().next().ok_or(HFDiffParseError::EmptyLine)?;
     let is_binary = bin_or_text != 'T';
     // skip {B|T} and space
-    let line = &line[2..];
+    let line = line.get(2..).ok_or_else(&fmt_err)?;
     let mut i = 0;
     for char in line.chars() {
         if !char.is_ascii_digit() {
@@ -87,23 +90,17 @@ pub fn parse_hf_diff_line(line: &str) -> Result<HFFileDiff, HFDiffParseError> {
         source: e,
     })?;
     // skip file size + \t
-    let line = &line[i + 1..];
+    let line = line.get(i + 1..).ok_or_else(&fmt_err)?;
     // skip :000000 000000 & space
-    let line = &line[15..];
-    let old_blob_id = line[..40].to_owned();
+    let line = line.get(15..).ok_or_else(&fmt_err)?;
+    let old_blob_id = line.get(..40).ok_or_else(&fmt_err)?.to_owned();
     // skip sha1;0{40}, ... & space
-    let line = &line[44..];
-    let new_blob_id = line[..40].to_owned();
+    let line = line.get(44..).ok_or_else(&fmt_err)?;
+    let new_blob_id = line.get(..40).ok_or_else(&fmt_err)?.to_owned();
     // skip sha1;0{40}, ... & space
-    let line = &line[44..];
-    let status = line
-        .chars()
-        .next()
-        .ok_or(HFDiffParseError::MissingStatus {
-            line: original_line.to_owned(),
-        })?
-        .into();
-    let line = &line[1..];
+    let line = line.get(44..).ok_or_else(&fmt_err)?;
+    let status = line.chars().next().ok_or_else(&fmt_err)?.into();
+    let line = line.get(1..).ok_or_else(&fmt_err)?;
     // skip optional score digits 1-3 chars & \t
     let mut i = 0;
     for char in line.chars() {
@@ -112,7 +109,7 @@ pub fn parse_hf_diff_line(line: &str) -> Result<HFFileDiff, HFDiffParseError> {
         }
         i += 1;
     }
-    let line = &line[i + 1..];
+    let line = line.get(i + 1..).ok_or_else(&fmt_err)?;
     let separator_is_tab = line.contains('\t');
     // read up to next space or newline
     let i = if matches!(status, GitStatus::Copy | GitStatus::Rename) {
@@ -195,7 +192,7 @@ where
 mod tests {
     use futures::StreamExt;
 
-    use super::{parse_raw_diff, stream_raw_diff, GitStatus, HFFileDiff};
+    use super::{parse_hf_diff_line, parse_raw_diff, stream_raw_diff, GitStatus, HFFileDiff};
 
     #[test]
     fn modified_hf_diff() {
@@ -341,6 +338,74 @@ T 228455220	:000000 100644 0000000000000000000000000000000000000000... fccf5af19
                 }
             ]
         )
+    }
+
+    // A valid line used as a base for truncation tests.
+    const VALID_LINE: &str = "T 2305\t:100644 100644 97e7432a448baa9e97ec5e4f03c57b09b8e116ed... 0000000000000000000000000000000000000000... M\tapps/scan_orchestrator/src/dispatcher.rs";
+
+    fn assert_invalid_format(input: &str) {
+        match parse_hf_diff_line(input) {
+            Err(super::HFDiffParseError::InvalidFormat { .. }) => {}
+            other => panic!("expected InvalidFormat for {input:?}, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn empty_line_error() {
+        assert!(matches!(parse_hf_diff_line(""), Err(super::HFDiffParseError::EmptyLine)));
+    }
+
+    #[test]
+    fn single_char_truncated() {
+        // only "T", missing space + rest → fails at get(2..)
+        assert_invalid_format("T");
+    }
+
+    #[test]
+    fn truncated_after_size() {
+        // size digits present but no tab separator after them → fails at get(i+1..)
+        assert_invalid_format("T 2305");
+    }
+
+    #[test]
+    fn truncated_before_mode_pair() {
+        // size + tab present, but too short for the :000000 000000 block
+        assert_invalid_format("T 2305\t:100644");
+    }
+
+    #[test]
+    fn truncated_before_old_blob_id() {
+        // mode pair present but old SHA truncated (need 40 chars)
+        assert_invalid_format("T 2305\t:100644 100644 abcdef");
+    }
+
+    #[test]
+    fn truncated_before_new_blob_id() {
+        // old SHA complete + "... " but new SHA missing
+        assert_invalid_format(
+            "T 2305\t:100644 100644 97e7432a448baa9e97ec5e4f03c57b09b8e116ed... ",
+        );
+    }
+
+    #[test]
+    fn truncated_before_status() {
+        // both SHAs present but status char missing
+        assert_invalid_format(
+            "T 2305\t:100644 100644 97e7432a448baa9e97ec5e4f03c57b09b8e116ed... 0000000000000000000000000000000000000000...",
+        );
+    }
+
+    #[test]
+    fn truncated_after_status() {
+        // status char present but no tab + path after it
+        assert_invalid_format(
+            "T 2305\t:100644 100644 97e7432a448baa9e97ec5e4f03c57b09b8e116ed... 0000000000000000000000000000000000000000... M",
+        );
+    }
+
+    #[test]
+    fn valid_line_parses_ok() {
+        parse_hf_diff_line(VALID_LINE).unwrap();
     }
 
     #[tokio::test]
