@@ -87,6 +87,7 @@ huggingface_hub_rust/
 │   │   ├── error.rs                # HFError enum, Result alias, NotFoundContext
 │   │   ├── pagination.rs           # Generic paginate<T>() with Link header parsing
 │   │   ├── cache.rs                # Cache path computation, locking, ref read/write, symlink, scan, delete
+│   │   ├── diff.rs                 # Raw diff parsing (parse_raw_diff, stream_raw_diff), HFFileDiff, GitStatus
 │   │   ├── xet.rs                  # Xet high-performance transfer stubs (behind "xet" feature)
 │   │   ├── types/
 │   │   │   ├── mod.rs              # Module declarations, re-exports

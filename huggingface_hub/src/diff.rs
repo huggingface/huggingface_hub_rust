@@ -357,37 +357,31 @@ T 228455220	:000000 100644 0000000000000000000000000000000000000000... fccf5af19
 
     #[test]
     fn single_char_truncated() {
-        // only "T", missing space + rest → fails at get(2..)
         assert_invalid_format("T");
     }
 
     #[test]
     fn truncated_after_size() {
-        // size digits present but no tab separator after them → fails at get(i+1..)
         assert_invalid_format("T 2305");
     }
 
     #[test]
     fn truncated_before_mode_pair() {
-        // size + tab present, but too short for the :000000 000000 block
         assert_invalid_format("T 2305\t:100644");
     }
 
     #[test]
     fn truncated_before_old_blob_id() {
-        // mode pair present but old SHA truncated (need 40 chars)
         assert_invalid_format("T 2305\t:100644 100644 abcdef");
     }
 
     #[test]
     fn truncated_before_new_blob_id() {
-        // old SHA complete + "... " but new SHA missing
         assert_invalid_format("T 2305\t:100644 100644 97e7432a448baa9e97ec5e4f03c57b09b8e116ed... ");
     }
 
     #[test]
     fn truncated_before_status() {
-        // both SHAs present but status char missing
         assert_invalid_format(
             "T 2305\t:100644 100644 97e7432a448baa9e97ec5e4f03c57b09b8e116ed... 0000000000000000000000000000000000000000...",
         );
@@ -395,7 +389,6 @@ T 228455220	:000000 100644 0000000000000000000000000000000000000000... fccf5af19
 
     #[test]
     fn truncated_after_status() {
-        // status char present but no tab + path after it
         assert_invalid_format(
             "T 2305\t:100644 100644 97e7432a448baa9e97ec5e4f03c57b09b8e116ed... 0000000000000000000000000000000000000000... M",
         );
