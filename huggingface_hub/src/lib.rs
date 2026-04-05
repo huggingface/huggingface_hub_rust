@@ -19,7 +19,7 @@
 macro_rules! sync_api {
     (
         $(#[$impl_meta:meta])*
-        impl HfApiSync {
+        impl HFClientSync {
             $(
                 fn $name:ident(&self $(, $pname:ident : $ptype:ty)*) -> $ret:ty;
             )*
@@ -27,7 +27,7 @@ macro_rules! sync_api {
     ) => {
         #[cfg(feature = "blocking")]
         $(#[$impl_meta])*
-        impl $crate::blocking::HfApiSync {
+        impl $crate::blocking::HFClientSync {
             $(
                 #[doc = concat!("Synchronous version of [`HFClient::", stringify!($name), "`].")]
                 pub fn $name(&self $(, $pname : $ptype)*) -> $ret {
@@ -41,7 +41,7 @@ macro_rules! sync_api {
 macro_rules! sync_api_stream {
     (
         $(#[$impl_meta:meta])*
-        impl HfApiSync {
+        impl HFClientSync {
             $(
                 fn $name:ident(&self $(, $pname:ident : $ptype:ty)*) -> $item:ty;
             )*
@@ -49,7 +49,7 @@ macro_rules! sync_api_stream {
     ) => {
         #[cfg(feature = "blocking")]
         $(#[$impl_meta])*
-        impl $crate::blocking::HfApiSync {
+        impl $crate::blocking::HFClientSync {
             $(
                 #[doc = concat!("Synchronous version of [`HFClient::", stringify!($name), "`]. Collects all items into a `Vec`.")]
                 pub fn $name(&self $(, $pname : $ptype)*) -> $crate::error::Result<Vec<$item>> {
@@ -72,9 +72,9 @@ macro_rules! sync_api_stream {
 pub mod api;
 #[cfg(feature = "blocking")]
 pub mod blocking;
-pub(crate) mod cache;
+pub mod cache;
 pub mod client;
-pub mod constants;
+pub(crate) mod constants;
 pub mod error;
 pub mod pagination;
 pub mod repository;
@@ -83,11 +83,11 @@ pub mod types;
 pub mod xet;
 
 #[cfg(feature = "blocking")]
-pub use blocking::{
-    HFClientSync, HFRepoSync, HFRepositorySync, HFSpaceSync, HfApiSync, HfClientSync, HfRepoSync, HfRepositorySync,
-    HfSpaceSync,
-};
-pub use client::{HFClient, HFClientBuilder, HfApi, HfApiBuilder, HfClient, HfClientBuilder};
-pub use error::{HfError, Result};
+pub use blocking::{HFClientSync, HFRepoSync, HFRepositorySync, HFSpaceSync};
+pub use client::{HFClient, HFClientBuilder};
+#[cfg(feature = "cli")]
+#[doc(hidden)]
+pub use constants::{hf_home, resolve_cache_dir};
+pub use error::{HFError, Result};
 pub use repository::*;
 pub use types::*;

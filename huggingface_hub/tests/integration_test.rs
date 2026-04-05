@@ -17,10 +17,6 @@ use huggingface_hub::repository::{
     RepoListFilesParams, RepoListRefsParams, RepoListTreeParams, RepoRevisionExistsParams, RepoUpdateSettingsParams,
     RepoUploadFileParams, RepoUploadFolderParams,
 };
-#[cfg(feature = "discussions")]
-use huggingface_hub::repository::{
-    RepoCreateDiscussionParams, RepoCreatePullRequestParams, RepoDiscussionDetailsParams, RepoListDiscussionsParams,
-};
 use huggingface_hub::types::*;
 use huggingface_hub::{HFClient, HFClientBuilder};
 #[cfg(feature = "spaces")]
@@ -35,6 +31,17 @@ fn api() -> Option<HFClient> {
 
 fn write_enabled() -> bool {
     std::env::var("HF_TEST_WRITE").ok().is_some_and(|v| v == "1")
+}
+
+/// Cached whoami username, fetched once and reused across all tests.
+async fn cached_username() -> &'static str {
+    static USERNAME: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
+    USERNAME
+        .get_or_init(|| async {
+            let client = HFClientBuilder::new().build().expect("Failed to create HFClient for whoami");
+            client.whoami().await.expect("whoami failed").username
+        })
+        .await
 }
 
 /// Create an HFRepository handle from a full `owner/name` repo_id string.
@@ -86,34 +93,6 @@ async fn test_repo_handle_info_and_file_exists() {
     assert!(exists);
 }
 
-#[cfg(feature = "discussions")]
-#[tokio::test]
-async fn test_repo_handle_list_discussions() {
-    let Some(api) = api() else { return };
-    let repo = api.model("openai-community", "gpt2");
-
-    let response = repo.list_discussions(&RepoListDiscussionsParams::default()).await.unwrap();
-    assert!(response.count.unwrap_or(0) as usize >= response.discussions.len());
-}
-
-#[cfg(feature = "likes")]
-#[tokio::test]
-async fn test_repo_handle_list_likers() {
-    let Some(api) = api() else { return };
-    let repo = api.model("openai-community", "gpt2");
-
-    let stream = repo.list_likers(None).unwrap();
-    futures::pin_mut!(stream);
-    let mut seen = 0usize;
-    while let Some(user) = stream.next().await {
-        user.unwrap();
-        seen += 1;
-        if seen >= 3 {
-            break;
-        }
-    }
-}
-
 #[tokio::test]
 async fn test_dataset_info() {
     let Some(api) = api() else { return };
@@ -160,9 +139,6 @@ async fn test_list_models() {
         let model = model.unwrap();
         assert!(model.id.starts_with("openai-community/"));
         count += 1;
-        if count >= 3 {
-            break;
-        }
     }
     assert!(count > 0);
 }
@@ -334,9 +310,6 @@ async fn test_list_datasets() {
     while let Some(ds) = stream.next().await {
         ds.unwrap();
         count += 1;
-        if count >= 3 {
-            break;
-        }
     }
     assert!(count > 0);
 }
@@ -352,9 +325,6 @@ async fn test_list_spaces() {
     while let Some(space) = stream.next().await {
         space.unwrap();
         count += 1;
-        if count >= 3 {
-            break;
-        }
     }
     assert!(count > 0);
 }
@@ -439,12 +409,9 @@ async fn test_create_and_delete_repo() {
         return;
     }
 
-    let whoami = api
-        .whoami()
-        .await
-        .expect("whoami should return something, make sure HF_TOKEN is set");
+    let username = cached_username().await;
 
-    let repo_id = format!("{}/huggingface-hub-rust-test-{}", whoami.username, uuid_v4_short());
+    let repo_id = format!("{}/huggingface-hub-rust-test-{}", username, uuid_v4_short());
 
     // Create
     let params = CreateRepoParams::builder()
@@ -485,8 +452,8 @@ fn uuid_v4_short() -> String {
 }
 
 async fn create_test_repo(api: &HFClient) -> String {
-    let whoami = api.whoami().await.expect("whoami failed");
-    let repo_id = format!("{}/huggingface-hub-rust-test-{}", whoami.username, uuid_v4_short());
+    let username = cached_username().await;
+    let repo_id = format!("{}/huggingface-hub-rust-test-{}", username, uuid_v4_short());
     let params = CreateRepoParams::builder()
         .repo_id(&repo_id)
         .private(true)
@@ -752,9 +719,9 @@ async fn test_move_repo() {
     if !write_enabled() {
         return;
     }
-    let whoami = api.whoami().await.unwrap();
-    let original_name = format!("{}/huggingface-hub-rust-move-src-{}", whoami.username, uuid_v4_short());
-    let new_name = format!("{}/huggingface-hub-rust-move-dst-{}", whoami.username, uuid_v4_short());
+    let username = cached_username().await;
+    let original_name = format!("{}/huggingface-hub-rust-move-src-{}", username, uuid_v4_short());
+    let new_name = format!("{}/huggingface-hub-rust-move-dst-{}", username, uuid_v4_short());
 
     let create_params = CreateRepoParams::builder().repo_id(&original_name).private(true).build();
     api.create_repo(&create_params).await.unwrap();
@@ -788,8 +755,8 @@ async fn test_duplicate_space() {
     if !write_enabled() {
         return;
     }
-    let whoami = api.whoami().await.unwrap();
-    let to_id = format!("{}/hub-rust-test-dup-space-{}", whoami.username, uuid_v4_short());
+    let username = cached_username().await;
+    let to_id = format!("{}/hub-rust-test-dup-space-{}", username, uuid_v4_short());
 
     let params = DuplicateSpaceParams::builder()
         .to_id(&to_id)
@@ -811,8 +778,8 @@ async fn test_space_secrets_and_variables() {
     if !write_enabled() {
         return;
     }
-    let whoami = api.whoami().await.unwrap();
-    let space = api.space(&whoami.username, format!("hub-rust-test-space-{}", uuid_v4_short()));
+    let username = cached_username().await;
+    let space = api.space(username, format!("hub-rust-test-space-{}", uuid_v4_short()));
     let create_params = CreateRepoParams::builder()
         .repo_id(space.repo_path())
         .repo_type(RepoType::Space)
@@ -838,373 +805,4 @@ async fn test_space_secrets_and_variables() {
         .repo_type(RepoType::Space)
         .build();
     let _ = api.delete_repo(&delete_params).await;
-}
-
-// =============================================================================
-// Inference Endpoints tests (feature: "inference_endpoints")
-// =============================================================================
-
-#[cfg(feature = "inference_endpoints")]
-#[tokio::test]
-async fn test_list_inference_endpoints() {
-    let Some(api) = api() else { return };
-    let params = ListInferenceEndpointsParams::builder().build();
-    let endpoints = api.list_inference_endpoints(&params).await.unwrap();
-    // May be empty, but should not error
-    let _ = endpoints;
-}
-
-// =============================================================================
-// Collections tests (feature: "collections")
-// =============================================================================
-
-#[cfg(feature = "collections")]
-#[tokio::test]
-async fn test_list_collections() {
-    let Some(api) = api() else { return };
-    let params = ListCollectionsParams::builder().owner("huggingface").limit(3_usize).build();
-    let collections = api.list_collections(&params).await.unwrap();
-    assert!(!collections.is_empty());
-    assert!(collections[0].slug.contains("huggingface"));
-}
-
-#[cfg(feature = "collections")]
-#[tokio::test]
-async fn test_get_collection() {
-    let Some(api) = api() else { return };
-    let list_params = ListCollectionsParams::builder().owner("huggingface").limit(1_usize).build();
-    let collections = api.list_collections(&list_params).await.unwrap();
-    assert!(!collections.is_empty());
-
-    let params = GetCollectionParams::builder().slug(&collections[0].slug).build();
-    let coll = api.get_collection(&params).await.unwrap();
-    assert_eq!(coll.slug, collections[0].slug);
-}
-
-#[cfg(feature = "collections")]
-#[tokio::test]
-async fn test_create_update_delete_collection() {
-    let Some(api) = api() else { return };
-    if !write_enabled() {
-        return;
-    }
-
-    let whoami = api.whoami().await.unwrap();
-    let title = format!("hub-rust-test-collection-{}", uuid_v4_short());
-    let create_params = CreateCollectionParams::builder()
-        .title(&title)
-        .namespace(&whoami.username)
-        .private(true)
-        .build();
-    let coll = api.create_collection(&create_params).await.unwrap();
-    assert_eq!(coll.title.as_deref(), Some(title.as_str()));
-    let slug = coll.slug.clone();
-
-    let get_params = GetCollectionParams::builder().slug(&slug).build();
-    let fetched = api.get_collection(&get_params).await.unwrap();
-    assert_eq!(fetched.slug, slug);
-
-    let delete_params = DeleteCollectionParams::builder().slug(&slug).build();
-    api.delete_collection(&delete_params).await.unwrap();
-}
-
-// =============================================================================
-// Discussions & Pull Requests tests (feature: "discussions")
-// =============================================================================
-
-#[cfg(feature = "discussions")]
-#[tokio::test]
-async fn test_get_repo_discussions() {
-    let Some(api) = api() else { return };
-    let response = repo(&api, "openai-community/gpt2")
-        .list_discussions(&RepoListDiscussionsParams::default())
-        .await
-        .unwrap();
-    assert!(!response.discussions.is_empty());
-    assert!(response.discussions[0].num > 0);
-}
-
-#[cfg(feature = "discussions")]
-#[tokio::test]
-async fn test_get_discussion_details() {
-    let Some(api) = api() else { return };
-    let details = repo(&api, "openai-community/gpt2")
-        .discussion_details(&RepoDiscussionDetailsParams::builder().discussion_num(1_u64).build())
-        .await
-        .unwrap();
-    assert_eq!(details.num, 1);
-    assert!(details.title.is_some());
-}
-
-#[cfg(feature = "discussions")]
-#[tokio::test]
-async fn test_create_discussion_and_comment() {
-    let Some(api) = api() else { return };
-    if !write_enabled() {
-        return;
-    }
-    let repo_id = create_test_repo(&api).await;
-    let test_repo = repo(&api, &repo_id);
-
-    let disc_response = test_repo.list_discussions(&RepoListDiscussionsParams::default()).await.unwrap();
-    let initial_count = disc_response.discussions.len();
-
-    let _disc = test_repo
-        .create_discussion(
-            &RepoCreateDiscussionParams::builder()
-                .title("Test discussion from integration test")
-                .description("This is a test")
-                .build(),
-        )
-        .await
-        .unwrap();
-
-    let disc_response = test_repo.list_discussions(&RepoListDiscussionsParams::default()).await.unwrap();
-    assert!(disc_response.discussions.len() > initial_count);
-
-    delete_test_repo(&api, &repo_id).await;
-}
-
-#[cfg(feature = "discussions")]
-#[tokio::test]
-async fn test_create_and_merge_pull_request() {
-    let Some(api) = api() else { return };
-    if !write_enabled() {
-        return;
-    }
-    let repo_id = create_test_repo(&api).await;
-    let test_repo = repo(&api, &repo_id);
-
-    let _pr = test_repo
-        .create_pull_request(
-            &RepoCreatePullRequestParams::builder()
-                .title("Test PR from integration test")
-                .description("")
-                .build(),
-        )
-        .await
-        .unwrap();
-
-    let disc_response = test_repo.list_discussions(&RepoListDiscussionsParams::default()).await.unwrap();
-    assert!(disc_response.discussions.iter().any(|d| d.is_pull_request == Some(true)));
-
-    delete_test_repo(&api, &repo_id).await;
-}
-
-// =============================================================================
-// Webhooks tests (feature: "webhooks")
-// =============================================================================
-
-#[cfg(feature = "webhooks")]
-#[tokio::test]
-async fn test_list_webhooks() {
-    let Some(api) = api() else { return };
-    if !write_enabled() {
-        return;
-    }
-    let webhooks = api.list_webhooks().await.unwrap();
-    // May be empty, but should not error
-    let _ = webhooks;
-}
-
-#[cfg(feature = "webhooks")]
-#[tokio::test]
-async fn test_create_and_delete_webhook() {
-    let Some(api) = api() else { return };
-    if !write_enabled() {
-        return;
-    }
-
-    let initial = api.list_webhooks().await.unwrap();
-    let initial_count = initial.len();
-
-    let whoami = api.whoami().await.unwrap();
-    let create_params = CreateWebhookParams::builder()
-        .url("https://example.com/test-webhook")
-        .watched(vec![serde_json::json!({"type": "user", "name": whoami.username})])
-        .domains(vec!["repo".to_string()])
-        .build();
-    let webhook = api.create_webhook(&create_params).await.unwrap();
-
-    let after_create = api.list_webhooks().await.unwrap();
-    assert!(after_create.len() > initial_count);
-
-    if let Some(wh_id) = webhook.id {
-        api.delete_webhook(&wh_id).await.unwrap();
-    } else {
-        let newest = after_create
-            .iter()
-            .find(|w| {
-                w.url.as_deref() == Some("https://example.com/test-webhook") && !initial.iter().any(|i| i.id == w.id)
-            })
-            .expect("should find newly created webhook");
-        api.delete_webhook(newest.id.as_ref().unwrap()).await.unwrap();
-    }
-}
-
-// =============================================================================
-// Jobs tests (feature: "jobs")
-// =============================================================================
-
-#[cfg(feature = "jobs")]
-#[tokio::test]
-async fn test_list_jobs() {
-    let Some(api) = api() else { return };
-    if !write_enabled() {
-        return;
-    }
-    let params = ListJobsParams::builder().build();
-    let jobs = api.list_jobs(&params).await.unwrap();
-    // May be empty, but should not error
-    let _ = jobs;
-}
-
-#[cfg(feature = "jobs")]
-#[tokio::test]
-async fn test_list_job_hardware() {
-    let Some(api) = api() else { return };
-    let hardware = api.list_job_hardware().await.unwrap();
-    assert!(!hardware.is_empty());
-}
-
-#[cfg(feature = "jobs")]
-#[tokio::test]
-async fn test_run_and_inspect_job() {
-    let Some(api) = api() else { return };
-    if !write_enabled() {
-        return;
-    }
-
-    let params = RunJobParams::builder()
-        .image("python:3.12")
-        .command(vec![
-            "python".to_string(),
-            "-c".to_string(),
-            "print('hello from integration test')".to_string(),
-        ])
-        .flavor("cpu-basic")
-        .timeout("60")
-        .build();
-    let job = api.run_job(&params).await.unwrap();
-    assert!(!job.id.is_empty());
-
-    let inspected = api.inspect_job(&job.id, None).await.unwrap();
-    assert_eq!(inspected.id, job.id);
-    assert!(inspected.status.is_some());
-
-    let _ = api.cancel_job(&job.id, None).await;
-}
-
-// =============================================================================
-// Access Requests tests (feature: "access_requests")
-// =============================================================================
-
-#[cfg(feature = "access_requests")]
-#[tokio::test]
-async fn test_list_access_requests_on_gated_repo() {
-    let Some(api) = api() else { return };
-    if !write_enabled() {
-        return;
-    }
-    let repo_id = create_test_repo(&api).await;
-
-    let test_repo = repo(&api, &repo_id);
-    test_repo
-        .update_settings(&RepoUpdateSettingsParams::builder().gated("auto").build())
-        .await
-        .unwrap();
-
-    let pending = test_repo.list_pending_access_requests().await.unwrap();
-    assert!(pending.is_empty());
-
-    let accepted = test_repo.list_accepted_access_requests().await.unwrap();
-    // auto-approved gated repos may have entries, but no error
-    let _ = accepted;
-
-    let rejected = test_repo.list_rejected_access_requests().await.unwrap();
-    assert!(rejected.is_empty());
-
-    delete_test_repo(&api, &repo_id).await;
-}
-
-// =============================================================================
-// Likes tests (feature: "likes")
-// =============================================================================
-
-#[cfg(feature = "likes")]
-#[tokio::test]
-async fn test_list_repo_likers() {
-    let Some(api) = api() else { return };
-    let gpt2 = repo(&api, "openai-community/gpt2");
-    let stream = gpt2.list_likers(None).unwrap();
-    futures::pin_mut!(stream);
-
-    let first = stream.next().await;
-    assert!(first.is_some());
-    let user = first.unwrap().unwrap();
-    assert!(!user.username.is_empty());
-}
-
-#[cfg(feature = "likes")]
-#[tokio::test]
-async fn test_like_and_unlike() {
-    let Some(api) = api() else { return };
-    if !write_enabled() {
-        return;
-    }
-
-    let repo_id = create_test_repo(&api).await;
-    let test_repo = repo(&api, &repo_id);
-    if let Err(e) = test_repo.like().await {
-        eprintln!("like failed (token may lack write scope for likes): {e}");
-        delete_test_repo(&api, &repo_id).await;
-        return;
-    }
-
-    let whoami = api.whoami().await.unwrap();
-    let list_params = ListLikedReposParams::builder().username(&whoami.username).build();
-    let likes = api.list_liked_repos(&list_params).await.unwrap();
-    assert!(likes.iter().any(|l| {
-        l.repo
-            .as_ref()
-            .and_then(|r| r.name.as_deref())
-            .is_some_and(|n| n.contains(&repo_id))
-    }));
-
-    test_repo.unlike().await.unwrap();
-    delete_test_repo(&api, &repo_id).await;
-}
-
-// =============================================================================
-// Papers tests (feature: "papers")
-// =============================================================================
-
-#[cfg(feature = "papers")]
-#[tokio::test]
-async fn test_paper_info() {
-    let Some(api) = api() else { return };
-    let params = PaperInfoParams::builder().paper_id("2307.09288").build();
-    let paper = api.paper_info(&params).await.unwrap();
-    assert_eq!(paper.id, "2307.09288");
-    assert!(paper.title.is_some());
-}
-
-#[cfg(feature = "papers")]
-#[tokio::test]
-async fn test_list_papers() {
-    let Some(api) = api() else { return };
-    let params = ListPapersParams::builder().query("attention").limit(5_usize).build();
-    let results = api.list_papers(&params).await.unwrap();
-    assert!(!results.is_empty());
-    assert!(results[0].paper.is_some());
-}
-
-#[cfg(feature = "papers")]
-#[tokio::test]
-async fn test_list_daily_papers() {
-    let Some(api) = api() else { return };
-    let params = ListDailyPapersParams::builder().date("2024-10-29").limit(5_usize).build();
-    let papers = api.list_daily_papers(&params).await.unwrap();
-    assert!(!papers.is_empty());
-    assert!(papers[0].paper.is_some());
 }

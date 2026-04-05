@@ -20,12 +20,12 @@ body:
       label: Reproduction
       description: Please provide a minimal reproducible example we can copy, paste, and run.
       placeholder: |
-        use huggingface_hub::HfApi;
+        use huggingface_hub::HFClient;
 
         #[tokio::main]
         async fn main() -> huggingface_hub::Result<()> {
             // minimal reproduction
-            let api = HfApi::new()?;
+            let client = HFClient::new()?;
             Ok(())
         }
       render: rust

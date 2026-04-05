@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::path::PathBuf;
 use std::time::SystemTime;
 
@@ -34,7 +32,7 @@ pub struct CachedRepoInfo {
     pub last_modified: SystemTime,
 }
 
-pub struct HfCacheInfo {
+pub struct HFCacheInfo {
     pub cache_dir: PathBuf,
     pub repos: Vec<CachedRepoInfo>,
     pub size_on_disk: u64,

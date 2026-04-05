@@ -220,14 +220,14 @@ Set `HF_HUB_DISABLE_IMPLICIT_TOKEN` to any non-empty value to disable automatic 
 
 ## Error Handling
 
-All fallible operations return `Result<T, HfError>`. The `HfError` enum provides structured variants for common failure modes:
+All fallible operations return `Result<T, HFError>`. The `HFError` enum provides structured variants for common failure modes:
 
-- `HfError::AuthRequired` — 401 response, token is missing or invalid
-- `HfError::RepoNotFound` — repository does not exist or is inaccessible
-- `HfError::EntryNotFound` — file or path does not exist in the repository
-- `HfError::RevisionNotFound` — branch, tag, or commit does not exist
-- `HfError::XetNotEnabled` — xet transfer required but `xet` feature is not enabled
-- `HfError::Http` — other HTTP errors with status code, URL, and response body
+- `HFError::AuthRequired` — 401 response, token is missing or invalid
+- `HFError::RepoNotFound` — repository does not exist or is inaccessible
+- `HFError::EntryNotFound` — file or path does not exist in the repository
+- `HFError::RevisionNotFound` — branch, tag, or commit does not exist
+- `HFError::XetNotEnabled` — xet transfer required but `xet` feature is not enabled
+- `HFError::Http` — other HTTP errors with status code, URL, and response body
 
 ## License
 

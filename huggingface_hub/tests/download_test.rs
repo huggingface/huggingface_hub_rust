@@ -6,21 +6,21 @@
 //! Run: source ~/hf/prod_token && cargo test -p huggingface-hub --test download_test
 
 use huggingface_hub::repository::HFRepository;
-use huggingface_hub::{HfApi, HfApiBuilder, RepoDownloadFileParams};
+use huggingface_hub::{HFClient, HFClientBuilder, RepoDownloadFileParams};
 use sha2::{Digest, Sha256};
 
-fn api() -> Option<HfApi> {
+fn api() -> Option<HFClient> {
     if std::env::var("HF_TOKEN").is_err() {
         return None;
     }
-    Some(HfApiBuilder::new().build().expect("Failed to create HfApi"))
+    Some(HFClientBuilder::new().build().expect("Failed to create HFClient"))
 }
 
-fn model(api: &HfApi, owner: &str, name: &str) -> HFRepository {
+fn model(api: &HFClient, owner: &str, name: &str) -> HFRepository {
     api.model(owner, name)
 }
 
-fn dataset(api: &HfApi, owner: &str, name: &str) -> HFRepository {
+fn dataset(api: &HFClient, owner: &str, name: &str) -> HFRepository {
     api.dataset(owner, name)
 }
 

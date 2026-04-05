@@ -4,9 +4,10 @@ use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT};
 use reqwest_middleware::ClientWithMiddleware;
 use reqwest_retry::policies::ExponentialBackoff;
 use reqwest_retry::RetryTransientMiddleware;
+use tracing::debug;
 
 use crate::constants;
-use crate::error::{HfError, Result};
+use crate::error::{HFError, Result};
 
 /// Async client for the Hugging Face Hub API.
 ///
@@ -23,10 +24,8 @@ use crate::error::{HfError, Result};
 ///
 /// // Or configure explicitly:
 /// let client = HFClient::builder().token("hf_…").endpoint("https://huggingface.co").build()?;
-/// # Ok::<(), huggingface_hub::HfError>(())
+/// # Ok::<(), huggingface_hub::HFError>(())
 /// ```
-///
-/// The type aliases [`HfApi`] and [`HfClient`] are provided for compatibility.
 pub struct HFClient {
     pub(crate) inner: Arc<HFClientInner>,
 }
@@ -41,6 +40,7 @@ impl Clone for HFClient {
 
 pub(crate) struct HFClientInner {
     pub(crate) client: ClientWithMiddleware,
+    pub(crate) no_redirect_client: ClientWithMiddleware,
     pub(crate) endpoint: String,
     pub(crate) token: Option<String>,
     pub(crate) cache_dir: std::path::PathBuf,
@@ -138,7 +138,7 @@ impl HFClientBuilder {
 
         let token = self.token.or_else(resolve_token);
 
-        let cache_dir = self.cache_dir.unwrap_or_else(resolve_cache_dir);
+        let cache_dir = self.cache_dir.unwrap_or_else(constants::resolve_cache_dir);
 
         let mut default_headers = self.headers.unwrap_or_default();
 
@@ -151,22 +151,33 @@ impl HFClientBuilder {
         });
         default_headers.insert(
             USER_AGENT,
-            HeaderValue::from_str(&user_agent).map_err(|e| HfError::Other(format!("Invalid user agent: {e}")))?,
+            HeaderValue::from_str(&user_agent).map_err(|e| HFError::Other(format!("Invalid user agent: {e}")))?,
         );
 
         let raw_client = match self.client {
             Some(c) => c,
-            None => reqwest::Client::builder().default_headers(default_headers).build()?,
+            None => reqwest::Client::builder().default_headers(default_headers.clone()).build()?,
         };
+
+        let no_redirect_raw = reqwest::Client::builder()
+            .default_headers(default_headers)
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?;
 
         let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
         let client = reqwest_middleware::ClientBuilder::new(raw_client)
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build();
 
+        let no_redirect_retry = ExponentialBackoff::builder().build_with_max_retries(3);
+        let no_redirect_client = reqwest_middleware::ClientBuilder::new(no_redirect_raw)
+            .with(RetryTransientMiddleware::new_with_policy(no_redirect_retry))
+            .build();
+
         Ok(HFClient {
             inner: Arc::new(HFClientInner {
                 client,
+                no_redirect_client,
                 endpoint: endpoint.trim_end_matches('/').to_string(),
                 token,
                 cache_dir,
@@ -227,14 +238,14 @@ impl HFClient {
         format!("{}/{}{}/resolve/{}/{}", self.inner.endpoint, prefix, repo_id, revision, filename)
     }
 
-    /// Check an HTTP response and map error status codes to HfError variants.
+    /// Check an HTTP response and map error status codes to HFError variants.
     /// Returns the response on success (2xx).
     ///
     /// `repo_id` and `not_found_ctx` control how 404s are mapped:
-    /// - `NotFoundContext::Repo` → `HfError::RepoNotFound`
-    /// - `NotFoundContext::Entry { path }` → `HfError::EntryNotFound`
-    /// - `NotFoundContext::Revision { revision }` → `HfError::RevisionNotFound`
-    /// - `NotFoundContext::Generic` → `HfError::Http`
+    /// - `NotFoundContext::Repo` → `HFError::RepoNotFound`
+    /// - `NotFoundContext::Entry { path }` → `HFError::EntryNotFound`
+    /// - `NotFoundContext::Revision { revision }` → `HFError::RevisionNotFound`
+    /// - `NotFoundContext::Generic` → `HFError::Http`
     pub(crate) async fn check_response(
         &self,
         response: reqwest::Response,
@@ -251,44 +262,37 @@ impl HFClient {
         let repo_id_str = repo_id.unwrap_or("").to_string();
 
         match status.as_u16() {
-            401 => Err(HfError::AuthRequired),
+            401 => Err(HFError::AuthRequired),
             404 => match not_found_ctx {
-                crate::error::NotFoundContext::Repo => Err(HfError::RepoNotFound { repo_id: repo_id_str }),
-                crate::error::NotFoundContext::Entry { path } => Err(HfError::EntryNotFound {
+                crate::error::NotFoundContext::Repo => Err(HFError::RepoNotFound { repo_id: repo_id_str }),
+                crate::error::NotFoundContext::Entry { path } => Err(HFError::EntryNotFound {
                     path,
                     repo_id: repo_id_str,
                 }),
-                crate::error::NotFoundContext::Revision { revision } => Err(HfError::RevisionNotFound {
+                crate::error::NotFoundContext::Revision { revision } => Err(HFError::RevisionNotFound {
                     revision,
                     repo_id: repo_id_str,
                 }),
-                crate::error::NotFoundContext::Generic => Err(HfError::Http { status, url, body }),
+                crate::error::NotFoundContext::Generic => Err(HFError::Http { status, url, body }),
             },
-            _ => Err(HfError::Http { status, url, body }),
+            _ => Err(HFError::Http { status, url, body }),
         }
     }
 }
-
-/// Compatibility alias for [`HFClient`].
-pub type HfApi = HFClient;
-/// Compatibility alias for [`HFClientBuilder`].
-pub type HfApiBuilder = HFClientBuilder;
-/// Compatibility alias for [`HFClient`].
-pub type HfClient = HFClient;
-/// Compatibility alias for [`HFClientBuilder`].
-pub type HfClientBuilder = HFClientBuilder;
 
 /// Resolve token from environment or token file.
 /// Priority: HF_TOKEN env → HF_TOKEN_PATH file → $HF_HOME/token file.
 fn resolve_token() -> Option<String> {
     if let Ok(val) = std::env::var(constants::HF_HUB_DISABLE_IMPLICIT_TOKEN) {
         if !val.is_empty() {
+            debug!("implicit token disabled via HF_HUB_DISABLE_IMPLICIT_TOKEN");
             return None;
         }
     }
 
     if let Ok(token) = std::env::var(constants::HF_TOKEN) {
         if !token.is_empty() {
+            debug!("resolved token from HF_TOKEN env var");
             return Some(token);
         }
     }
@@ -297,44 +301,24 @@ fn resolve_token() -> Option<String> {
         if let Ok(token) = std::fs::read_to_string(&path) {
             let token = token.trim().to_string();
             if !token.is_empty() {
+                debug!("resolved token from HF_TOKEN_PATH file");
                 return Some(token);
             }
         }
     }
 
-    let hf_home = std::env::var(constants::HF_HOME).unwrap_or_else(|_| {
-        let home = dirs_or_home();
-        format!("{home}/.cache/huggingface")
-    });
-    let token_path = format!("{hf_home}/{}", constants::TOKEN_FILENAME);
+    let hf_home = constants::hf_home();
+    let token_path = hf_home.join(constants::TOKEN_FILENAME);
     if let Ok(token) = std::fs::read_to_string(&token_path) {
         let token = token.trim().to_string();
         if !token.is_empty() {
+            debug!("resolved token from stored token file");
             return Some(token);
         }
     }
 
+    debug!("no token found");
     None
-}
-
-fn dirs_or_home() -> String {
-    std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string())
-}
-
-/// Resolve cache directory from environment.
-/// Priority: HF_HUB_CACHE env → $HF_HOME/hub → ~/.cache/huggingface/hub.
-fn resolve_cache_dir() -> std::path::PathBuf {
-    if let Ok(cache) = std::env::var(constants::HF_HUB_CACHE) {
-        return std::path::PathBuf::from(cache);
-    }
-    if let Ok(hf_home) = std::env::var(constants::HF_HOME) {
-        return std::path::PathBuf::from(hf_home).join("hub");
-    }
-    if let Ok(xdg) = std::env::var(constants::XDG_CACHE_HOME) {
-        return std::path::PathBuf::from(xdg).join("huggingface").join("hub");
-    }
-    let home = dirs_or_home();
-    std::path::PathBuf::from(format!("{home}/.cache/huggingface")).join("hub")
 }
 
 #[cfg(test)]

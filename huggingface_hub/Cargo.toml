@@ -5,6 +5,9 @@ edition = "2021"
 description = "Rust client for the Hugging Face Hub API"
 license = "Apache-2.0"
 
+[package.metadata.docs.rs]
+features = ["blocking", "xet", "spaces"]
+
 [dependencies]
 bytes = "1"
 reqwest = { version = "0.13", features = ["json", "stream", "multipart"] }
@@ -21,24 +24,47 @@ globset = "0.4"
 base64 = "0.22"
 fs4 = { version = "0.13", features = ["tokio"] }
 pathdiff = "0.2"
+tracing = "0.1"
 async-trait = { version = "0.1", optional = true }
 hf-xet = { version = "1.5", optional = true }
 xet-client = { version = "1.5", optional = true }
 sha2 = { version = "0.10", optional = true }
+
+# cli deps
+clap = { version = "4", features = ["derive", "env", "color"], optional = true }
+owo-colors = { version = "4", optional = true }
+comfy-table = { version = "7", optional = true }
+anyhow = { version = "1", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 
 [features]
 default = []
 blocking = ["tokio/rt"]
 xet = ["dep:hf-xet", "dep:xet-client", "dep:async-trait", "dep:sha2"]
 spaces = []
-inference_endpoints = []
-collections = []
-discussions = []
-webhooks = []
-jobs = []
-access_requests = []
-likes = []
-papers = []
+cli = [
+    "blocking",
+    "xet",
+    "spaces",
+    "tokio/macros",
+    "tokio/rt-multi-thread",
+    "dep:clap",
+    "dep:owo-colors",
+    "dep:comfy-table",
+    "dep:anyhow",
+    "dep:tracing-subscriber",
+]
+
+[[bin]]
+name = "hfrs"
+path = "src/bin/hfrs/main.rs"
+required-features = ["cli"]
+doc = false
+
+[[test]]
+name = "cli_comparison"
+path = "tests/cli/cli_comparison.rs"
+required-features = ["cli"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
@@ -46,6 +72,8 @@ tempfile = "3"
 rand = "0.9"
 sha2 = "0.10"
 serial_test = "3"
+assert_cmd = "2"
+anyhow = "1"
 
 [[example]]
 name = "repo"
@@ -71,46 +99,6 @@ path = "examples/users.rs"
 name = "spaces"
 path = "examples/spaces.rs"
 required-features = ["spaces"]
-
-[[example]]
-name = "inference_endpoints"
-path = "examples/inference_endpoints.rs"
-required-features = ["inference_endpoints"]
-
-[[example]]
-name = "collections"
-path = "examples/collections.rs"
-required-features = ["collections"]
-
-[[example]]
-name = "discussions"
-path = "examples/discussions.rs"
-required-features = ["discussions"]
-
-[[example]]
-name = "webhooks"
-path = "examples/webhooks.rs"
-required-features = ["webhooks"]
-
-[[example]]
-name = "jobs"
-path = "examples/jobs.rs"
-required-features = ["jobs"]
-
-[[example]]
-name = "access_requests"
-path = "examples/access_requests.rs"
-required-features = ["access_requests"]
-
-[[example]]
-name = "likes"
-path = "examples/likes.rs"
-required-features = ["likes"]
-
-[[example]]
-name = "papers"
-path = "examples/papers.rs"
-required-features = ["papers"]
 
 [[example]]
 name = "download_upload"

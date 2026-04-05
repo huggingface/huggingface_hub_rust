@@ -1,12 +1,13 @@
 use std::collections::VecDeque;
 
 use futures::stream::{self, Stream};
+use futures::StreamExt;
 use reqwest::header::HeaderMap;
 use serde::de::DeserializeOwned;
 use url::Url;
 
 use crate::client::HFClient;
-use crate::error::{HfError, Result};
+use crate::error::{HFError, Result};
 
 struct PaginationState {
     buffer: VecDeque<serde_json::Value>,
@@ -14,33 +15,37 @@ struct PaginationState {
     is_first_page: bool,
     done: bool,
     items_yielded: usize,
-    max_items: Option<usize>,
+    limit: Option<usize>,
 }
 
 impl HFClient {
     /// Create a paginated stream from an initial URL and query params.
     /// Query params are only sent on the first request; subsequent pages
     /// use the full URL from the Link header.
-    /// If `max_items` is `Some(n)`, the stream stops after yielding `n` items.
+    /// If `limit` is `Some(n)`, the stream stops after yielding `n` items.
     pub(crate) fn paginate<T: DeserializeOwned + 'static>(
         &self,
         initial_url: Url,
         params: Vec<(String, String)>,
-        max_items: Option<usize>,
+        limit: Option<usize>,
     ) -> impl Stream<Item = Result<T>> + '_ {
+        if limit == Some(0) {
+            return futures::stream::empty().left_stream();
+        }
+
         let state = PaginationState {
             buffer: VecDeque::new(),
             next_url: Some(initial_url),
             is_first_page: true,
             done: false,
             items_yielded: 0,
-            max_items,
+            limit,
         };
 
         stream::try_unfold(state, move |mut state| {
             let params = params.clone();
             async move {
-                if state.max_items.is_some_and(|max| state.items_yielded >= max) {
+                if state.limit.is_some_and(|max| state.items_yielded >= max) {
                     return Ok(None);
                 }
 
@@ -71,7 +76,7 @@ impl HFClient {
                     let status = response.status();
                     let resp_url = response.url().to_string();
                     let body = response.text().await.unwrap_or_default();
-                    return Err(HfError::Http {
+                    return Err(HFError::Http {
                         status,
                         url: resp_url,
                         body,
@@ -96,6 +101,7 @@ impl HFClient {
                 }
             }
         })
+        .right_stream()
     }
 }
 

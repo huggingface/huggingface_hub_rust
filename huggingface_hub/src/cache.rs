@@ -1,10 +1,11 @@
-#![allow(dead_code)]
-
+use std::collections::HashMap;
 use std::fs::File;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use fs4::fs_std::FileExt;
 
+use crate::types::cache::{CachedFileInfo, CachedRepoInfo, CachedRevisionInfo, HFCacheInfo};
 use crate::types::RepoType;
 
 pub(crate) struct CacheLock {
@@ -26,9 +27,9 @@ pub(crate) async fn acquire_lock(cache_dir: &Path, repo_folder: &str, etag: &str
         }),
     )
     .await
-    .map_err(|_| crate::error::HfError::CacheLockTimeout { path: path.clone() })?
-    .map_err(|e| crate::error::HfError::Other(format!("Lock task failed: {e}")))?
-    .map_err(crate::error::HfError::Io)?;
+    .map_err(|_| crate::error::HFError::CacheLockTimeout { path: path.clone() })?
+    .map_err(|e| crate::error::HFError::Other(format!("Lock task failed: {e}")))?
+    .map_err(crate::error::HFError::Io)?;
     Ok(CacheLock { _file: lock })
 }
 
@@ -139,8 +140,7 @@ fn parse_repo_folder_name(name: &str) -> Option<(RepoType, String)> {
     Some((repo_type, repo_id))
 }
 
-async fn read_commit_refs(repo_path: &Path) -> std::collections::HashMap<String, Vec<String>> {
-    use std::collections::HashMap;
+async fn read_commit_refs(repo_path: &Path) -> HashMap<String, Vec<String>> {
     let mut commit_refs: HashMap<String, Vec<String>> = HashMap::new();
     let refs_dir = repo_path.join("refs");
     let mut stack = vec![refs_dir.clone()];
@@ -188,8 +188,7 @@ async fn resolve_blob_info(file_path: &Path) -> std::result::Result<BlobInfo, St
     })
 }
 
-async fn scan_snapshot(snap_path: &Path, warnings: &mut Vec<String>) -> Vec<crate::types::cache::CachedFileInfo> {
-    use crate::types::cache::CachedFileInfo;
+async fn scan_snapshot(snap_path: &Path, warnings: &mut Vec<String>) -> Vec<CachedFileInfo> {
     let mut files = Vec::new();
     let mut stack = vec![snap_path.to_path_buf()];
     while let Some(dir) = stack.pop() {
@@ -229,11 +228,7 @@ async fn scan_snapshot(snap_path: &Path, warnings: &mut Vec<String>) -> Vec<crat
     files
 }
 
-pub(crate) async fn scan_cache_dir(cache_dir: &Path) -> crate::error::Result<crate::types::cache::HfCacheInfo> {
-    use std::time::SystemTime;
-
-    use crate::types::cache::{CachedRepoInfo, CachedRevisionInfo, HfCacheInfo};
-
+pub async fn scan_cache_dir(cache_dir: &Path) -> crate::error::Result<HFCacheInfo> {
     let mut repos = Vec::new();
     let mut warnings = Vec::new();
     let mut total_size: u64 = 0;
@@ -241,7 +236,7 @@ pub(crate) async fn scan_cache_dir(cache_dir: &Path) -> crate::error::Result<cra
     let mut entries = match tokio::fs::read_dir(cache_dir).await {
         Ok(e) => e,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(HfCacheInfo {
+            return Ok(HFCacheInfo {
                 cache_dir: cache_dir.to_path_buf(),
                 repos: vec![],
                 size_on_disk: 0,
@@ -326,7 +321,7 @@ pub(crate) async fn scan_cache_dir(cache_dir: &Path) -> crate::error::Result<cra
         });
     }
 
-    Ok(HfCacheInfo {
+    Ok(HFCacheInfo {
         cache_dir: cache_dir.to_path_buf(),
         repos,
         size_on_disk: total_size,
@@ -334,99 +329,12 @@ pub(crate) async fn scan_cache_dir(cache_dir: &Path) -> crate::error::Result<cra
     })
 }
 
-pub(crate) async fn delete_revisions(
-    cache_dir: &Path,
-    revisions: &[(&str, RepoType, &str)],
-) -> crate::error::Result<()> {
-    // Note: deletion does not acquire blob locks, matching the Python huggingface_hub
-    // library behavior. Concurrent downloads may race with deletion.
-    use std::collections::{HashMap, HashSet};
-
-    let mut grouped: HashMap<String, Vec<&str>> = HashMap::new();
-    for (repo_id, repo_type, commit_hash) in revisions {
-        let folder = repo_folder_name(repo_id, Some(*repo_type));
-        grouped.entry(folder).or_default().push(commit_hash);
-    }
-
-    for (repo_folder, commits_to_delete) in &grouped {
-        let repo_path = cache_dir.join(repo_folder);
-        if !repo_path.exists() {
-            continue;
-        }
-
-        let commits_set: HashSet<&str> = commits_to_delete.iter().copied().collect();
-
-        for commit in &commits_set {
-            let snap_dir = repo_path.join("snapshots").join(commit);
-            if snap_dir.exists() {
-                let _ = tokio::fs::remove_dir_all(&snap_dir).await;
-            }
-        }
-
-        let refs_dir = repo_path.join("refs");
-        let mut ref_stack = vec![refs_dir.clone()];
-        while let Some(dir) = ref_stack.pop() {
-            if let Ok(mut ref_entries) = tokio::fs::read_dir(&dir).await {
-                while let Ok(Some(entry)) = ref_entries.next_entry().await {
-                    let path = entry.path();
-                    if path.is_dir() {
-                        ref_stack.push(path);
-                    } else if path.is_file() {
-                        if let Ok(content) = tokio::fs::read_to_string(&path).await {
-                            if commits_set.contains(content.trim()) {
-                                let _ = tokio::fs::remove_file(&path).await;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        let mut referenced_blobs: HashSet<String> = HashSet::new();
-        let snapshots_dir = repo_path.join("snapshots");
-        if let Ok(mut snap_entries) = tokio::fs::read_dir(&snapshots_dir).await {
-            while let Ok(Some(snap_entry)) = snap_entries.next_entry().await {
-                if !snap_entry.path().is_dir() {
-                    continue;
-                }
-                let mut stack = vec![snap_entry.path()];
-                while let Some(dir) = stack.pop() {
-                    if let Ok(mut dir_entries) = tokio::fs::read_dir(&dir).await {
-                        while let Ok(Some(file_entry)) = dir_entries.next_entry().await {
-                            let path = file_entry.path();
-                            if path.is_dir() {
-                                stack.push(path);
-                            } else if let Ok(target) = tokio::fs::read_link(&path).await {
-                                if let Some(blob_name) = target.file_name() {
-                                    referenced_blobs.insert(blob_name.to_string_lossy().to_string());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        let blobs_dir = repo_path.join("blobs");
-        if let Ok(mut blob_entries) = tokio::fs::read_dir(&blobs_dir).await {
-            while let Ok(Some(blob_entry)) = blob_entries.next_entry().await {
-                let name = blob_entry.file_name().to_string_lossy().to_string();
-                if !referenced_blobs.contains(&name) {
-                    let _ = tokio::fs::remove_file(blob_entry.path()).await;
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
 
     use super::{
-        acquire_lock, blob_path, create_pointer_symlink, delete_revisions, is_commit_hash, lock_path, no_exist_path,
+        acquire_lock, blob_path, create_pointer_symlink, is_commit_hash, lock_path, no_exist_path,
         parse_repo_folder_name, read_commit_refs, read_ref, ref_path, repo_folder_name, scan_cache_dir, snapshot_path,
         write_ref,
     };
@@ -659,78 +567,6 @@ mod tests {
     }
 
     #[cfg(not(windows))]
-    #[tokio::test]
-    async fn test_delete_cache_revision() {
-        let dir = tempfile::tempdir().unwrap();
-        let cache = dir.path();
-        let repo_folder = "models--gpt2";
-
-        let blob_dir = cache.join(repo_folder).join("blobs");
-        tokio::fs::create_dir_all(&blob_dir).await.unwrap();
-        tokio::fs::write(blob_dir.join("shared_blob"), b"shared").await.unwrap();
-        tokio::fs::write(blob_dir.join("unique_blob"), b"unique").await.unwrap();
-
-        let snap1 = cache.join(repo_folder).join("snapshots").join("commit1");
-        let snap2 = cache.join(repo_folder).join("snapshots").join("commit2");
-        tokio::fs::create_dir_all(&snap1).await.unwrap();
-        tokio::fs::create_dir_all(&snap2).await.unwrap();
-
-        tokio::fs::symlink("../../blobs/shared_blob", snap1.join("file.txt"))
-            .await
-            .unwrap();
-        tokio::fs::symlink("../../blobs/shared_blob", snap2.join("file.txt"))
-            .await
-            .unwrap();
-        tokio::fs::symlink("../../blobs/unique_blob", snap1.join("extra.txt"))
-            .await
-            .unwrap();
-
-        let refs_dir = cache.join(repo_folder).join("refs");
-        tokio::fs::create_dir_all(&refs_dir).await.unwrap();
-        tokio::fs::write(refs_dir.join("main"), "commit1").await.unwrap();
-
-        delete_revisions(cache, &[("gpt2", RepoType::Model, "commit1")]).await.unwrap();
-
-        assert!(!snap1.exists());
-        assert!(snap2.exists());
-        assert!(blob_dir.join("shared_blob").exists());
-        assert!(!blob_dir.join("unique_blob").exists());
-        assert!(!refs_dir.join("main").exists());
-    }
-
-    #[cfg(not(windows))]
-    #[tokio::test]
-    async fn test_delete_cache_revision_nested_pr_ref() {
-        let dir = tempfile::tempdir().unwrap();
-        let cache = dir.path();
-        let repo_folder = "models--gpt2";
-
-        let blob_dir = cache.join(repo_folder).join("blobs");
-        tokio::fs::create_dir_all(&blob_dir).await.unwrap();
-        tokio::fs::write(blob_dir.join("blob1"), b"data").await.unwrap();
-
-        let snap = cache.join(repo_folder).join("snapshots").join("pr_commit");
-        tokio::fs::create_dir_all(&snap).await.unwrap();
-        tokio::fs::symlink("../../blobs/blob1", snap.join("file.txt")).await.unwrap();
-
-        // Create a nested PR ref pointing to this commit
-        let pr_ref_dir = cache.join(repo_folder).join("refs").join("refs").join("pr");
-        tokio::fs::create_dir_all(&pr_ref_dir).await.unwrap();
-        tokio::fs::write(pr_ref_dir.join("1"), "pr_commit").await.unwrap();
-
-        // Delete the revision
-        delete_revisions(cache, &[("gpt2", RepoType::Model, "pr_commit")])
-            .await
-            .unwrap();
-
-        // Snapshot should be gone
-        assert!(!snap.exists());
-        // Nested PR ref should also be cleaned up
-        assert!(!pr_ref_dir.join("1").exists());
-        // Orphaned blob should be deleted
-        assert!(!blob_dir.join("blob1").exists());
-    }
-
     #[tokio::test]
     async fn test_read_commit_refs_nested() {
         let dir = tempfile::tempdir().unwrap();

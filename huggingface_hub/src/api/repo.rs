@@ -3,7 +3,7 @@ use url::Url;
 
 use crate::client::HFClient;
 use crate::constants;
-use crate::error::{HfError, Result};
+use crate::error::{HFError, Result};
 use crate::repository::{HFRepository, RepoFileExistsParams, RepoRevisionExistsParams, RepoUpdateSettingsParams};
 use crate::types::{
     CreateRepoParams, DatasetInfo, DeleteRepoParams, ListDatasetsParams, ListModelsParams, ListSpacesParams, ModelInfo,
@@ -27,10 +27,11 @@ impl HFRepository {
             .send()
             .await?;
         let repo_path = self.repo_path();
-        let response = self
-            .client
-            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
-            .await?;
+        let not_found_ctx = match revision {
+            Some(rev) => crate::error::NotFoundContext::Revision { revision: rev },
+            None => crate::error::NotFoundContext::Repo,
+        };
+        let response = self.client.check_response(response, Some(&repo_path), not_found_ctx).await?;
         Ok(response.json().await?)
     }
 
@@ -50,10 +51,11 @@ impl HFRepository {
             .send()
             .await?;
         let repo_path = self.repo_path();
-        let response = self
-            .client
-            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
-            .await?;
+        let not_found_ctx = match revision {
+            Some(rev) => crate::error::NotFoundContext::Revision { revision: rev },
+            None => crate::error::NotFoundContext::Repo,
+        };
+        let response = self.client.check_response(response, Some(&repo_path), not_found_ctx).await?;
         Ok(response.json().await?)
     }
 
@@ -73,10 +75,11 @@ impl HFRepository {
             .send()
             .await?;
         let repo_path = self.repo_path();
-        let response = self
-            .client
-            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
-            .await?;
+        let not_found_ctx = match revision {
+            Some(rev) => crate::error::NotFoundContext::Revision { revision: rev },
+            None => crate::error::NotFoundContext::Repo,
+        };
+        let response = self.client.check_response(response, Some(&repo_path), not_found_ctx).await?;
         Ok(response.json().await?)
     }
 
@@ -94,11 +97,11 @@ impl HFRepository {
         match response.status().as_u16() {
             200..=299 => Ok(true),
             404 => Ok(false),
-            401 => Err(HfError::AuthRequired),
+            401 => Err(HFError::AuthRequired),
             status => {
                 let url = response.url().to_string();
                 let body = response.text().await.unwrap_or_default();
-                Err(HfError::Http {
+                Err(HFError::Http {
                     status: reqwest::StatusCode::from_u16(status).unwrap(),
                     url,
                     body,
@@ -122,11 +125,11 @@ impl HFRepository {
         match response.status().as_u16() {
             200..=299 => Ok(true),
             404 => Ok(false),
-            401 => Err(HfError::AuthRequired),
+            401 => Err(HFError::AuthRequired),
             status => {
                 let url_str = response.url().to_string();
                 let body = response.text().await.unwrap_or_default();
-                Err(HfError::Http {
+                Err(HFError::Http {
                     status: reqwest::StatusCode::from_u16(status).unwrap(),
                     url: url_str,
                     body,
@@ -151,12 +154,24 @@ impl HFRepository {
             .await?;
         match response.status().as_u16() {
             200..=299 => Ok(true),
-            404 => Ok(false),
-            401 => Err(HfError::AuthRequired),
+            404 => {
+                if self
+                    .revision_exists(&RepoRevisionExistsParams::builder().revision(revision.to_string()).build())
+                    .await?
+                {
+                    Ok(false)
+                } else {
+                    Err(HFError::RevisionNotFound {
+                        repo_id: self.repo_path(),
+                        revision: revision.to_string(),
+                    })
+                }
+            },
+            401 => Err(HFError::AuthRequired),
             status => {
                 let url_str = response.url().to_string();
                 let body = response.text().await.unwrap_or_default();
-                Err(HfError::Http {
+                Err(HFError::Http {
                     status: reqwest::StatusCode::from_u16(status).unwrap(),
                     url: url_str,
                     body,
@@ -217,8 +232,10 @@ impl HFClient {
         if let Some(ref sort) = params.sort {
             query.push(("sort".into(), sort.clone()));
         }
-        if let Some(limit) = params.limit {
-            query.push(("limit".into(), limit.to_string()));
+        if let Some(max) = params.limit {
+            if max < 1000 {
+                query.push(("limit".into(), max.to_string()));
+            }
         }
         if let Some(ref pipeline_tag) = params.pipeline_tag {
             query.push(("pipeline_tag".into(), pipeline_tag.clone()));
@@ -232,7 +249,7 @@ impl HFClient {
         if params.fetch_config == Some(true) {
             query.push(("config".into(), "true".into()));
         }
-        Ok(self.paginate(url, query, params.max_items))
+        Ok(self.paginate(url, query, params.limit))
     }
 
     /// List datasets on the Hub.
@@ -252,13 +269,15 @@ impl HFClient {
         if let Some(ref sort) = params.sort {
             query.push(("sort".into(), sort.clone()));
         }
-        if let Some(limit) = params.limit {
-            query.push(("limit".into(), limit.to_string()));
+        if let Some(max) = params.limit {
+            if max < 1000 {
+                query.push(("limit".into(), max.to_string()));
+            }
         }
         if params.full == Some(true) {
             query.push(("full".into(), "true".into()));
         }
-        Ok(self.paginate(url, query, params.max_items))
+        Ok(self.paginate(url, query, params.limit))
     }
 
     /// List spaces on the Hub.
@@ -278,13 +297,15 @@ impl HFClient {
         if let Some(ref sort) = params.sort {
             query.push(("sort".into(), sort.clone()));
         }
-        if let Some(limit) = params.limit {
-            query.push(("limit".into(), limit.to_string()));
+        if let Some(max) = params.limit {
+            if max < 1000 {
+                query.push(("limit".into(), max.to_string()));
+            }
         }
         if params.full == Some(true) {
             query.push(("full".into(), "true".into()));
         }
-        Ok(self.paginate(url, query, params.max_items))
+        Ok(self.paginate(url, query, params.limit))
     }
 
     /// Create a new repository.
@@ -405,7 +426,11 @@ fn split_repo_id(repo_id: &str) -> (Option<&str>, &str) {
 
 #[cfg(test)]
 mod tests {
+    use futures::StreamExt;
+
     use super::split_repo_id;
+    use crate::client::HFClient;
+    use crate::types::{ListDatasetsParams, ListModelsParams, ListSpacesParams};
 
     #[test]
     fn test_split_repo_id() {
@@ -413,10 +438,37 @@ mod tests {
         assert_eq!(split_repo_id("repo"), (None, "repo"));
         assert_eq!(split_repo_id("org/sub/repo"), (Some("org"), "sub/repo"));
     }
+
+    #[tokio::test]
+    async fn test_list_models_limit_zero_returns_empty() {
+        let client = HFClient::builder().build().unwrap();
+        let params = ListModelsParams::builder().limit(0_usize).build();
+        let stream = client.list_models(&params).unwrap();
+        futures::pin_mut!(stream);
+        assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_list_datasets_limit_zero_returns_empty() {
+        let client = HFClient::builder().build().unwrap();
+        let params = ListDatasetsParams::builder().limit(0_usize).build();
+        let stream = client.list_datasets(&params).unwrap();
+        futures::pin_mut!(stream);
+        assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_list_spaces_limit_zero_returns_empty() {
+        let client = HFClient::builder().build().unwrap();
+        let params = ListSpacesParams::builder().limit(0_usize).build();
+        let stream = client.list_spaces(&params).unwrap();
+        futures::pin_mut!(stream);
+        assert!(stream.next().await.is_none());
+    }
 }
 
 sync_api! {
-    impl HfApiSync {
+    impl HFClientSync {
         fn create_repo(&self, params: &CreateRepoParams) -> Result<RepoUrl>;
         fn delete_repo(&self, params: &DeleteRepoParams) -> Result<()>;
         fn move_repo(&self, params: &MoveRepoParams) -> Result<RepoUrl>;
@@ -424,7 +476,7 @@ sync_api! {
 }
 
 sync_api_stream! {
-    impl HfApiSync {
+    impl HFClientSync {
         fn list_models(&self, params: &ListModelsParams) -> ModelInfo;
         fn list_datasets(&self, params: &ListDatasetsParams) -> DatasetInfo;
         fn list_spaces(&self, params: &ListSpacesParams) -> SpaceInfo;

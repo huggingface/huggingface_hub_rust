@@ -3,21 +3,5 @@ pub mod files;
 pub mod repo;
 pub mod users;
 
-#[cfg(feature = "access_requests")]
-pub mod access_requests;
-#[cfg(feature = "collections")]
-pub mod collections;
-#[cfg(feature = "discussions")]
-pub mod discussions;
-#[cfg(feature = "inference_endpoints")]
-pub mod inference_endpoints;
-#[cfg(feature = "jobs")]
-pub mod jobs;
-#[cfg(feature = "likes")]
-pub mod likes;
-#[cfg(feature = "papers")]
-pub mod papers;
 #[cfg(feature = "spaces")]
 pub mod spaces;
-#[cfg(feature = "webhooks")]
-pub mod webhooks;

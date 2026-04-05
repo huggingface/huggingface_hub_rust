@@ -11,7 +11,7 @@ use crate::types::{GitCommitInfo, GitRefs};
 impl HFRepository {
     /// Stream commit history for the repository at a given revision.
     ///
-    /// Returns `Result<impl Stream<Item = Result<GitCommitInfo>>>`. Use `max_items` to limit
+    /// Returns `Result<impl Stream<Item = Result<GitCommitInfo>>>`. Use `limit` to limit
     /// the total number of commits yielded.
     pub fn list_commits(
         &self,
@@ -20,7 +20,7 @@ impl HFRepository {
         let revision = self.effective_revision(params.revision.as_deref());
         let url_str = format!("{}/commits/{}", self.client.api_url(Some(self.repo_type), &self.repo_path()), revision);
         let url = Url::parse(&url_str)?;
-        Ok(self.client.paginate(url, vec![], params.max_items))
+        Ok(self.client.paginate(url, vec![], params.limit))
     }
 
     /// Fetch all branches, tags, and optionally pull request refs for the repository.

@@ -3,10 +3,14 @@ use std::path::{Path, PathBuf};
 
 use futures::stream::{Stream, StreamExt};
 use futures::TryStreamExt;
+use globset::Glob;
 use reqwest::header::IF_NONE_MATCH;
+#[cfg(feature = "xet")]
+use sha2::{Digest, Sha256};
+use tokio::io::AsyncWriteExt;
 use url::Url;
 
-use crate::error::{HfError, Result};
+use crate::error::{HFError, Result};
 use crate::repository::{
     RepoCreateCommitParams, RepoDeleteFileParams, RepoDeleteFolderParams, RepoDownloadFileParams,
     RepoDownloadFileStreamParams, RepoGetPathsInfoParams, RepoListFilesParams, RepoListTreeParams,
@@ -23,7 +27,7 @@ impl crate::repository::HFRepository {
             revision,
             recursive: true,
             expand: false,
-            max_items: None,
+            limit: None,
         })?;
         futures::pin_mut!(stream);
 
@@ -40,7 +44,7 @@ impl crate::repository::HFRepository {
     /// Stream file and directory entries in the repository tree.
     ///
     /// Returns `Result<impl Stream<Item = Result<RepoTreeEntry>>>`. Set `recursive` to traverse
-    /// subdirectories. Use `max_items` to cap the total number of entries yielded.
+    /// subdirectories. Use `limit` to cap the total number of entries yielded.
     pub fn list_tree(&self, params: &RepoListTreeParams) -> Result<impl Stream<Item = Result<RepoTreeEntry>> + '_> {
         let revision = self.effective_revision(params.revision.as_deref());
         let url_str = format!("{}/tree/{}", self.client.api_url(Some(self.repo_type), &self.repo_path()), revision);
@@ -54,7 +58,7 @@ impl crate::repository::HFRepository {
             query.push(("expand".into(), "true".into()));
         }
 
-        Ok(self.client.paginate(url, query, params.max_items))
+        Ok(self.client.paginate(url, query, params.limit))
     }
 
     /// Get info about specific paths in a repository.
@@ -105,7 +109,7 @@ impl crate::repository::HFRepository {
             self.download_file_to_local_dir(params).await
         } else {
             if !self.client.inner.cache_enabled {
-                return Err(HfError::CacheNotEnabled);
+                return Err(HFError::CacheNotEnabled);
             }
             self.download_file_to_cache(params).await
         }
@@ -247,14 +251,14 @@ impl crate::repository::HFRepository {
                 return Ok(snap);
             }
             if cache::no_exist_path(cache_dir, repo_folder, hash, filename).exists() {
-                return Err(HfError::EntryNotFound {
+                return Err(HFError::EntryNotFound {
                     path: filename.to_string(),
                     repo_id: String::new(),
                 });
             }
         }
 
-        Err(HfError::LocalEntryNotFound {
+        Err(HFError::LocalEntryNotFound {
             path: filename.to_string(),
         })
     }
@@ -320,109 +324,36 @@ impl crate::repository::HFRepository {
             .client
             .download_url(Some(self.repo_type), &repo_path, revision, &params.filename);
 
-        #[cfg(feature = "xet")]
-        {
-            let head_response = self
-                .client
-                .inner
-                .client
-                .head(&url)
-                .headers(self.client.auth_headers())
-                .send()
-                .await?;
-
-            let status = head_response.status();
-            if status == reqwest::StatusCode::NOT_FOUND {
-                return Err(mark_no_exist_and_return_error(
-                    cache_dir,
-                    repo_folder,
-                    revision,
-                    &head_response,
-                    &repo_path,
-                    &params.filename,
-                )
-                .await);
-            }
-
-            let head_response = self
-                .client
-                .check_response(
-                    head_response,
-                    Some(&repo_path),
-                    crate::error::NotFoundContext::Entry {
-                        path: params.filename.clone(),
-                    },
-                )
-                .await?;
-
-            let has_xet_hash = head_response.headers().get(constants::HEADER_X_XET_HASH).is_some();
-
-            if has_xet_hash {
-                let etag = extract_etag(&head_response)
-                    .ok_or_else(|| HfError::Other("Missing ETag header on xet response".to_string()))?;
-                let commit_hash = extract_commit_hash(&head_response)
-                    .ok_or_else(|| HfError::Other("Missing X-Repo-Commit header".to_string()))?;
-
-                let blob = cache::blob_path(cache_dir, repo_folder, &etag);
-                if !blob.exists() || force_download {
-                    if let Some(parent) = blob.parent() {
-                        tokio::fs::create_dir_all(parent).await?;
-                    }
-                    let _lock = cache::acquire_lock(cache_dir, repo_folder, &etag).await?;
-
-                    let xet_hash = head_response
-                        .headers()
-                        .get(constants::HEADER_X_XET_HASH)
-                        .and_then(|v| v.to_str().ok())
-                        .ok_or_else(|| HfError::Other("Missing X-Xet-Hash header".to_string()))?
-                        .to_string();
-                    let file_size: u64 = head_response
-                        .headers()
-                        .get(reqwest::header::CONTENT_LENGTH)
-                        .and_then(|v| v.to_str().ok())
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(0);
-
-                    crate::xet::xet_download_to_blob(
-                        &self.client,
-                        &repo_path,
-                        Some(self.repo_type),
-                        revision,
-                        &xet_hash,
-                        file_size,
-                        &blob,
-                    )
-                    .await?;
-                }
-
-                return finalize_cached_file(cache_dir, repo_folder, revision, &commit_hash, &params.filename, &etag)
-                    .await;
-            }
-        }
-
         let cached_etag = if !force_download {
             self.find_cached_etag(repo_folder, revision, &params.filename)
         } else {
             None
         };
 
-        let mut headers = self.client.auth_headers();
+        let mut head_headers = self.client.auth_headers();
         if let Some(ref etag_val) = cached_etag {
             if let Ok(hv) = reqwest::header::HeaderValue::from_str(&format!("\"{etag_val}\"")) {
-                headers.insert(IF_NONE_MATCH, hv);
+                head_headers.insert(IF_NONE_MATCH, hv);
             }
         }
 
-        let response = self.client.inner.client.get(&url).headers(headers).send().await?;
+        let head_response = self
+            .client
+            .inner
+            .no_redirect_client
+            .head(&url)
+            .headers(head_headers)
+            .send()
+            .await?;
 
-        let status = response.status();
+        let status = head_response.status();
 
         if status == reqwest::StatusCode::NOT_FOUND {
             return Err(mark_no_exist_and_return_error(
                 cache_dir,
                 repo_folder,
                 revision,
-                &response,
+                &head_response,
                 &repo_path,
                 &params.filename,
             )
@@ -431,32 +362,84 @@ impl crate::repository::HFRepository {
 
         if status == reqwest::StatusCode::NOT_MODIFIED {
             let etag =
-                cached_etag.ok_or_else(|| HfError::Other("Received 304 but no cached etag available".to_string()))?;
+                cached_etag.ok_or_else(|| HFError::Other("Received 304 but no cached etag available".to_string()))?;
             let commit_hash = if cache::is_commit_hash(revision) {
                 revision.to_string()
             } else {
                 cache::read_ref(cache_dir, repo_folder, revision)
                     .await?
-                    .ok_or_else(|| HfError::Other("Received 304 but no cached commit hash".to_string()))?
+                    .ok_or_else(|| HFError::Other("Received 304 but no cached commit hash".to_string()))?
             };
             return finalize_cached_file(cache_dir, repo_folder, revision, &commit_hash, &params.filename, &etag).await;
         }
 
-        let response = self
-            .client
-            .check_response(
-                response,
-                Some(&repo_path),
-                crate::error::NotFoundContext::Entry {
-                    path: params.filename.clone(),
-                },
-            )
-            .await?;
-
         let etag =
-            extract_etag(&response).ok_or_else(|| HfError::Other("Missing ETag header in response".to_string()))?;
-        let commit_hash =
-            extract_commit_hash(&response).ok_or_else(|| HfError::Other("Missing X-Repo-Commit header".to_string()))?;
+            extract_etag(&head_response).ok_or_else(|| HFError::Other("Missing ETag header in response".to_string()));
+        let commit_hash = extract_commit_hash(&head_response);
+        let has_xet_hash = head_response.headers().get(constants::HEADER_X_XET_HASH).is_some();
+        #[cfg(feature = "xet")]
+        let xet_hash = head_response
+            .headers()
+            .get(constants::HEADER_X_XET_HASH)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+        #[cfg(feature = "xet")]
+        let file_size: u64 = head_response
+            .headers()
+            .get(constants::HEADER_X_LINKED_SIZE)
+            .or_else(|| head_response.headers().get(reqwest::header::CONTENT_LENGTH))
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+
+        if !status.is_success() && !status.is_redirection() {
+            self.client
+                .check_response(
+                    head_response,
+                    Some(&repo_path),
+                    crate::error::NotFoundContext::Entry {
+                        path: params.filename.clone(),
+                    },
+                )
+                .await?;
+        }
+
+        let etag = etag?;
+        let commit_hash = commit_hash.ok_or_else(|| HFError::Other("Missing X-Repo-Commit header".to_string()))?;
+
+        #[cfg(feature = "xet")]
+        if has_xet_hash {
+            let xet_hash = xet_hash.ok_or_else(|| HFError::Other("Missing X-Xet-Hash header".to_string()))?;
+            let blob = cache::blob_path(cache_dir, repo_folder, &etag);
+            if !blob.exists() || force_download {
+                if let Some(parent) = blob.parent() {
+                    tokio::fs::create_dir_all(parent).await?;
+                }
+                let _lock = cache::acquire_lock(cache_dir, repo_folder, &etag).await?;
+
+                crate::xet::xet_download_to_blob(
+                    &self.client,
+                    &repo_path,
+                    Some(self.repo_type),
+                    revision,
+                    &xet_hash,
+                    file_size,
+                    &blob,
+                )
+                .await?;
+            }
+
+            return finalize_cached_file(cache_dir, repo_folder, revision, &commit_hash, &params.filename, &etag).await;
+        }
+
+        #[cfg(not(feature = "xet"))]
+        if has_xet_hash {
+            return Err(HFError::Other(
+                "File requires xet transfer but the 'xet' feature is not enabled. \
+                 Rebuild with --features xet to download this file."
+                    .to_string(),
+            ));
+        }
 
         let blob = cache::blob_path(cache_dir, repo_folder, &etag);
 
@@ -470,6 +453,14 @@ impl crate::repository::HFRepository {
             tokio::fs::create_dir_all(parent).await?;
         }
 
+        let response = self
+            .client
+            .inner
+            .client
+            .get(&url)
+            .headers(self.client.auth_headers())
+            .send()
+            .await?;
         stream_response_to_file(response, &incomplete_path).await?;
         tokio::fs::rename(&incomplete_path, &blob).await?;
 
@@ -488,7 +479,7 @@ impl crate::repository::HFRepository {
             RepoType::Space => self.space_info(Some(revision.to_string())).await?.sha,
             _ => self.model_info(Some(revision.to_string())).await?.sha,
         };
-        sha.ok_or_else(|| HfError::Other(format!("No commit hash returned for {}/{}", repo_path, revision)))
+        sha.ok_or_else(|| HFError::Other(format!("No commit hash returned for {}/{}", repo_path, revision)))
     }
 
     async fn list_filtered_files(
@@ -501,7 +492,7 @@ impl crate::repository::HFRepository {
             revision: Some(revision.to_string()),
             recursive: true,
             expand: false,
-            max_items: None,
+            limit: None,
         })?;
         futures::pin_mut!(stream);
 
@@ -525,7 +516,7 @@ impl crate::repository::HFRepository {
 
     pub async fn snapshot_download(&self, params: &RepoSnapshotDownloadParams) -> Result<PathBuf> {
         if params.local_dir.is_none() && !self.client.inner.cache_enabled {
-            return Err(HfError::CacheNotEnabled);
+            return Err(HFError::CacheNotEnabled);
         }
         let revision = self.effective_revision(params.revision.as_deref());
         let max_workers = params.max_workers.unwrap_or(8);
@@ -538,7 +529,7 @@ impl crate::repository::HFRepository {
             } else {
                 crate::cache::read_ref(cache_dir, &repo_folder, revision)
                     .await?
-                    .ok_or_else(|| HfError::LocalEntryNotFound {
+                    .ok_or_else(|| HFError::LocalEntryNotFound {
                         path: format!("{}/{}", repo_folder, revision),
                     })?
             };
@@ -546,7 +537,7 @@ impl crate::repository::HFRepository {
             if snapshot_dir.exists() {
                 return Ok(snapshot_dir);
             }
-            return Err(HfError::LocalEntryNotFound {
+            return Err(HFError::LocalEntryNotFound {
                 path: format!("{}/{}", repo_folder, commit_hash),
             });
         }
@@ -579,7 +570,7 @@ impl crate::repository::HFRepository {
                 let url = self
                     .client
                     .download_url(Some(self.repo_type), &repo_path, commit_hash_ref, filename);
-                let client = &self.client.inner.client;
+                let client = &self.client.inner.no_redirect_client;
                 let auth = self.client.auth_headers();
                 let filename = filename.clone();
                 let repo_folder_ref = &repo_folder;
@@ -599,16 +590,16 @@ impl crate::repository::HFRepository {
                             }
                             let _ = tokio::fs::write(&no_exist, b"").await;
                         }
-                        return Ok::<_, HfError>(None);
-                    } else if !resp.status().is_success() {
-                        return Err(HfError::Http {
+                        return Ok::<_, HFError>(None);
+                    } else if !resp.status().is_success() && !resp.status().is_redirection() {
+                        return Err(HFError::Http {
                             status: resp.status(),
                             url,
                             body: String::new(),
                         });
                     }
                     let etag =
-                        extract_etag(&resp).ok_or_else(|| HfError::Other(format!("Missing ETag for {filename}")))?;
+                        extract_etag(&resp).ok_or_else(|| HFError::Other(format!("Missing ETag for {filename}")))?;
                     let commit = extract_commit_hash(&resp).unwrap_or_else(|| commit_hash_ref.clone());
                     let xet_hash = resp
                         .headers()
@@ -617,11 +608,12 @@ impl crate::repository::HFRepository {
                         .map(|s| s.to_string());
                     let file_size: u64 = resp
                         .headers()
-                        .get(reqwest::header::CONTENT_LENGTH)
+                        .get(constants::HEADER_X_LINKED_SIZE)
+                        .or_else(|| resp.headers().get(reqwest::header::CONTENT_LENGTH))
                         .and_then(|v| v.to_str().ok())
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(0);
-                    Ok::<_, HfError>(Some(FileMetadataInfo {
+                    Ok::<_, HFError>(Some(FileMetadataInfo {
                         filename,
                         etag,
                         commit_hash: commit,
@@ -657,7 +649,7 @@ impl crate::repository::HFRepository {
 
                 let xet_batch_fut = async {
                     if xet_metas.is_empty() {
-                        return Ok::<_, HfError>(());
+                        return Ok::<_, HFError>(());
                     }
                     let batch_files: Vec<crate::xet::XetBatchFile> = xet_metas
                         .iter()
@@ -687,7 +679,7 @@ impl crate::repository::HFRepository {
                 );
                 let non_xet_fut = async {
                     download_concurrently(self, &non_xet_dl_params, max_workers).await?;
-                    Ok::<_, HfError>(())
+                    Ok::<_, HFError>(())
                 };
 
                 tokio::try_join!(xet_batch_fut, non_xet_fut)?;
@@ -717,7 +709,7 @@ impl crate::repository::HFRepository {
 
             let xet_batch_fut = async {
                 if xet_metas.is_empty() {
-                    return Ok::<_, HfError>(());
+                    return Ok::<_, HFError>(());
                 }
                 let mut locks = Vec::with_capacity(xet_metas.len());
                 for m in &xet_metas {
@@ -757,7 +749,7 @@ impl crate::repository::HFRepository {
             );
             let non_xet_fut = async {
                 download_concurrently(self, &non_xet_dl_params, max_workers).await?;
-                Ok::<_, HfError>(())
+                Ok::<_, HFError>(())
             };
 
             tokio::try_join!(xet_batch_fut, non_xet_fut)?;
@@ -823,7 +815,7 @@ async fn mark_no_exist_and_return_error(
     response: &reqwest::Response,
     repo_id: &str,
     filename: &str,
-) -> HfError {
+) -> HFError {
     if let Some(commit_hash) = extract_commit_hash(response) {
         let no_exist = cache::no_exist_path(cache_dir, repo_folder, &commit_hash, filename);
         if let Some(parent) = no_exist.parent() {
@@ -834,7 +826,7 @@ async fn mark_no_exist_and_return_error(
             let _ = cache::write_ref(cache_dir, repo_folder, revision, &commit_hash).await;
         }
     }
-    HfError::EntryNotFound {
+    HFError::EntryNotFound {
         path: filename.to_string(),
         repo_id: repo_id.to_string(),
     }
@@ -887,7 +879,6 @@ async fn download_concurrently(
 }
 
 async fn stream_response_to_file(response: reqwest::Response, dest: &std::path::Path) -> Result<()> {
-    use tokio::io::AsyncWriteExt;
     let mut file = tokio::fs::File::create(dest).await?;
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
@@ -906,7 +897,7 @@ impl crate::repository::HFRepository {
     /// (requires the "xet" feature) and referenced by SHA256 OID in the commit.
     /// Files marked as "regular" are sent inline as base64.
     ///
-    /// Returns `HfError::XetNotEnabled` if any files require LFS upload but
+    /// Returns `HFError::XetNotEnabled` if any files require LFS upload but
     /// the "xet" feature is not enabled.
     ///
     /// Endpoint: POST /api/{repo_type}s/{repo_id}/commit/{revision}
@@ -1046,7 +1037,7 @@ impl crate::repository::HFRepository {
                 revision: Some(revision.to_string()),
                 recursive: true,
                 expand: false,
-                max_items: None,
+                limit: None,
             })?;
             futures::pin_mut!(stream);
             while let Some(entry) = stream.next().await {
@@ -1100,7 +1091,7 @@ impl crate::repository::HFRepository {
             revision: Some(revision.to_string()),
             recursive: true,
             expand: false,
-            max_items: None,
+            limit: None,
         })?;
         futures::pin_mut!(stream);
 
@@ -1162,7 +1153,7 @@ impl crate::repository::HFRepository {
     ///
     /// Always calls the preupload endpoint to determine upload mode per file.
     /// If any files require LFS and the "xet" feature is not enabled, returns
-    /// `HfError::XetNotEnabled`.
+    /// `HFError::XetNotEnabled`.
     ///
     /// Returns a map of path_in_repo -> (sha256_oid, size) for files that were
     /// uploaded via xet and should be referenced as lfsFile in the commit.
@@ -1220,7 +1211,7 @@ impl crate::repository::HFRepository {
         #[cfg(not(feature = "xet"))]
         {
             let _ = lfs_files;
-            Err(HfError::XetNotEnabled)
+            Err(HFError::XetNotEnabled)
         }
 
         #[cfg(feature = "xet")]
@@ -1366,7 +1357,6 @@ impl crate::repository::HFRepository {
 
 #[cfg(feature = "xet")]
 async fn sha256_of_source(source: &AddSource) -> Result<String> {
-    use sha2::{Digest, Sha256};
     match source {
         AddSource::Bytes(bytes) => {
             let hash = Sha256::digest(bytes);
@@ -1429,7 +1419,7 @@ async fn collect_files_recursive(
             Box::pin(collect_files_recursive(root, &path, base_repo_path, allow_patterns, ignore_patterns, operations))
                 .await?;
         } else if metadata.is_file() {
-            let relative = path.strip_prefix(root).map_err(|e| HfError::Other(e.to_string()))?;
+            let relative = path.strip_prefix(root).map_err(|e| HFError::Other(e.to_string()))?;
             let relative_str = relative.to_string_lossy();
 
             if let Some(ref allow) = allow_patterns {
@@ -1461,7 +1451,6 @@ async fn collect_files_recursive(
 
 /// Check if a path matches any of the given glob patterns using the `globset` crate.
 fn matches_any_glob(patterns: &[String], path: &str) -> bool {
-    use globset::Glob;
     patterns
         .iter()
         .any(|p| Glob::new(p).ok().map(|g| g.compile_matcher().is_match(path)).unwrap_or(false))

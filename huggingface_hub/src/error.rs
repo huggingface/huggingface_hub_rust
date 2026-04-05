@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum HfError {
+pub enum HFError {
     #[error("HTTP error: {status} {url}")]
     Http {
         status: reqwest::StatusCode,
@@ -56,17 +56,20 @@ pub enum HfError {
     #[error(transparent)]
     Url(#[from] url::ParseError),
 
+    #[error("Invalid parameter: {0}")]
+    InvalidParameter(String),
+
     #[error("{0}")]
     Other(String),
 }
 
-impl HfError {
+impl HFError {
     /// Returns true for errors that indicate transient network/server issues
     /// where falling back to a cached version is appropriate.
     pub(crate) fn is_transient(&self) -> bool {
         match self {
-            HfError::Request(e) => e.is_connect() || e.is_timeout(),
-            HfError::Middleware(e) => {
+            HFError::Request(e) => e.is_connect() || e.is_timeout(),
+            HFError::Middleware(e) => {
                 if e.is_connect() || e.is_timeout() {
                     return true;
                 }
@@ -76,7 +79,7 @@ impl HfError {
                 let msg = format!("{e:#}");
                 msg.contains("client error (Connect)") || msg.contains("client error (Timeout)")
             },
-            HfError::Http { status, .. } => {
+            HFError::Http { status, .. } => {
                 matches!(status.as_u16(), 500 | 502 | 503 | 504)
             },
             _ => false,
@@ -84,16 +87,15 @@ impl HfError {
     }
 }
 
-pub type Result<T> = std::result::Result<T, HfError>;
+pub type Result<T> = std::result::Result<T, HFError>;
 
-/// Context for mapping HTTP 404 errors to specific HfError variants.
+/// Context for mapping HTTP 404 errors to specific HFError variants.
 pub(crate) enum NotFoundContext {
     /// 404 means the repository does not exist
     Repo,
     /// 404 means a file/path does not exist within the repo
     Entry { path: String },
     /// 404 means the revision does not exist
-    #[allow(dead_code)]
     Revision { revision: String },
     /// No special mapping — use generic Http error
     Generic,
