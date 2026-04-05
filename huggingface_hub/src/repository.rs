@@ -2,6 +2,7 @@ use std::fmt;
 use std::ops::Deref;
 use std::path::PathBuf;
 
+use serde::Serialize;
 use typed_builder::TypedBuilder;
 
 use crate::client::HFClient;
@@ -270,6 +271,12 @@ pub struct RepoGetRawDiffParams {
 }
 
 #[derive(TypedBuilder)]
+pub struct RepoGetRawDiffStreamParams {
+    #[builder(setter(into))]
+    pub compare: String,
+}
+
+#[derive(TypedBuilder)]
 pub struct RepoCreateBranchParams {
     #[builder(setter(into))]
     pub branch: String,
@@ -299,14 +306,27 @@ pub struct RepoDeleteTagParams {
     pub tag: String,
 }
 
-#[derive(Default, TypedBuilder)]
+#[derive(Default, TypedBuilder, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RepoUpdateSettingsParams {
     #[builder(default, setter(strip_option))]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub private: Option<bool>,
+    #[builder(default, setter(strip_option))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gated: Option<crate::types::GatedApprovalMode>,
     #[builder(default, setter(into, strip_option))]
-    pub gated: Option<String>,
-    #[builder(default, setter(into, strip_option))]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[builder(default, setter(strip_option))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub discussions_disabled: Option<bool>,
+    #[builder(default, setter(into, strip_option))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gated_notifications_email: Option<String>,
+    #[builder(default, setter(strip_option))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gated_notifications_mode: Option<crate::types::GatedNotificationsMode>,
 }
 
 #[cfg(feature = "spaces")]
