@@ -234,7 +234,7 @@ impl HFSpace {
 
 sync_api! {
     #[cfg(feature = "spaces")]
-    impl HFSpaceSync => HFSpace {
+    impl HFSpace -> HFSpaceSync {
         fn runtime(&self) -> crate::error::Result<SpaceRuntime>;
         fn request_hardware(&self, params: &crate::repository::SpaceHardwareRequestParams) -> crate::error::Result<SpaceRuntime>;
         fn set_sleep_time(&self, params: &crate::repository::SpaceSleepTimeParams) -> crate::error::Result<()>;

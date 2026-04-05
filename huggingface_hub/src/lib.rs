@@ -19,7 +19,7 @@
 macro_rules! sync_api {
     (
         $(#[$impl_meta:meta])*
-        impl $sync_type:ident => $async_type:ident {
+        impl $async_type:ident -> $sync_type:ident {
             $(
                 fn $name:ident(&self $(, $pname:ident : $ptype:ty)*) -> $ret:ty;
             )*
@@ -41,7 +41,7 @@ macro_rules! sync_api {
 macro_rules! sync_api_stream {
     (
         $(#[$impl_meta:meta])*
-        impl $sync_type:ident => $async_type:ident {
+        impl $async_type:ident -> $sync_type:ident {
             $(
                 fn $name:ident(&self $(, $pname:ident : $ptype:ty)*) -> $item:ty;
             )*

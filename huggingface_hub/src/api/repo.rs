@@ -458,7 +458,7 @@ mod tests {
 }
 
 sync_api! {
-    impl HFClientSync => HFClient {
+    impl HFClient -> HFClientSync {
         fn create_repo(&self, params: &CreateRepoParams) -> Result<RepoUrl>;
         fn delete_repo(&self, params: &DeleteRepoParams) -> Result<()>;
         fn move_repo(&self, params: &MoveRepoParams) -> Result<RepoUrl>;
@@ -466,7 +466,7 @@ sync_api! {
 }
 
 sync_api_stream! {
-    impl HFClientSync => HFClient {
+    impl HFClient -> HFClientSync {
         fn list_models(&self, params: &ListModelsParams) -> ModelInfo;
         fn list_datasets(&self, params: &ListDatasetsParams) -> DatasetInfo;
         fn list_spaces(&self, params: &ListSpacesParams) -> SpaceInfo;
@@ -474,7 +474,7 @@ sync_api_stream! {
 }
 
 sync_api! {
-    impl HFRepositorySync => HFRepository {
+    impl HFRepository -> HFRepositorySync {
         fn info(&self, params: &crate::repository::RepoInfoParams) -> Result<crate::types::RepoInfo>;
         fn exists(&self) -> Result<bool>;
         fn revision_exists(&self, params: &crate::repository::RepoRevisionExistsParams) -> Result<bool>;

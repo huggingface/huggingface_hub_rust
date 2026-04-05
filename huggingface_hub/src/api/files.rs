@@ -1457,7 +1457,7 @@ fn matches_any_glob(patterns: &[String], path: &str) -> bool {
 }
 
 sync_api! {
-    impl HFRepositorySync => HFRepository {
+    impl HFRepository -> HFRepositorySync {
         fn list_files(&self, params: &RepoListFilesParams) -> crate::error::Result<Vec<String>>;
         fn get_paths_info(&self, params: &RepoGetPathsInfoParams) -> crate::error::Result<Vec<RepoTreeEntry>>;
         fn download_file(&self, params: &RepoDownloadFileParams) -> crate::error::Result<std::path::PathBuf>;
@@ -1471,7 +1471,7 @@ sync_api! {
 }
 
 sync_api_stream! {
-    impl HFRepositorySync => HFRepository {
+    impl HFRepository -> HFRepositorySync {
         fn list_tree(&self, params: &RepoListTreeParams) -> RepoTreeEntry;
     }
 }
