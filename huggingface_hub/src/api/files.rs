@@ -120,25 +120,77 @@ impl HFRepository {
     /// Returns a `(content_length, stream)` tuple. `content_length` is `Some`
     /// when the server provides a `Content-Length` header.
     ///
+    /// When `range` is set, only the specified byte range is fetched. This works
+    /// for both regular files (via HTTP Range header) and xet-backed files (via
+    /// the xet streaming download API). For non-xet files the server must support
+    /// range requests; the returned `content_length` reflects the range size.
+    ///
     /// Endpoint: GET {endpoint}/{prefix}{repo_id}/resolve/{revision}/{filename}
     pub async fn download_file_stream(
         &self,
         params: &RepoDownloadFileStreamParams,
-    ) -> Result<(Option<u64>, impl Stream<Item = std::result::Result<bytes::Bytes, reqwest::Error>>)> {
+    ) -> Result<(Option<u64>, Box<dyn Stream<Item = std::result::Result<bytes::Bytes, HFError>> + Send + Unpin>)> {
         let revision = self.effective_revision(params.revision.as_deref());
+        let repo_path = self.repo_path();
         let url = self
             .client
-            .download_url(Some(self.repo_type), &self.repo_path(), revision, &params.filename);
+            .download_url(Some(self.repo_type), &repo_path, revision, &params.filename);
 
-        let response = self
-            .client
-            .inner
-            .client
-            .get(&url)
-            .headers(self.client.auth_headers())
-            .send()
-            .await?;
-        let repo_path = self.repo_path();
+        #[cfg(feature = "xet")]
+        {
+            let head_response = self
+                .client
+                .inner
+                .client
+                .head(&url)
+                .headers(self.client.auth_headers())
+                .send()
+                .await?;
+
+            let head_response = self
+                .client
+                .check_response(
+                    head_response,
+                    Some(&repo_path),
+                    crate::error::NotFoundContext::Entry {
+                        path: params.filename.clone(),
+                    },
+                )
+                .await?;
+
+            let headers = head_response.headers();
+            if let Some(xet_hash) = headers.get(constants::HEADER_X_XET_HASH).and_then(|v| v.to_str().ok()) {
+                let file_size: u64 = headers
+                    .get(reqwest::header::CONTENT_LENGTH)
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(0);
+
+                let content_length = params.range.as_ref().map(|r| r.end.saturating_sub(r.start)).or(Some(file_size));
+
+                let stream = crate::xet::xet_download_stream(
+                    &self.client,
+                    &repo_path,
+                    Some(self.repo_type),
+                    revision,
+                    xet_hash,
+                    file_size,
+                    params.range.clone(),
+                )
+                .await?;
+
+                return Ok((content_length, Box::new(Box::pin(stream))));
+            }
+        }
+
+        let mut request = self.client.inner.client.get(&url).headers(self.client.auth_headers());
+
+        if let Some(ref range) = params.range {
+            request = request
+                .header(reqwest::header::RANGE, format!("bytes={}-{}", range.start, range.end.saturating_sub(1)));
+        }
+
+        let response = request.send().await?;
         let response = self
             .client
             .check_response(
@@ -151,7 +203,8 @@ impl HFRepository {
             .await?;
 
         let content_length = response.content_length();
-        Ok((content_length, response.bytes_stream()))
+        let stream = response.bytes_stream().map(|r| r.map_err(HFError::from));
+        Ok((content_length, Box::new(Box::pin(stream))))
     }
 
     async fn download_file_to_local_dir(&self, params: &RepoDownloadFileParams) -> Result<PathBuf> {

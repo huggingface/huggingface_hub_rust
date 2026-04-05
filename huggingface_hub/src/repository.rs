@@ -146,6 +146,8 @@ pub struct RepoDownloadFileStreamParams {
     pub filename: String,
     #[builder(default, setter(into, strip_option))]
     pub revision: Option<String>,
+    #[builder(default, setter(strip_option))]
+    pub range: Option<std::ops::Range<u64>>,
 }
 
 #[derive(Default, TypedBuilder)]

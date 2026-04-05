@@ -345,7 +345,7 @@ T 228455220	:000000 100644 0000000000000000000000000000000000000000... fccf5af19
 
     fn assert_invalid_format(input: &str) {
         match parse_hf_diff_line(input) {
-            Err(super::HFDiffParseError::InvalidFormat { .. }) => {}
+            Err(super::HFDiffParseError::InvalidFormat { .. }) => {},
             other => panic!("expected InvalidFormat for {input:?}, got {other:?}"),
         }
     }
@@ -382,9 +382,7 @@ T 228455220	:000000 100644 0000000000000000000000000000000000000000... fccf5af19
     #[test]
     fn truncated_before_new_blob_id() {
         // old SHA complete + "... " but new SHA missing
-        assert_invalid_format(
-            "T 2305\t:100644 100644 97e7432a448baa9e97ec5e4f03c57b09b8e116ed... ",
-        );
+        assert_invalid_format("T 2305\t:100644 100644 97e7432a448baa9e97ec5e4f03c57b09b8e116ed... ");
     }
 
     #[test]

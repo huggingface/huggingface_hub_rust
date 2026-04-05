@@ -232,6 +232,49 @@ pub(crate) async fn xet_download_batch(
     Ok(())
 }
 
+/// Download a file (or byte range) via xet and return a byte stream.
+///
+/// Uses `XetDownloadStreamGroup` which supports `Option<Range<u64>>` for partial downloads.
+pub(crate) async fn xet_download_stream(
+    api: &HFClient,
+    repo_id: &str,
+    repo_type: Option<RepoType>,
+    revision: &str,
+    file_hash: &str,
+    file_size: u64,
+    range: Option<std::ops::Range<u64>>,
+) -> Result<impl futures::Stream<Item = std::result::Result<bytes::Bytes, crate::error::HFError>>> {
+    let conn = fetch_xet_connection_info(api, "read", repo_id, repo_type, revision).await?;
+    let session = build_xet_session()?;
+
+    let group = session
+        .new_download_stream_group()
+        .map_err(|e| HFError::Other(format!("Xet stream download failed: {e}")))?
+        .with_endpoint(conn.endpoint.clone())
+        .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
+        .with_token_refresh_url(xet_token_url(api, "read", repo_id, repo_type, revision), api.auth_headers())
+        .build()
+        .await
+        .map_err(|e| HFError::Other(format!("Xet stream download failed: {e}")))?;
+
+    let file_info = XetFileInfo::new(file_hash.to_string(), file_size);
+
+    let mut stream = group
+        .download_stream(file_info, range)
+        .await
+        .map_err(|e| HFError::Other(format!("Xet stream download failed: {e}")))?;
+
+    stream.start();
+
+    Ok(futures::stream::unfold(stream, |mut stream| async move {
+        match stream.next().await {
+            Ok(Some(bytes)) => Some((Ok(bytes), stream)),
+            Ok(None) => None,
+            Err(e) => Some((Err(HFError::Other(format!("Xet stream read failed: {e}"))), stream)),
+        }
+    }))
+}
+
 /// Upload files using the xet protocol.
 /// Fetches a write token and uses xet-session's UploadCommit.
 /// Returns the XetFileInfo (hash + size) for each uploaded file.
