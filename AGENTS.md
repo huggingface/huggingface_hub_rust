@@ -95,8 +95,7 @@ huggingface_hub_rust/
 │   │   │   ├── user.rs             # User, Organization, OrgMembership
 │   │   │   ├── commit.rs           # CommitInfo, GitCommitInfo, GitRefs, CommitOperation, AddSource
 │   │   │   ├── params.rs           # All *Params structs with TypedBuilder
-│   │   │   ├── spaces.rs           # SpaceRuntime, SpaceVariable (behind "spaces" feature)
-│   │   │   └── jobs.rs             # JobInfo, JobStatus, ScheduledJobInfo ("jobs" feature)
+│   │   │   └── spaces.rs           # SpaceRuntime, SpaceVariable (behind "spaces" feature)
 │   │   └── api/
 │   │       ├── mod.rs              # Module declarations
 │   │       ├── repo.rs             # Repo info, listing, existence checks, create/delete/update/move
@@ -104,8 +103,7 @@ huggingface_hub_rust/
 │   │       ├── files.rs            # File listing, download, upload, create_commit, snapshot_download
 │   │       ├── commits.rs          # Commit listing, diffs, branch/tag management
 │   │       ├── users.rs            # whoami, auth_check, user/org info, followers
-│   │       ├── spaces.rs           # Space runtime, secrets, variables, hardware, pause/restart
-│   │       └── jobs.rs             # Jobs run/list/inspect/cancel, scheduled jobs
+│   │       └── spaces.rs           # Space runtime, secrets, variables, hardware, pause/restart
 │   └── tests/
 │       └── integration_test.rs     # Integration tests against live Hub API
 ```

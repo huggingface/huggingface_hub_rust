@@ -39,8 +39,6 @@ pub enum Command {
     Datasets(crate::commands::datasets::Args),
     /// Download files from the Hub
     Download(crate::commands::download::Args),
-    /// Run and manage Jobs on the Hub
-    Jobs(crate::commands::jobs::Args),
     /// Interact with models on the Hub
     Models(crate::commands::models::Args),
     /// Manage repos on the Hub

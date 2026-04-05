@@ -6,7 +6,7 @@ description = "Rust client for the Hugging Face Hub API"
 license = "Apache-2.0"
 
 [package.metadata.docs.rs]
-features = ["blocking", "xet", "spaces", "jobs"]
+features = ["blocking", "xet", "spaces"]
 
 [dependencies]
 bytes = "1"
@@ -42,12 +42,10 @@ default = []
 blocking = ["tokio/rt"]
 xet = ["dep:hf-xet", "dep:xet-client", "dep:async-trait", "dep:sha2"]
 spaces = []
-jobs = []
 cli = [
     "blocking",
     "xet",
     "spaces",
-    "jobs",
     "tokio/macros",
     "tokio/rt-multi-thread",
     "dep:clap",
@@ -101,11 +99,6 @@ path = "examples/users.rs"
 name = "spaces"
 path = "examples/spaces.rs"
 required-features = ["spaces"]
-
-[[example]]
-name = "jobs"
-path = "examples/jobs.rs"
-required-features = ["jobs"]
 
 [[example]]
 name = "download_upload"

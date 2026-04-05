@@ -3,7 +3,6 @@ pub mod cache;
 pub mod datasets;
 pub mod download;
 pub mod env;
-pub mod jobs;
 pub mod models;
 pub mod repos;
 pub mod spaces;

@@ -16,10 +16,18 @@ pub struct Args {
 
 pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     let user = api.whoami().await?;
+    let orgs: Vec<String> = user
+        .orgs
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|o| o.name.clone())
+        .collect();
     let json_value = json!({
         "username": user.username,
         "fullname": user.fullname,
         "email": user.email,
+        "orgs": orgs,
     });
     let output = CommandOutput::single_item(json_value);
     Ok(CommandResult::Formatted {

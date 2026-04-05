@@ -51,7 +51,6 @@ async fn main() -> ExitCode {
         Command::Cache(args) => commands::cache::execute(&api, args).await,
         Command::Datasets(args) => commands::datasets::execute(&api, args).await,
         Command::Download(args) => commands::download::execute(&api, args).await,
-        Command::Jobs(args) => commands::jobs::execute(&api, args).await,
         Command::Models(args) => commands::models::execute(&api, args).await,
         Command::Repos(args) => commands::repos::execute(&api, args).await,
         Command::Spaces(args) => commands::spaces::execute(&api, args).await,
