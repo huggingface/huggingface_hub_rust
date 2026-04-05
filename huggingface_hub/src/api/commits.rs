@@ -1,10 +1,12 @@
+use bytes::Bytes;
 use futures::Stream;
 use url::Url;
 
 use crate::error::Result;
 use crate::repository::{
     HFRepository, RepoCreateBranchParams, RepoCreateTagParams, RepoDeleteBranchParams, RepoDeleteTagParams,
-    RepoGetCommitDiffParams, RepoGetRawDiffParams, RepoListCommitsParams, RepoListRefsParams,
+    RepoGetCommitDiffParams, RepoGetRawDiffParams, RepoGetRawDiffStreamParams, RepoListCommitsParams,
+    RepoListRefsParams,
 };
 use crate::types::{GitCommitInfo, GitRefs};
 
@@ -95,6 +97,34 @@ impl HFRepository {
             .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(response.text().await?)
+    }
+
+    /// Fetch the raw diff between two revisions as a byte stream suitable for
+    /// streaming parsing with [`crate::diff::stream_raw_diff`].
+    /// Endpoint: GET /api/{repo_type}s/{repo_id}/compare/{compare}?raw=true
+    pub async fn get_raw_diff_stream(
+        &self,
+        params: &RepoGetRawDiffStreamParams,
+    ) -> Result<impl Stream<Item = std::result::Result<Bytes, reqwest::Error>>> {
+        let url =
+            format!("{}/compare/{}", self.client.api_url(Some(self.repo_type), &self.repo_path()), params.compare);
+
+        let response = self
+            .client
+            .inner
+            .client
+            .get(&url)
+            .headers(self.client.auth_headers())
+            .query(&[("raw", "true")])
+            .send()
+            .await?;
+
+        let repo_path = self.repo_path();
+        let response = self
+            .client
+            .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
+            .await?;
+        Ok(response.bytes_stream())
     }
 
     /// Create a new branch, optionally starting from a specific revision.
@@ -192,5 +222,23 @@ impl HFRepository {
             .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(())
+    }
+}
+
+sync_api! {
+    impl HFRepositorySync => HFRepository {
+        fn list_refs(&self, params: &RepoListRefsParams) -> Result<GitRefs>;
+        fn get_commit_diff(&self, params: &RepoGetCommitDiffParams) -> Result<String>;
+        fn get_raw_diff(&self, params: &RepoGetRawDiffParams) -> Result<String>;
+        fn create_branch(&self, params: &RepoCreateBranchParams) -> Result<()>;
+        fn delete_branch(&self, params: &RepoDeleteBranchParams) -> Result<()>;
+        fn create_tag(&self, params: &RepoCreateTagParams) -> Result<()>;
+        fn delete_tag(&self, params: &RepoDeleteTagParams) -> Result<()>;
+    }
+}
+
+sync_api_stream! {
+    impl HFRepositorySync => HFRepository {
+        fn list_commits(&self, params: &RepoListCommitsParams) -> GitCommitInfo;
     }
 }

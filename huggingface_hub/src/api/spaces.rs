@@ -1,7 +1,8 @@
 use crate::error::Result;
+use crate::repository::HFSpace;
 use crate::types::{RepoUrl, SpaceRuntime};
 
-impl crate::repository::HFSpace {
+impl HFSpace {
     /// Fetch the current runtime state of the Space (hardware, stage, URL, etc.).
     pub async fn runtime(&self) -> Result<SpaceRuntime> {
         let url = format!("{}/api/spaces/{}/runtime", self.client.inner.endpoint, self.repo_path());
@@ -228,5 +229,21 @@ impl crate::repository::HFSpace {
             .check_response(response, Some(&self.repo_path()), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(response.json().await?)
+    }
+}
+
+sync_api! {
+    #[cfg(feature = "spaces")]
+    impl HFSpaceSync => HFSpace {
+        fn runtime(&self) -> crate::error::Result<SpaceRuntime>;
+        fn request_hardware(&self, params: &crate::repository::SpaceHardwareRequestParams) -> crate::error::Result<SpaceRuntime>;
+        fn set_sleep_time(&self, params: &crate::repository::SpaceSleepTimeParams) -> crate::error::Result<()>;
+        fn pause(&self) -> crate::error::Result<SpaceRuntime>;
+        fn restart(&self) -> crate::error::Result<SpaceRuntime>;
+        fn add_secret(&self, params: &crate::repository::SpaceSecretParams) -> crate::error::Result<()>;
+        fn delete_secret(&self, params: &crate::repository::SpaceSecretDeleteParams) -> crate::error::Result<()>;
+        fn add_variable(&self, params: &crate::repository::SpaceVariableParams) -> crate::error::Result<()>;
+        fn delete_variable(&self, params: &crate::repository::SpaceVariableDeleteParams) -> crate::error::Result<()>;
+        fn duplicate(&self, params: &crate::types::DuplicateSpaceParams) -> crate::error::Result<RepoUrl>;
     }
 }

@@ -19,7 +19,7 @@
 macro_rules! sync_api {
     (
         $(#[$impl_meta:meta])*
-        impl HFClientSync {
+        impl $sync_type:ident => $async_type:ident {
             $(
                 fn $name:ident(&self $(, $pname:ident : $ptype:ty)*) -> $ret:ty;
             )*
@@ -27,9 +27,9 @@ macro_rules! sync_api {
     ) => {
         #[cfg(feature = "blocking")]
         $(#[$impl_meta])*
-        impl $crate::blocking::HFClientSync {
+        impl $crate::blocking::$sync_type {
             $(
-                #[doc = concat!("Synchronous version of [`HFClient::", stringify!($name), "`].")]
+                #[doc = concat!("Blocking wrapper around [`", stringify!($async_type), "::", stringify!($name), "`].")]
                 pub fn $name(&self $(, $pname : $ptype)*) -> $ret {
                     self.runtime.block_on(self.inner.$name($($pname),*))
                 }
@@ -41,7 +41,7 @@ macro_rules! sync_api {
 macro_rules! sync_api_stream {
     (
         $(#[$impl_meta:meta])*
-        impl HFClientSync {
+        impl $sync_type:ident => $async_type:ident {
             $(
                 fn $name:ident(&self $(, $pname:ident : $ptype:ty)*) -> $item:ty;
             )*
@@ -49,9 +49,9 @@ macro_rules! sync_api_stream {
     ) => {
         #[cfg(feature = "blocking")]
         $(#[$impl_meta])*
-        impl $crate::blocking::HFClientSync {
+        impl $crate::blocking::$sync_type {
             $(
-                #[doc = concat!("Synchronous version of [`HFClient::", stringify!($name), "`]. Collects all items into a `Vec`.")]
+                #[doc = concat!("Blocking wrapper around [`", stringify!($async_type), "::", stringify!($name), "`]. Collects all items into a `Vec`.")]
                 pub fn $name(&self $(, $pname : $ptype)*) -> $crate::error::Result<Vec<$item>> {
                     use futures::StreamExt;
                     self.runtime.block_on(async {
@@ -75,6 +75,7 @@ pub mod blocking;
 pub mod cache;
 pub mod client;
 pub(crate) mod constants;
+pub mod diff;
 pub mod error;
 pub mod pagination;
 pub mod repository;

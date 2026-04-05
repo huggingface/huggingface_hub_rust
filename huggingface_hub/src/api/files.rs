@@ -12,14 +12,14 @@ use url::Url;
 
 use crate::error::{HFError, Result};
 use crate::repository::{
-    RepoCreateCommitParams, RepoDeleteFileParams, RepoDeleteFolderParams, RepoDownloadFileParams,
+    HFRepository, RepoCreateCommitParams, RepoDeleteFileParams, RepoDeleteFolderParams, RepoDownloadFileParams,
     RepoDownloadFileStreamParams, RepoGetPathsInfoParams, RepoListFilesParams, RepoListTreeParams,
     RepoSnapshotDownloadParams, RepoUploadFileParams, RepoUploadFolderParams,
 };
 use crate::types::{AddSource, CommitInfo, CommitOperation, RepoTreeEntry, RepoType};
 use crate::{cache, constants};
 
-impl crate::repository::HFRepository {
+impl HFRepository {
     /// Return a flat list of all file paths in the repository at the given revision.
     pub async fn list_files(&self, params: &RepoListFilesParams) -> Result<Vec<String>> {
         let revision = self.resolve_revision(params.revision.as_deref());
@@ -96,7 +96,7 @@ impl crate::repository::HFRepository {
     }
 }
 
-impl crate::repository::HFRepository {
+impl HFRepository {
     /// Download a single file from a repository.
     ///
     /// When `local_dir` is `Some`, the file is downloaded directly to that directory
@@ -468,7 +468,7 @@ impl crate::repository::HFRepository {
     }
 }
 
-impl crate::repository::HFRepository {
+impl HFRepository {
     async fn resolve_commit_hash(&self, revision: &str) -> Result<String> {
         if cache::is_commit_hash(revision) {
             return Ok(revision.to_string());
@@ -868,7 +868,7 @@ fn build_download_params(
 }
 
 async fn download_concurrently(
-    api: &crate::repository::HFRepository,
+    api: &HFRepository,
     params: &[RepoDownloadFileParams],
     max_workers: usize,
 ) -> Result<Vec<PathBuf>> {
@@ -889,7 +889,7 @@ async fn stream_response_to_file(response: reqwest::Response, dest: &std::path::
     Ok(())
 }
 
-impl crate::repository::HFRepository {
+impl HFRepository {
     /// Create a commit with multiple operations.
     ///
     /// Files are checked against the Hub's preupload endpoint to determine
@@ -1148,7 +1148,7 @@ struct LfsBatchResponse {
     transfer: Option<String>,
 }
 
-impl crate::repository::HFRepository {
+impl HFRepository {
     /// Check upload modes for all files and upload LFS files via xet.
     ///
     /// Always calls the preupload endpoint to determine upload mode per file.
@@ -1266,7 +1266,7 @@ impl crate::repository::HFRepository {
 }
 
 #[cfg(feature = "xet")]
-impl crate::repository::HFRepository {
+impl HFRepository {
     /// Compute SHA256, negotiate LFS batch transfer, and upload via xet.
     async fn upload_lfs_files_via_xet(
         &self,
@@ -1454,4 +1454,24 @@ fn matches_any_glob(patterns: &[String], path: &str) -> bool {
     patterns
         .iter()
         .any(|p| Glob::new(p).ok().map(|g| g.compile_matcher().is_match(path)).unwrap_or(false))
+}
+
+sync_api! {
+    impl HFRepositorySync => HFRepository {
+        fn list_files(&self, params: &RepoListFilesParams) -> crate::error::Result<Vec<String>>;
+        fn get_paths_info(&self, params: &RepoGetPathsInfoParams) -> crate::error::Result<Vec<RepoTreeEntry>>;
+        fn download_file(&self, params: &RepoDownloadFileParams) -> crate::error::Result<std::path::PathBuf>;
+        fn snapshot_download(&self, params: &RepoSnapshotDownloadParams) -> crate::error::Result<std::path::PathBuf>;
+        fn create_commit(&self, params: &RepoCreateCommitParams) -> crate::error::Result<CommitInfo>;
+        fn upload_file(&self, params: &RepoUploadFileParams) -> crate::error::Result<CommitInfo>;
+        fn upload_folder(&self, params: &RepoUploadFolderParams) -> crate::error::Result<CommitInfo>;
+        fn delete_file(&self, params: &RepoDeleteFileParams) -> crate::error::Result<CommitInfo>;
+        fn delete_folder(&self, params: &RepoDeleteFolderParams) -> crate::error::Result<CommitInfo>;
+    }
+}
+
+sync_api_stream! {
+    impl HFRepositorySync => HFRepository {
+        fn list_tree(&self, params: &RepoListTreeParams) -> RepoTreeEntry;
+    }
 }

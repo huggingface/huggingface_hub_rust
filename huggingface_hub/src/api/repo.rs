@@ -180,21 +180,11 @@ impl HFRepository {
         }
     }
 
-    /// Update repository settings such as visibility, gating policy, or description.
+    /// Update repository settings such as visibility, gating policy, description,
+    /// discussion settings, and gated notification preferences.
     /// Endpoint: PUT /api/{repo_type}s/{repo_id}/settings
     pub async fn update_settings(&self, params: &RepoUpdateSettingsParams) -> Result<()> {
         let url = format!("{}/settings", self.client.api_url(Some(self.repo_type), &self.repo_path()));
-        let mut body = serde_json::Map::new();
-
-        if let Some(private) = params.private {
-            body.insert("private".into(), serde_json::Value::Bool(private));
-        }
-        if let Some(ref gated) = params.gated {
-            body.insert("gated".into(), serde_json::Value::String(gated.clone()));
-        }
-        if let Some(ref description) = params.description {
-            body.insert("description".into(), serde_json::Value::String(description.clone()));
-        }
 
         let response = self
             .client
@@ -202,7 +192,7 @@ impl HFRepository {
             .client
             .put(&url)
             .headers(self.client.auth_headers())
-            .json(&body)
+            .json(params)
             .send()
             .await?;
 
@@ -468,7 +458,7 @@ mod tests {
 }
 
 sync_api! {
-    impl HFClientSync {
+    impl HFClientSync => HFClient {
         fn create_repo(&self, params: &CreateRepoParams) -> Result<RepoUrl>;
         fn delete_repo(&self, params: &DeleteRepoParams) -> Result<()>;
         fn move_repo(&self, params: &MoveRepoParams) -> Result<RepoUrl>;
@@ -476,9 +466,19 @@ sync_api! {
 }
 
 sync_api_stream! {
-    impl HFClientSync {
+    impl HFClientSync => HFClient {
         fn list_models(&self, params: &ListModelsParams) -> ModelInfo;
         fn list_datasets(&self, params: &ListDatasetsParams) -> DatasetInfo;
         fn list_spaces(&self, params: &ListSpacesParams) -> SpaceInfo;
+    }
+}
+
+sync_api! {
+    impl HFRepositorySync => HFRepository {
+        fn info(&self, params: &crate::repository::RepoInfoParams) -> Result<crate::types::RepoInfo>;
+        fn exists(&self) -> Result<bool>;
+        fn revision_exists(&self, params: &crate::repository::RepoRevisionExistsParams) -> Result<bool>;
+        fn file_exists(&self, params: &crate::repository::RepoFileExistsParams) -> Result<bool>;
+        fn update_settings(&self, params: &crate::repository::RepoUpdateSettingsParams) -> Result<()>;
     }
 }
