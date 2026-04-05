@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::HfApi;
+use huggingface_hub::HFClient;
 
 use crate::output::CommandResult;
 use crate::util::token;
@@ -9,7 +9,7 @@ use crate::util::token;
 #[derive(ClapArgs)]
 pub struct Args {}
 
-pub async fn execute(_api: &HfApi, _args: Args) -> Result<CommandResult> {
+pub async fn execute(_client: &HFClient, _args: Args) -> Result<CommandResult> {
     let entries = token::list_tokens();
     if entries.is_empty() {
         return Ok(CommandResult::Raw("No stored tokens. Use `hfrs auth login` to add one.".to_string()));

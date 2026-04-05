@@ -83,14 +83,11 @@ pub mod types;
 pub mod xet;
 
 #[cfg(feature = "blocking")]
-pub use blocking::{
-    HFClientSync, HFClientSync, HFRepoSync, HFRepositorySync, HFSpaceSync, HfClientSync, HfRepoSync, HfRepositorySync,
-    HfSpaceSync,
-};
-pub use client::{HFClient, HFClientBuilder, HfApi, HfApiBuilder, HfClient, HfClientBuilder};
+pub use blocking::{HFClientSync, HFRepoSync, HFRepositorySync, HFSpaceSync};
+pub use client::{HFClient, HFClientBuilder};
 #[cfg(feature = "cli")]
 #[doc(hidden)]
 pub use constants::{hf_home, resolve_cache_dir};
-pub use error::{HfError, Result};
+pub use error::{HFError, Result};
 pub use repository::*;
 pub use types::*;

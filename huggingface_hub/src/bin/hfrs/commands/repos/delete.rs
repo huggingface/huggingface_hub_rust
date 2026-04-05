@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{DeleteRepoParams, HfApi};
+use huggingface_hub::{DeleteRepoParams, HFClient};
 
 use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
@@ -20,7 +20,7 @@ pub struct Args {
     pub missing_ok: bool,
 }
 
-pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
     let params = DeleteRepoParams {
         repo_id: args.repo_id,

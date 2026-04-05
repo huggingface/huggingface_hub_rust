@@ -35,24 +35,14 @@ pub enum Command {
     Auth(crate::commands::auth::Args),
     /// Manage local cache directory
     Cache(crate::commands::cache::Args),
-    /// Interact with collections on the Hub
-    Collections(crate::commands::collections::Args),
     /// Interact with datasets on the Hub
     Datasets(crate::commands::datasets::Args),
-    /// Manage discussions and pull requests on the Hub
-    Discussions(crate::commands::discussions::Args),
     /// Download files from the Hub
     Download(crate::commands::download::Args),
-    /// Manage Hugging Face Inference Endpoints
-    Endpoints(crate::commands::endpoints::Args),
     /// Run and manage Jobs on the Hub
     Jobs(crate::commands::jobs::Args),
-    /// Manage likes on the Hub
-    Likes(crate::commands::likes::Args),
     /// Interact with models on the Hub
     Models(crate::commands::models::Args),
-    /// Interact with papers on the Hub
-    Papers(crate::commands::papers::Args),
     /// Manage repos on the Hub
     #[command(alias = "repo")]
     Repos(crate::commands::repos::Args),
@@ -60,11 +50,6 @@ pub enum Command {
     Spaces(crate::commands::spaces::Args),
     /// Upload a file or folder to the Hub
     Upload(crate::commands::upload::Args),
-    /// Manage webhooks on the Hub
-    Webhooks(crate::commands::webhooks::Args),
-    /// Manage gated repo access requests
-    #[command(name = "access-requests")]
-    AccessRequests(crate::commands::access_requests::Args),
     /// Print information about the environment
     Env(crate::commands::env::Args),
     /// Print the hfrs version

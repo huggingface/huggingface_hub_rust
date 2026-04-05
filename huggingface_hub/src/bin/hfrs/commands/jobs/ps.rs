@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{HfApi, ListJobsParams};
+use huggingface_hub::{HFClient, ListJobsParams};
 use serde_json::json;
 
 use crate::cli::OutputFormat;
@@ -22,7 +22,7 @@ pub struct Args {
     pub quiet: bool,
 }
 
-pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     let params = ListJobsParams {
         namespace: args.namespace,
     };

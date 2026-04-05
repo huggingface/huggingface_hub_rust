@@ -3,7 +3,7 @@ pub mod list;
 
 use anyhow::Result;
 use clap::{Args as ClapArgs, Subcommand};
-use huggingface_hub::HfApi;
+use huggingface_hub::HFClient;
 
 use crate::output::CommandResult;
 
@@ -24,7 +24,7 @@ pub enum ModelsCommand {
     List(list::Args),
 }
 
-pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     match args.command {
         ModelsCommand::Info(a) => info::execute(api, a).await,
         ModelsCommand::List(a) => list::execute(api, a).await,

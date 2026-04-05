@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Result};
 use clap::Args as ClapArgs;
-use huggingface_hub::{AddSource, CreateRepoParams, HfApi, RepoUploadFileParams, RepoUploadFolderParams};
+use huggingface_hub::{AddSource, CreateRepoParams, HFClient, RepoUploadFileParams, RepoUploadFolderParams};
 use tracing::info;
 
 use crate::cli::RepoTypeArg;
@@ -61,7 +61,7 @@ pub struct Args {
     pub quiet: bool,
 }
 
-pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
     let local_path = args.local_path.unwrap_or_else(|| PathBuf::from("."));
     let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
@@ -128,10 +128,6 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
         bail!("local path does not exist: {}", local_path.display());
     };
 
-    if args.quiet {
-        Ok(CommandResult::Silent)
-    } else {
-        let url = commit_info.commit_url.or(commit_info.pr_url).unwrap_or_default();
-        Ok(CommandResult::Raw(url))
-    }
+    let url = commit_info.commit_url.or(commit_info.pr_url).unwrap_or_default();
+    Ok(CommandResult::Raw(url))
 }

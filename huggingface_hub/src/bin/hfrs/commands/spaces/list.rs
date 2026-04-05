@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
 use futures::StreamExt;
-use huggingface_hub::{HfApi, ListSpacesParams};
+use huggingface_hub::{HFClient, ListSpacesParams};
 use serde_json::json;
 
 use crate::cli::OutputFormat;
@@ -39,7 +39,7 @@ pub struct Args {
     pub quiet: bool,
 }
 
-pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     let filter = if args.filter.is_empty() {
         None
     } else {

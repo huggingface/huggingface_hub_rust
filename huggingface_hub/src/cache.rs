@@ -5,7 +5,7 @@ use std::time::SystemTime;
 
 use fs4::fs_std::FileExt;
 
-use crate::types::cache::{CachedFileInfo, CachedRepoInfo, CachedRevisionInfo, HfCacheInfo};
+use crate::types::cache::{CachedFileInfo, CachedRepoInfo, CachedRevisionInfo, HFCacheInfo};
 use crate::types::RepoType;
 
 pub(crate) struct CacheLock {
@@ -27,9 +27,9 @@ pub(crate) async fn acquire_lock(cache_dir: &Path, repo_folder: &str, etag: &str
         }),
     )
     .await
-    .map_err(|_| crate::error::HfError::CacheLockTimeout { path: path.clone() })?
-    .map_err(|e| crate::error::HfError::Other(format!("Lock task failed: {e}")))?
-    .map_err(crate::error::HfError::Io)?;
+    .map_err(|_| crate::error::HFError::CacheLockTimeout { path: path.clone() })?
+    .map_err(|e| crate::error::HFError::Other(format!("Lock task failed: {e}")))?
+    .map_err(crate::error::HFError::Io)?;
     Ok(CacheLock { _file: lock })
 }
 
@@ -228,7 +228,7 @@ async fn scan_snapshot(snap_path: &Path, warnings: &mut Vec<String>) -> Vec<Cach
     files
 }
 
-pub async fn scan_cache_dir(cache_dir: &Path) -> crate::error::Result<HfCacheInfo> {
+pub async fn scan_cache_dir(cache_dir: &Path) -> crate::error::Result<HFCacheInfo> {
     let mut repos = Vec::new();
     let mut warnings = Vec::new();
     let mut total_size: u64 = 0;
@@ -236,7 +236,7 @@ pub async fn scan_cache_dir(cache_dir: &Path) -> crate::error::Result<HfCacheInf
     let mut entries = match tokio::fs::read_dir(cache_dir).await {
         Ok(e) => e,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(HfCacheInfo {
+            return Ok(HFCacheInfo {
                 cache_dir: cache_dir.to_path_buf(),
                 repos: vec![],
                 size_on_disk: 0,
@@ -321,7 +321,7 @@ pub async fn scan_cache_dir(cache_dir: &Path) -> crate::error::Result<HfCacheInf
         });
     }
 
-    Ok(HfCacheInfo {
+    Ok(HFCacheInfo {
         cache_dir: cache_dir.to_path_buf(),
         repos,
         size_on_disk: total_size,

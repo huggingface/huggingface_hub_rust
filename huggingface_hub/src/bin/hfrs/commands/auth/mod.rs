@@ -6,7 +6,7 @@ pub mod whoami;
 
 use anyhow::Result;
 use clap::{Args as ClapArgs, Subcommand};
-use huggingface_hub::HfApi;
+use huggingface_hub::HFClient;
 
 use crate::output::CommandResult;
 
@@ -32,7 +32,7 @@ pub enum AuthCommand {
     Whoami(whoami::Args),
 }
 
-pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     match args.command {
         AuthCommand::Login(a) => login::execute(api, a).await,
         AuthCommand::Logout(a) => logout::execute(api, a).await,

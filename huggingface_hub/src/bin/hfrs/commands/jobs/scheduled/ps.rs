@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::HfApi;
+use huggingface_hub::HFClient;
 use serde_json::json;
 
 use crate::cli::OutputFormat;
@@ -13,13 +13,17 @@ pub struct Args {
     #[arg(long, value_enum, default_value = "table")]
     pub format: OutputFormat,
 
+    /// Namespace (defaults to current user)
+    #[arg(long)]
+    pub namespace: Option<String>,
+
     /// Print only job IDs
     #[arg(long)]
     pub quiet: bool,
 }
 
-pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
-    let jobs = api.list_scheduled_jobs().await?;
+pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
+    let jobs = api.list_scheduled_jobs(args.namespace.as_deref()).await?;
 
     if jobs.is_empty() && matches!(args.format, OutputFormat::Table) {
         return Ok(CommandResult::Raw("No scheduled jobs found.".to_string()));

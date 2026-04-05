@@ -9,7 +9,7 @@ pub mod stats;
 
 use anyhow::Result;
 use clap::{Args as ClapArgs, Subcommand};
-use huggingface_hub::HfApi;
+use huggingface_hub::HFClient;
 
 use crate::output::CommandResult;
 
@@ -41,7 +41,7 @@ pub enum JobsCommand {
     Scheduled(scheduled::Args),
 }
 
-pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     match args.command {
         JobsCommand::Run(a) => run::execute(api, a).await,
         JobsCommand::Ps(a) => ps::execute(api, a).await,

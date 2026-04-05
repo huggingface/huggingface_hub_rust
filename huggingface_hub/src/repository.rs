@@ -6,7 +6,7 @@ use typed_builder::TypedBuilder;
 
 use crate::client::HFClient;
 use crate::constants;
-use crate::error::{HfError, Result};
+use crate::error::{HFError, Result};
 use crate::types::{AddSource, CommitOperation, RepoInfo, RepoType};
 
 /// A handle for a single repository on the Hugging Face Hub.
@@ -38,10 +38,6 @@ pub struct HFRepository {
 
 /// Alias for [`HFRepository`].
 pub type HFRepo = HFRepository;
-/// Alias for [`HFRepository`].
-pub type HfRepository = HFRepository;
-/// Alias for [`HFRepository`].
-pub type HfRepo = HFRepo;
 
 /// A handle for a Space repository, providing Space-specific operations on top of [`HFRepository`].
 ///
@@ -66,9 +62,6 @@ pub type HfRepo = HFRepo;
 pub struct HFSpace {
     repo: HFRepository,
 }
-
-/// Alias for [`HFSpace`].
-pub type HfSpace = HFSpace;
 
 impl fmt::Debug for HFRepository {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -316,96 +309,6 @@ pub struct RepoUpdateSettingsParams {
     pub description: Option<String>,
 }
 
-#[cfg(feature = "discussions")]
-#[derive(Default, TypedBuilder)]
-pub struct RepoListDiscussionsParams {
-    #[builder(default, setter(into, strip_option))]
-    pub author: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub discussion_type: Option<String>,
-    #[builder(default, setter(into, strip_option))]
-    pub discussion_status: Option<String>,
-}
-
-#[cfg(feature = "discussions")]
-#[derive(TypedBuilder)]
-pub struct RepoDiscussionDetailsParams {
-    pub discussion_num: u64,
-}
-
-#[cfg(feature = "discussions")]
-#[derive(TypedBuilder)]
-pub struct RepoCreateDiscussionParams {
-    #[builder(setter(into))]
-    pub title: String,
-    #[builder(default, setter(into, strip_option))]
-    pub description: Option<String>,
-}
-
-#[cfg(feature = "discussions")]
-#[derive(TypedBuilder)]
-pub struct RepoCreatePullRequestParams {
-    #[builder(setter(into))]
-    pub title: String,
-    #[builder(default, setter(into, strip_option))]
-    pub description: Option<String>,
-}
-
-#[cfg(feature = "discussions")]
-#[derive(TypedBuilder)]
-pub struct RepoCommentDiscussionParams {
-    pub discussion_num: u64,
-    #[builder(setter(into))]
-    pub comment: String,
-}
-
-#[cfg(feature = "discussions")]
-#[derive(TypedBuilder)]
-pub struct RepoEditDiscussionCommentParams {
-    pub discussion_num: u64,
-    #[builder(setter(into))]
-    pub comment_id: String,
-    #[builder(setter(into))]
-    pub new_content: String,
-}
-
-#[cfg(feature = "discussions")]
-#[derive(TypedBuilder)]
-pub struct RepoHideDiscussionCommentParams {
-    pub discussion_num: u64,
-    #[builder(setter(into))]
-    pub comment_id: String,
-}
-
-#[cfg(feature = "discussions")]
-#[derive(TypedBuilder)]
-pub struct RepoRenameDiscussionParams {
-    pub discussion_num: u64,
-    #[builder(setter(into))]
-    pub new_title: String,
-}
-
-#[cfg(feature = "discussions")]
-#[derive(TypedBuilder)]
-pub struct RepoChangeDiscussionStatusParams {
-    pub discussion_num: u64,
-    #[builder(setter(into))]
-    pub new_status: String,
-}
-
-#[cfg(feature = "discussions")]
-#[derive(TypedBuilder)]
-pub struct RepoMergePullRequestParams {
-    pub discussion_num: u64,
-}
-
-#[cfg(feature = "access_requests")]
-#[derive(TypedBuilder)]
-pub struct RepoAccessRequestUserParams {
-    #[builder(setter(into))]
-    pub user: String,
-}
-
 #[cfg(feature = "spaces")]
 #[derive(TypedBuilder)]
 pub struct SpaceHardwareRequestParams {
@@ -552,7 +455,7 @@ impl HFRepository {
             RepoType::Dataset => self.dataset_info(revision).await.map(RepoInfo::Dataset),
             RepoType::Space => self.space_info(revision).await.map(RepoInfo::Space),
             RepoType::Kernel => {
-                Err(HfError::Other("Repository info is not implemented yet for kernel repositories".to_string()))
+                Err(HFError::Other("Repository info is not implemented yet for kernel repositories".to_string()))
             },
         }
     }
@@ -597,11 +500,11 @@ impl HFSpace {
 }
 
 impl TryFrom<HFRepository> for HFSpace {
-    type Error = HfError;
+    type Error = HFError;
 
     fn try_from(repo: HFRepository) -> Result<Self> {
         if repo.repo_type() != RepoType::Space {
-            return Err(HfError::InvalidRepoType {
+            return Err(HFError::InvalidRepoType {
                 expected: RepoType::Space,
                 actual: repo.repo_type(),
             });
@@ -670,7 +573,7 @@ mod tests {
         let model_repo = HFRepository::new(client, RepoType::Model, "owner", "model");
         let error = HFSpace::try_from(model_repo).unwrap_err();
         match error {
-            crate::HfError::InvalidRepoType { expected, actual } => {
+            crate::HFError::InvalidRepoType { expected, actual } => {
                 assert_eq!(expected, RepoType::Space);
                 assert_eq!(actual, RepoType::Model);
             },

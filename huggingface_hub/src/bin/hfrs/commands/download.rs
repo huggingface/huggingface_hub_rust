@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{HfApi, RepoDownloadFileParams, RepoSnapshotDownloadParams};
+use huggingface_hub::{HFClient, RepoDownloadFileParams, RepoSnapshotDownloadParams};
 
 use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
@@ -49,7 +49,7 @@ pub struct Args {
     pub quiet: bool,
 }
 
-pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
     let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
 
@@ -87,9 +87,5 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
         repo.snapshot_download(&params).await?
     };
 
-    if args.quiet {
-        Ok(CommandResult::Silent)
-    } else {
-        Ok(CommandResult::Raw(path.display().to_string()))
-    }
+    Ok(CommandResult::Raw(path.display().to_string()))
 }

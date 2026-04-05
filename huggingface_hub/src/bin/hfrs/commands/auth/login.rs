@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::HfApi;
+use huggingface_hub::HFClient;
 
 use crate::output::CommandResult;
 use crate::util::token;
@@ -17,7 +17,7 @@ pub struct Args {
     pub token_name: String,
 }
 
-pub async fn execute(_api: &HfApi, args: Args) -> Result<CommandResult> {
+pub async fn execute(_client: &HFClient, args: Args) -> Result<CommandResult> {
     let value = match args.token_value {
         Some(v) => v,
         None => anyhow::bail!(

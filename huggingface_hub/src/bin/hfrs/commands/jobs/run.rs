@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{HfApi, RunJobParams};
+use huggingface_hub::{HFClient, RunJobParams};
 
 use crate::output::CommandResult;
 
@@ -49,7 +49,7 @@ pub struct Args {
     pub namespace: Option<String>,
 }
 
-pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     let env = if args.env.is_empty() {
         None
     } else {

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::HfApi;
+use huggingface_hub::HFClient;
 
 use crate::output::CommandResult;
 
@@ -9,9 +9,13 @@ use crate::output::CommandResult;
 pub struct Args {
     /// Scheduled job ID
     pub id: String,
+
+    /// Namespace (defaults to current user)
+    #[arg(long)]
+    pub namespace: Option<String>,
 }
 
-pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
-    api.resume_scheduled_job(&args.id).await?;
+pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
+    api.resume_scheduled_job(&args.id, args.namespace.as_deref()).await?;
     Ok(CommandResult::Silent)
 }

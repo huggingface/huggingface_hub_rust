@@ -1,9 +1,8 @@
 pub mod list;
-pub mod rm;
 
 use anyhow::Result;
 use clap::{Args as ClapArgs, Subcommand};
-use huggingface_hub::HfApi;
+use huggingface_hub::HFClient;
 
 use crate::output::CommandResult;
 
@@ -19,13 +18,10 @@ pub struct Args {
 pub enum CacheCommand {
     /// List cached repositories and files
     List(list::Args),
-    /// Delete cached revisions
-    Rm(rm::Args),
 }
 
-pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     match args.command {
         CacheCommand::List(a) => list::execute(api, a).await,
-        CacheCommand::Rm(a) => rm::execute(api, a).await,
     }
 }

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use futures::{Stream, StreamExt};
 
 use crate::client::HFClient;
-use crate::error::{HfError, Result};
+use crate::error::{HFError, Result};
 use crate::{repository as repo, types};
 
 fn build_runtime() -> Result<Arc<tokio::runtime::Runtime>> {
@@ -13,7 +13,7 @@ fn build_runtime() -> Result<Arc<tokio::runtime::Runtime>> {
         .enable_all()
         .build()
         .map(Arc::new)
-        .map_err(|e| HfError::Other(format!("Failed to create tokio runtime: {e}")))
+        .map_err(|e| HFError::Other(format!("Failed to create tokio runtime: {e}")))
 }
 
 fn collect_stream<T, S>(runtime: &tokio::runtime::Runtime, stream: S) -> Result<Vec<T>>
@@ -311,127 +311,6 @@ impl HFRepositorySync {
     pub fn update_settings(&self, params: &repo::RepoUpdateSettingsParams) -> Result<()> {
         self.runtime.block_on(self.inner.update_settings(params))
     }
-
-    #[cfg(feature = "discussions")]
-    pub fn list_discussions(&self, params: &repo::RepoListDiscussionsParams) -> Result<types::DiscussionsResponse> {
-        self.runtime.block_on(self.inner.list_discussions(params))
-    }
-
-    #[cfg(feature = "discussions")]
-    pub fn discussion_details(
-        &self,
-        params: &repo::RepoDiscussionDetailsParams,
-    ) -> Result<types::DiscussionWithDetails> {
-        self.runtime.block_on(self.inner.discussion_details(params))
-    }
-
-    #[cfg(feature = "discussions")]
-    pub fn create_discussion(&self, params: &repo::RepoCreateDiscussionParams) -> Result<types::DiscussionCreated> {
-        self.runtime.block_on(self.inner.create_discussion(params))
-    }
-
-    #[cfg(feature = "discussions")]
-    pub fn create_pull_request(&self, params: &repo::RepoCreatePullRequestParams) -> Result<types::DiscussionCreated> {
-        self.runtime.block_on(self.inner.create_pull_request(params))
-    }
-
-    #[cfg(feature = "discussions")]
-    pub fn comment_discussion(
-        &self,
-        params: &repo::RepoCommentDiscussionParams,
-    ) -> Result<types::DiscussionCommentResponse> {
-        self.runtime.block_on(self.inner.comment_discussion(params))
-    }
-
-    #[cfg(feature = "discussions")]
-    pub fn edit_discussion_comment(
-        &self,
-        params: &repo::RepoEditDiscussionCommentParams,
-    ) -> Result<types::DiscussionCommentResponse> {
-        self.runtime.block_on(self.inner.edit_discussion_comment(params))
-    }
-
-    #[cfg(feature = "discussions")]
-    pub fn hide_discussion_comment(
-        &self,
-        params: &repo::RepoHideDiscussionCommentParams,
-    ) -> Result<types::DiscussionCommentResponse> {
-        self.runtime.block_on(self.inner.hide_discussion_comment(params))
-    }
-
-    #[cfg(feature = "discussions")]
-    pub fn rename_discussion(
-        &self,
-        params: &repo::RepoRenameDiscussionParams,
-    ) -> Result<types::DiscussionTitleResponse> {
-        self.runtime.block_on(self.inner.rename_discussion(params))
-    }
-
-    #[cfg(feature = "discussions")]
-    pub fn change_discussion_status(
-        &self,
-        params: &repo::RepoChangeDiscussionStatusParams,
-    ) -> Result<types::DiscussionStatusResponse> {
-        self.runtime.block_on(self.inner.change_discussion_status(params))
-    }
-
-    #[cfg(feature = "discussions")]
-    pub fn merge_pull_request(
-        &self,
-        params: &repo::RepoMergePullRequestParams,
-    ) -> Result<types::DiscussionMergeResponse> {
-        self.runtime.block_on(self.inner.merge_pull_request(params))
-    }
-
-    #[cfg(feature = "access_requests")]
-    pub fn list_pending_access_requests(&self) -> Result<Vec<types::AccessRequest>> {
-        self.runtime.block_on(self.inner.list_pending_access_requests())
-    }
-
-    #[cfg(feature = "access_requests")]
-    pub fn list_accepted_access_requests(&self) -> Result<Vec<types::AccessRequest>> {
-        self.runtime.block_on(self.inner.list_accepted_access_requests())
-    }
-
-    #[cfg(feature = "access_requests")]
-    pub fn list_rejected_access_requests(&self) -> Result<Vec<types::AccessRequest>> {
-        self.runtime.block_on(self.inner.list_rejected_access_requests())
-    }
-
-    #[cfg(feature = "access_requests")]
-    pub fn accept_access_request(&self, params: &repo::RepoAccessRequestUserParams) -> Result<()> {
-        self.runtime.block_on(self.inner.accept_access_request(params))
-    }
-
-    #[cfg(feature = "access_requests")]
-    pub fn reject_access_request(&self, params: &repo::RepoAccessRequestUserParams) -> Result<()> {
-        self.runtime.block_on(self.inner.reject_access_request(params))
-    }
-
-    #[cfg(feature = "access_requests")]
-    pub fn cancel_access_request(&self, params: &repo::RepoAccessRequestUserParams) -> Result<()> {
-        self.runtime.block_on(self.inner.cancel_access_request(params))
-    }
-
-    #[cfg(feature = "access_requests")]
-    pub fn grant_access(&self, params: &repo::RepoAccessRequestUserParams) -> Result<()> {
-        self.runtime.block_on(self.inner.grant_access(params))
-    }
-
-    #[cfg(feature = "likes")]
-    pub fn like(&self) -> Result<()> {
-        self.runtime.block_on(self.inner.like())
-    }
-
-    #[cfg(feature = "likes")]
-    pub fn unlike(&self) -> Result<()> {
-        self.runtime.block_on(self.inner.unlike())
-    }
-
-    #[cfg(feature = "likes")]
-    pub fn list_likers(&self, limit: Option<usize>) -> Result<Vec<types::User>> {
-        collect_stream(self.runtime.as_ref(), self.inner.list_likers(limit)?)
-    }
 }
 
 impl HFSpaceSync {
@@ -531,7 +410,7 @@ impl Deref for HFSpaceSync {
 }
 
 impl TryFrom<HFRepositorySync> for HFSpaceSync {
-    type Error = HfError;
+    type Error = HFError;
 
     fn try_from(repo: HFRepositorySync) -> Result<Self> {
         let space = repo::HFSpace::try_from(repo.inner.clone())?;
@@ -545,18 +424,8 @@ impl From<HFSpaceSync> for HFRepositorySync {
     }
 }
 
-/// Alias for [`HFClientSync`].
-pub type HFClientSync = HFClientSync;
-/// Alias for [`HFClientSync`].
-pub type HfClientSync = HFClientSync;
 /// Alias for [`HFRepositorySync`].
 pub type HFRepoSync = HFRepositorySync;
-/// Alias for [`HFRepositorySync`].
-pub type HfRepositorySync = HFRepositorySync;
-/// Alias for [`HFRepositorySync`].
-pub type HfRepoSync = HFRepoSync;
-/// Alias for [`HFSpaceSync`].
-pub type HfSpaceSync = HFSpaceSync;
 
 #[cfg(test)]
 mod tests {
@@ -597,7 +466,7 @@ mod tests {
         let model_repo = api.repo(types::RepoType::Model, "owner", "model");
         let error = HFSpaceSync::try_from(model_repo).unwrap_err();
         match error {
-            HfError::InvalidRepoType { expected, actual } => {
+            HFError::InvalidRepoType { expected, actual } => {
                 assert_eq!(expected, types::RepoType::Space);
                 assert_eq!(actual, types::RepoType::Model);
             },

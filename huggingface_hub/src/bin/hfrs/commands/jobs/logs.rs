@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::HfApi;
+use huggingface_hub::HFClient;
 
 use crate::output::CommandResult;
 
@@ -15,7 +15,7 @@ pub struct Args {
     pub namespace: Option<String>,
 }
 
-pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     let entries = api.fetch_job_logs(&args.job_id, args.namespace.as_deref()).await?;
     let output = entries
         .iter()

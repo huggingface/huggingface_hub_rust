@@ -2,7 +2,7 @@ use std::time::SystemTime;
 
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::HfApi;
+use huggingface_hub::HFClient;
 use serde_json::json;
 
 use crate::cli::OutputFormat;
@@ -39,7 +39,7 @@ pub struct Args {
     pub format: OutputFormat,
 }
 
-pub async fn execute(_api: &HfApi, args: Args) -> Result<CommandResult> {
+pub async fn execute(_client: &HFClient, args: Args) -> Result<CommandResult> {
     let cache_dir = huggingface_hub::resolve_cache_dir();
     let cache_info = huggingface_hub::cache::scan_cache_dir(&cache_dir).await?;
 

@@ -7,7 +7,7 @@ use reqwest_retry::RetryTransientMiddleware;
 use tracing::debug;
 
 use crate::constants;
-use crate::error::{HfError, Result};
+use crate::error::{HFError, Result};
 
 /// Async client for the Hugging Face Hub API.
 ///
@@ -24,10 +24,8 @@ use crate::error::{HfError, Result};
 ///
 /// // Or configure explicitly:
 /// let client = HFClient::builder().token("hf_…").endpoint("https://huggingface.co").build()?;
-/// # Ok::<(), huggingface_hub::HfError>(())
+/// # Ok::<(), huggingface_hub::HFError>(())
 /// ```
-///
-/// The type aliases [`HfApi`] and [`HfClient`] are provided for compatibility.
 pub struct HFClient {
     pub(crate) inner: Arc<HFClientInner>,
 }
@@ -153,7 +151,7 @@ impl HFClientBuilder {
         });
         default_headers.insert(
             USER_AGENT,
-            HeaderValue::from_str(&user_agent).map_err(|e| HfError::Other(format!("Invalid user agent: {e}")))?,
+            HeaderValue::from_str(&user_agent).map_err(|e| HFError::Other(format!("Invalid user agent: {e}")))?,
         );
 
         let raw_client = match self.client {
@@ -240,14 +238,14 @@ impl HFClient {
         format!("{}/{}{}/resolve/{}/{}", self.inner.endpoint, prefix, repo_id, revision, filename)
     }
 
-    /// Check an HTTP response and map error status codes to HfError variants.
+    /// Check an HTTP response and map error status codes to HFError variants.
     /// Returns the response on success (2xx).
     ///
     /// `repo_id` and `not_found_ctx` control how 404s are mapped:
-    /// - `NotFoundContext::Repo` → `HfError::RepoNotFound`
-    /// - `NotFoundContext::Entry { path }` → `HfError::EntryNotFound`
-    /// - `NotFoundContext::Revision { revision }` → `HfError::RevisionNotFound`
-    /// - `NotFoundContext::Generic` → `HfError::Http`
+    /// - `NotFoundContext::Repo` → `HFError::RepoNotFound`
+    /// - `NotFoundContext::Entry { path }` → `HFError::EntryNotFound`
+    /// - `NotFoundContext::Revision { revision }` → `HFError::RevisionNotFound`
+    /// - `NotFoundContext::Generic` → `HFError::Http`
     pub(crate) async fn check_response(
         &self,
         response: reqwest::Response,
@@ -264,32 +262,23 @@ impl HFClient {
         let repo_id_str = repo_id.unwrap_or("").to_string();
 
         match status.as_u16() {
-            401 => Err(HfError::AuthRequired),
+            401 => Err(HFError::AuthRequired),
             404 => match not_found_ctx {
-                crate::error::NotFoundContext::Repo => Err(HfError::RepoNotFound { repo_id: repo_id_str }),
-                crate::error::NotFoundContext::Entry { path } => Err(HfError::EntryNotFound {
+                crate::error::NotFoundContext::Repo => Err(HFError::RepoNotFound { repo_id: repo_id_str }),
+                crate::error::NotFoundContext::Entry { path } => Err(HFError::EntryNotFound {
                     path,
                     repo_id: repo_id_str,
                 }),
-                crate::error::NotFoundContext::Revision { revision } => Err(HfError::RevisionNotFound {
+                crate::error::NotFoundContext::Revision { revision } => Err(HFError::RevisionNotFound {
                     revision,
                     repo_id: repo_id_str,
                 }),
-                crate::error::NotFoundContext::Generic => Err(HfError::Http { status, url, body }),
+                crate::error::NotFoundContext::Generic => Err(HFError::Http { status, url, body }),
             },
-            _ => Err(HfError::Http { status, url, body }),
+            _ => Err(HFError::Http { status, url, body }),
         }
     }
 }
-
-/// Compatibility alias for [`HFClient`].
-pub type HfApi = HFClient;
-/// Compatibility alias for [`HFClientBuilder`].
-pub type HfApiBuilder = HFClientBuilder;
-/// Compatibility alias for [`HFClient`].
-pub type HfClient = HFClient;
-/// Compatibility alias for [`HFClientBuilder`].
-pub type HfClientBuilder = HFClientBuilder;
 
 /// Resolve token from environment or token file.
 /// Priority: HF_TOKEN env → HF_TOKEN_PATH file → $HF_HOME/token file.

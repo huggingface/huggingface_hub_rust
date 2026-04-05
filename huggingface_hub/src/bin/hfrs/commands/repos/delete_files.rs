@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{CommitOperation, HfApi, RepoCreateCommitParams};
+use huggingface_hub::{CommitOperation, HFClient, RepoCreateCommitParams};
 
 use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
@@ -36,7 +36,7 @@ pub struct Args {
     pub create_pr: bool,
 }
 
-pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
     let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
     let operations = args

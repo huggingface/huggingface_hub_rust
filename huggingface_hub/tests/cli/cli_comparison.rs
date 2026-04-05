@@ -58,24 +58,7 @@ fn help_shows_all_commands() {
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
     for cmd in &[
-        "auth",
-        "cache",
-        "collections",
-        "datasets",
-        "discussions",
-        "download",
-        "endpoints",
-        "jobs",
-        "likes",
-        "models",
-        "papers",
-        "repos",
-        "spaces",
-        "upload",
-        "webhooks",
-        "access-requests",
-        "env",
-        "version",
+        "auth", "cache", "datasets", "download", "jobs", "models", "repos", "spaces", "upload", "env", "version",
     ] {
         assert!(stdout.contains(cmd), "help output should contain command '{cmd}'");
     }
@@ -103,21 +86,6 @@ fn repos_help_shows_subcommands() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     for cmd in &["create", "delete", "move", "settings", "delete-files", "branch", "tag"] {
         assert!(stdout.contains(cmd), "repos help should contain subcommand '{cmd}'");
-    }
-}
-
-#[test]
-fn discussions_help_shows_subcommands() {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_hfrs"))
-        .args(["discussions", "--help"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    for cmd in &[
-        "list", "info", "create", "comment", "merge", "close", "reopen", "rename", "diff",
-    ] {
-        assert!(stdout.contains(cmd), "discussions help should contain subcommand '{cmd}'");
     }
 }
 
@@ -268,53 +236,6 @@ fn auth_whoami_returns_valid_json() {
     assert!(out.get("username").is_some(), "whoami should have username field");
 }
 
-// --- Papers tests ---
-
-#[test]
-fn papers_list_returns_results() {
-    require_token();
-    let hfrs = CliRunner::hfrs();
-
-    let out = hfrs.run_json(&["papers", "list", "--limit", "3"]).unwrap();
-
-    assert!(out.is_array(), "papers list should return an array");
-    assert!(!out.as_array().unwrap().is_empty(), "papers list should return results");
-}
-
-#[test]
-fn papers_search_returns_results() {
-    require_token();
-    let hfrs = CliRunner::hfrs();
-
-    let out = hfrs.run_json(&["papers", "search", "transformer", "--limit", "3"]).unwrap();
-
-    assert!(out.is_array(), "papers search should return an array");
-}
-
-// --- Collections tests ---
-
-#[test]
-fn collections_list_returns_results() {
-    require_token();
-    let hfrs = CliRunner::hfrs();
-
-    let out = hfrs.run_json(&["collections", "list", "--limit", "3"]).unwrap();
-
-    assert!(out.is_array(), "collections list should return an array");
-}
-
-// --- Webhooks test ---
-
-#[test]
-fn webhooks_list_returns_array() {
-    require_token();
-    let hfrs = CliRunner::hfrs();
-
-    let out = hfrs.run_json(&["webhooks", "list"]).unwrap();
-
-    assert!(out.is_array(), "webhooks list should return an array");
-}
-
 // --- Table output tests ---
 
 #[test]
@@ -448,33 +369,6 @@ fn spaces_list_json_has_expected_fields() {
     }
 }
 
-// --- Papers tests ---
-
-#[test]
-fn papers_info_returns_valid_paper() {
-    require_token();
-    let hfrs = CliRunner::hfrs();
-
-    let out = hfrs.run_json(&["papers", "info", "1706.03762"]).unwrap();
-
-    assert!(out.is_object(), "papers info should return an object");
-    assert!(out.get("id").is_some(), "paper should have 'id' field");
-    assert!(out.get("title").is_some(), "paper should have 'title' field");
-    assert!(out.get("authors").is_some(), "paper should have 'authors' field");
-}
-
-#[test]
-fn papers_list_with_date_filter() {
-    require_token();
-    let hfrs = CliRunner::hfrs();
-
-    let out = hfrs
-        .run_json(&["papers", "list", "--date", "2024-01-15", "--limit", "3"])
-        .unwrap();
-
-    assert!(out.is_array(), "papers list should return an array");
-}
-
 // --- Auth tests ---
 
 #[test]
@@ -502,21 +396,6 @@ fn repos_tag_list_gpt2() {
     let out = hfrs.run_json(&["repos", "tag", "list", "gpt2"]).unwrap();
 
     assert!(out.is_array(), "repos tag list should return an array");
-}
-
-// --- Collections tests ---
-
-#[test]
-fn collections_list_with_owner() {
-    require_token();
-    let hfrs = CliRunner::hfrs();
-
-    let out = hfrs
-        .run_json(&["collections", "list", "--owner", "huggingface", "--limit", "3"])
-        .unwrap();
-
-    assert!(out.is_array(), "collections list should return an array");
-    assert!(!out.as_array().unwrap().is_empty(), "collections list with owner should return results");
 }
 
 // --- Comparison tests ---
@@ -589,22 +468,6 @@ fn spaces_list_quiet_output() {
     assert_eq!(lines.len(), 3, "quiet mode should output 3 IDs");
     for line in &lines {
         assert!(!line.contains(' '), "quiet mode lines should be plain IDs, got: '{line}'");
-    }
-}
-
-#[test]
-fn papers_search_quiet_output() {
-    require_token();
-    let hfrs = CliRunner::hfrs();
-
-    let out = hfrs
-        .run_raw(&["papers", "search", "transformer", "--limit", "3", "--quiet"])
-        .unwrap();
-
-    let lines: Vec<&str> = out.trim().lines().collect();
-    assert!(!lines.is_empty(), "quiet papers search should output IDs");
-    for line in &lines {
-        assert!(!line.is_empty(), "quiet mode lines should not be empty");
     }
 }
 
@@ -806,65 +669,6 @@ fn write_tag_create_and_delete() {
 
     assert!(delete_tag_result.is_ok(), "tag deletion should succeed: {:?}", delete_tag_result.err());
     assert!(delete_repo_result.is_ok(), "repo deletion should succeed: {:?}", delete_repo_result.err());
-}
-
-#[test]
-fn write_discussion_create_and_close() {
-    require_token();
-    require_write();
-    let hfrs = CliRunner::hfrs();
-
-    let repo_name = format!(
-        "hfrs-test-disc-{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis()
-    );
-    let full_repo = full_repo(&repo_name);
-
-    hfrs.run_raw(&["repos", "create", &repo_name, "--type", "model"])
-        .expect("repo creation should succeed");
-
-    // Upload a README so the repo has an initial commit (required for discussions)
-    let tmp_dir = std::env::temp_dir().join(format!("hfrs-disc-test-{}", std::process::id()));
-    std::fs::create_dir_all(&tmp_dir).unwrap();
-    let readme_path = tmp_dir.join("README.md");
-    std::fs::write(&readme_path, "# Test repo\n").unwrap();
-    hfrs.run_raw(&["upload", &full_repo, readme_path.to_str().unwrap(), "README.md"])
-        .expect("README upload should succeed");
-    let _ = std::fs::remove_dir_all(&tmp_dir);
-
-    // Retry discussion creation — Hub may need time to index the repo
-    let mut disc_result = None;
-    for attempt in 0..3 {
-        if attempt > 0 {
-            std::thread::sleep(std::time::Duration::from_secs(2));
-        }
-        let result = hfrs.run_raw(&["discussions", "create", &full_repo, "--title", "Test Discussion"]);
-        if result.is_ok() {
-            disc_result = Some(result.unwrap());
-            break;
-        }
-        if attempt == 2 {
-            // Cleanup and fail
-            let _ = hfrs.run_raw(&["repos", "delete", &full_repo]);
-            panic!("discussion creation failed after 3 attempts: {:?}", result.err());
-        }
-    }
-
-    let disc_num = disc_result.unwrap().trim().to_string();
-
-    let close_result = hfrs.run_raw(&["discussions", "close", &full_repo, &disc_num]);
-    assert!(close_result.is_ok(), "discussion close should succeed: {:?}", close_result.err());
-
-    let info_result = hfrs.run_json(&["discussions", "info", &full_repo, &disc_num]);
-    let info_obj = info_result.expect("discussion info should succeed after close");
-    let status = info_obj.get("status").and_then(|s| s.as_str()).unwrap_or("");
-    assert_eq!(status, "closed", "discussion should be closed, got: '{status}'");
-
-    let delete_result = hfrs.run_raw(&["repos", "delete", &full_repo]);
-    assert!(delete_result.is_ok(), "repo deletion should succeed: {:?}", delete_result.err());
 }
 
 fn unique_repo_name(prefix: &str) -> String {
@@ -1556,7 +1360,7 @@ fn download_dataset_type() {
 
     let result = hfrs.run_raw(&[
         "download",
-        "squad",
+        "xet-team/xet-spec-reference-files",
         "README.md",
         "--type",
         "dataset",

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{HfApi, MoveRepoParams};
+use huggingface_hub::{HFClient, MoveRepoParams};
 
 use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
@@ -19,7 +19,7 @@ pub struct Args {
     pub r#type: RepoTypeArg,
 }
 
-pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
     let params = MoveRepoParams {
         from_id: args.from_id,

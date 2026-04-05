@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Args as ClapArgs, Subcommand};
-use huggingface_hub::{HfApi, RepoCreateBranchParams, RepoDeleteBranchParams};
+use huggingface_hub::{HFClient, RepoCreateBranchParams, RepoDeleteBranchParams};
 
 use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
@@ -53,14 +53,14 @@ pub struct BranchDeleteArgs {
     pub r#type: RepoTypeArg,
 }
 
-pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     match args.command {
         BranchCommand::Create(a) => create(api, a).await,
         BranchCommand::Delete(a) => delete(api, a).await,
     }
 }
 
-async fn create(api: &HfApi, args: BranchCreateArgs) -> Result<CommandResult> {
+async fn create(api: &HFClient, args: BranchCreateArgs) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
     let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
     let params = RepoCreateBranchParams {
@@ -71,7 +71,7 @@ async fn create(api: &HfApi, args: BranchCreateArgs) -> Result<CommandResult> {
     Ok(CommandResult::Raw("Branch created.".to_string()))
 }
 
-async fn delete(api: &HfApi, args: BranchDeleteArgs) -> Result<CommandResult> {
+async fn delete(api: &HFClient, args: BranchDeleteArgs) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
     let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
     let params = RepoDeleteBranchParams { branch: args.branch };

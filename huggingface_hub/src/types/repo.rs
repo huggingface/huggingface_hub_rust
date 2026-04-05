@@ -24,15 +24,15 @@ impl fmt::Display for RepoType {
 }
 
 impl FromStr for RepoType {
-    type Err = crate::error::HfError;
+    type Err = crate::error::HFError;
 
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "model" => Ok(RepoType::Model),
             "dataset" => Ok(RepoType::Dataset),
             "space" => Ok(RepoType::Space),
             "kernel" => Ok(RepoType::Kernel),
-            _ => Err(crate::error::HfError::Other(format!("Unknown repo type: {s}"))),
+            _ => Err(crate::error::HFError::Other(format!("Unknown repo type: {s}"))),
         }
     }
 }
@@ -164,8 +164,6 @@ pub enum RepoInfo {
     Dataset(DatasetInfo),
     Space(SpaceInfo),
 }
-
-pub type HfRepoInfo = RepoInfo;
 
 impl RepoInfo {
     pub fn repo_type(&self) -> RepoType {

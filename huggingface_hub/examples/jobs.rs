@@ -52,13 +52,13 @@ async fn main() -> huggingface_hub::Result<()> {
     let sched_id = &scheduled.id;
     println!("\nCreated scheduled job: {sched_id}");
 
-    let all_scheduled = api.list_scheduled_jobs().await?;
+    let all_scheduled = api.list_scheduled_jobs(None).await?;
     println!("Scheduled jobs: {}", all_scheduled.len());
 
-    let inspected_sched = api.inspect_scheduled_job(sched_id).await?;
+    let inspected_sched = api.inspect_scheduled_job(sched_id, None).await?;
     println!("Scheduled job: {:?}", inspected_sched);
 
-    api.delete_scheduled_job(sched_id).await?;
+    api.delete_scheduled_job(sched_id, None).await?;
     println!("Deleted scheduled job");
 
     Ok(())

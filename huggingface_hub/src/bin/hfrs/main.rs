@@ -8,7 +8,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use cli::{Cli, Command};
-use huggingface_hub::{HfApiBuilder, HfError};
+use huggingface_hub::{HFClientBuilder, HFError};
 use output::render;
 use owo_colors::OwoColorize;
 use tracing::{debug, info};
@@ -21,7 +21,7 @@ async fn main() -> ExitCode {
     let color = should_use_color(cli.no_color);
     init_logging(color);
 
-    let mut builder = HfApiBuilder::new();
+    let mut builder = HFClientBuilder::new();
     if let Some(t) = cli.token {
         debug!("using token from --token flag");
         builder = builder.token(t);
@@ -37,7 +37,7 @@ async fn main() -> ExitCode {
     }
     let api = match builder.build() {
         Ok(api) => {
-            info!("HfApi client initialized");
+            info!("HFClient client initialized");
             api
         },
         Err(e) => {
@@ -49,20 +49,13 @@ async fn main() -> ExitCode {
     let result = match cli.command {
         Command::Auth(args) => commands::auth::execute(&api, args).await,
         Command::Cache(args) => commands::cache::execute(&api, args).await,
-        Command::Collections(args) => commands::collections::execute(&api, args).await,
         Command::Datasets(args) => commands::datasets::execute(&api, args).await,
-        Command::Discussions(args) => commands::discussions::execute(&api, args).await,
         Command::Download(args) => commands::download::execute(&api, args).await,
-        Command::Endpoints(args) => commands::endpoints::execute(&api, args).await,
         Command::Jobs(args) => commands::jobs::execute(&api, args).await,
-        Command::Likes(args) => commands::likes::execute(&api, args).await,
         Command::Models(args) => commands::models::execute(&api, args).await,
-        Command::Papers(args) => commands::papers::execute(&api, args).await,
         Command::Repos(args) => commands::repos::execute(&api, args).await,
         Command::Spaces(args) => commands::spaces::execute(&api, args).await,
         Command::Upload(args) => commands::upload::execute(&api, args).await,
-        Command::Webhooks(args) => commands::webhooks::execute(&api, args).await,
-        Command::AccessRequests(args) => commands::access_requests::execute(&api, args).await,
         Command::Env(args) => commands::env::execute(args).await,
         Command::Version(args) => commands::version::execute(args).await,
     };
@@ -95,7 +88,7 @@ fn should_use_color(no_color_flag: bool) -> bool {
     std::io::stderr().is_terminal()
 }
 
-fn print_hf_error(err: &HfError, color: bool) {
+fn print_hf_error(err: &HFError, color: bool) {
     let message = format_hf_error(err);
     if color {
         eprintln!("{} {message}", "Error:".red().bold());
@@ -129,12 +122,12 @@ fn print_anyhow_error(err: &anyhow::Error, color: bool) {
 }
 
 fn format_anyhow_error(err: &anyhow::Error) -> String {
-    if let Some(hf_err) = err.downcast_ref::<HfError>() {
+    if let Some(hf_err) = err.downcast_ref::<HFError>() {
         return format_hf_error(hf_err);
     }
 
     for cause in err.chain() {
-        if let Some(hf_err) = cause.downcast_ref::<HfError>() {
+        if let Some(hf_err) = cause.downcast_ref::<HFError>() {
             return format_hf_error(hf_err);
         }
     }
@@ -142,21 +135,21 @@ fn format_anyhow_error(err: &anyhow::Error) -> String {
     err.to_string()
 }
 
-fn format_hf_error(err: &HfError) -> String {
+fn format_hf_error(err: &HFError) -> String {
     match err {
-        HfError::RepoNotFound { repo_id } => {
+        HFError::RepoNotFound { repo_id } => {
             format!("Repository '{repo_id}' not found. If the repo is private, make sure you are authenticated.")
         },
-        HfError::EntryNotFound { path, repo_id } => {
+        HFError::EntryNotFound { path, repo_id } => {
             format!("File '{path}' not found in repository '{repo_id}'.")
         },
-        HfError::RevisionNotFound { repo_id, revision } => {
+        HFError::RevisionNotFound { repo_id, revision } => {
             format!("Revision '{revision}' not found in repository '{repo_id}'.")
         },
-        HfError::AuthRequired => {
+        HFError::AuthRequired => {
             "Not authenticated. Run `hfrs auth login` or set the HF_TOKEN environment variable.".to_string()
         },
-        HfError::Http { status, url, body } => {
+        HFError::Http { status, url, body } => {
             let status_code = status.as_u16();
             match status_code {
                 401 => {
@@ -199,19 +192,19 @@ fn format_hf_error(err: &HfError) -> String {
                 },
             }
         },
-        HfError::XetNotEnabled => {
+        HFError::XetNotEnabled => {
             "Xet transfer protocol required but not enabled. Rebuild with the 'xet' feature.".to_string()
         },
-        HfError::LocalEntryNotFound { path } => {
+        HFError::LocalEntryNotFound { path } => {
             format!("File not found in local cache: {path}. Try downloading it first.")
         },
-        HfError::CacheNotEnabled => {
+        HFError::CacheNotEnabled => {
             "Cache is not enabled. Use --local-dir to specify a download directory.".to_string()
         },
-        HfError::CacheLockTimeout { path } => {
+        HFError::CacheLockTimeout { path } => {
             format!("Cache lock timed out: {}. Another process may be using this file.", path.display())
         },
-        HfError::Request(e) => {
+        HFError::Request(e) => {
             if e.is_connect() {
                 "Connection failed. Check your internet connection.".to_string()
             } else if e.is_timeout() {
@@ -220,7 +213,7 @@ fn format_hf_error(err: &HfError) -> String {
                 format!("Network error: {e}")
             }
         },
-        HfError::Middleware(e) => {
+        HFError::Middleware(e) => {
             let msg = format!("{e:#}");
             if msg.contains("Connect") {
                 "Connection failed. Check your internet connection.".to_string()
@@ -230,20 +223,20 @@ fn format_hf_error(err: &HfError) -> String {
                 format!("Network error: {e}")
             }
         },
-        HfError::Io(e) => {
+        HFError::Io(e) => {
             format!("I/O error: {e}")
         },
-        HfError::Json(e) => {
+        HFError::Json(e) => {
             format!("Failed to parse response: {e}")
         },
-        HfError::Url(e) => {
+        HFError::Url(e) => {
             format!("Invalid URL: {e}")
         },
-        HfError::InvalidRepoType { expected, actual } => {
+        HFError::InvalidRepoType { expected, actual } => {
             format!("Invalid repository type: expected {expected:?}, got {actual:?}")
         },
-        HfError::InvalidParameter(msg) => msg.clone(),
-        HfError::Other(msg) => msg.clone(),
+        HFError::InvalidParameter(msg) => msg.clone(),
+        HFError::Other(msg) => msg.clone(),
     }
 }
 

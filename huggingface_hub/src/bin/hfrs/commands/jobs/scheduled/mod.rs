@@ -7,7 +7,7 @@ pub mod suspend;
 
 use anyhow::Result;
 use clap::{Args as ClapArgs, Subcommand};
-use huggingface_hub::HfApi;
+use huggingface_hub::HFClient;
 
 use crate::output::CommandResult;
 
@@ -35,7 +35,7 @@ pub enum ScheduledCommand {
     Resume(resume::Args),
 }
 
-pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     match args.command {
         ScheduledCommand::Run(a) => run::execute(api, a).await,
         ScheduledCommand::Ps(a) => ps::execute(api, a).await,

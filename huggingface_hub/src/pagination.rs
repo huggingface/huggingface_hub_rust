@@ -7,7 +7,7 @@ use serde::de::DeserializeOwned;
 use url::Url;
 
 use crate::client::HFClient;
-use crate::error::{HfError, Result};
+use crate::error::{HFError, Result};
 
 struct PaginationState {
     buffer: VecDeque<serde_json::Value>,
@@ -76,7 +76,7 @@ impl HFClient {
                     let status = response.status();
                     let resp_url = response.url().to_string();
                     let body = response.text().await.unwrap_or_default();
-                    return Err(HfError::Http {
+                    return Err(HFError::Http {
                         status,
                         url: resp_url,
                         body,

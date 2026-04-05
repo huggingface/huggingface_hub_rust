@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Args as ClapArgs, Subcommand};
-use huggingface_hub::{HfApi, RepoCreateTagParams, RepoDeleteTagParams, RepoListRefsParams};
+use huggingface_hub::{HFClient, RepoCreateTagParams, RepoDeleteTagParams, RepoListRefsParams};
 use serde_json::json;
 
 use crate::cli::{OutputFormat, RepoTypeArg};
@@ -75,7 +75,7 @@ pub struct TagListArgs {
     pub format: OutputFormat,
 }
 
-pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     match args.command {
         TagCommand::Create(a) => create(api, a).await,
         TagCommand::Delete(a) => delete(api, a).await,
@@ -83,7 +83,7 @@ pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
     }
 }
 
-async fn create(api: &HfApi, args: TagCreateArgs) -> Result<CommandResult> {
+async fn create(api: &HFClient, args: TagCreateArgs) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
     let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
     let params = RepoCreateTagParams {
@@ -95,7 +95,7 @@ async fn create(api: &HfApi, args: TagCreateArgs) -> Result<CommandResult> {
     Ok(CommandResult::Raw("Tag created.".to_string()))
 }
 
-async fn delete(api: &HfApi, args: TagDeleteArgs) -> Result<CommandResult> {
+async fn delete(api: &HFClient, args: TagDeleteArgs) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
     let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
     let params = RepoDeleteTagParams { tag: args.tag };
@@ -103,7 +103,7 @@ async fn delete(api: &HfApi, args: TagDeleteArgs) -> Result<CommandResult> {
     Ok(CommandResult::Silent)
 }
 
-async fn list(api: &HfApi, args: TagListArgs) -> Result<CommandResult> {
+async fn list(api: &HFClient, args: TagListArgs) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
     let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
     let params = RepoListRefsParams {

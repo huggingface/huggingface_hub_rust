@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::HfApi;
+use huggingface_hub::HFClient;
 use serde_json::json;
 
 use crate::cli::OutputFormat;
@@ -14,7 +14,7 @@ pub struct Args {
     pub format: OutputFormat,
 }
 
-pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     let user = api.whoami().await?;
     let json_value = json!({
         "username": user.username,

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{HfApi, RepoInfo, RepoInfoParams};
+use huggingface_hub::{HFClient, RepoInfo, RepoInfoParams};
 use serde_json::json;
 
 use crate::cli::OutputFormat;
@@ -21,7 +21,7 @@ pub struct Args {
     pub format: OutputFormat,
 }
 
-pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     let (owner, name) = crate::util::split_repo_id(&args.dataset_id);
     let repo = api.dataset(owner, name);
     let info_params = RepoInfoParams {

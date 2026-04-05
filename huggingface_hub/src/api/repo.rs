@@ -3,7 +3,7 @@ use url::Url;
 
 use crate::client::HFClient;
 use crate::constants;
-use crate::error::{HfError, Result};
+use crate::error::{HFError, Result};
 use crate::repository::{HFRepository, RepoFileExistsParams, RepoRevisionExistsParams, RepoUpdateSettingsParams};
 use crate::types::{
     CreateRepoParams, DatasetInfo, DeleteRepoParams, ListDatasetsParams, ListModelsParams, ListSpacesParams, ModelInfo,
@@ -97,11 +97,11 @@ impl HFRepository {
         match response.status().as_u16() {
             200..=299 => Ok(true),
             404 => Ok(false),
-            401 => Err(HfError::AuthRequired),
+            401 => Err(HFError::AuthRequired),
             status => {
                 let url = response.url().to_string();
                 let body = response.text().await.unwrap_or_default();
-                Err(HfError::Http {
+                Err(HFError::Http {
                     status: reqwest::StatusCode::from_u16(status).unwrap(),
                     url,
                     body,
@@ -125,11 +125,11 @@ impl HFRepository {
         match response.status().as_u16() {
             200..=299 => Ok(true),
             404 => Ok(false),
-            401 => Err(HfError::AuthRequired),
+            401 => Err(HFError::AuthRequired),
             status => {
                 let url_str = response.url().to_string();
                 let body = response.text().await.unwrap_or_default();
-                Err(HfError::Http {
+                Err(HFError::Http {
                     status: reqwest::StatusCode::from_u16(status).unwrap(),
                     url: url_str,
                     body,
@@ -161,17 +161,17 @@ impl HFRepository {
                 {
                     Ok(false)
                 } else {
-                    Err(HfError::RevisionNotFound {
+                    Err(HFError::RevisionNotFound {
                         repo_id: self.repo_path(),
                         revision: revision.to_string(),
                     })
                 }
             },
-            401 => Err(HfError::AuthRequired),
+            401 => Err(HFError::AuthRequired),
             status => {
                 let url_str = response.url().to_string();
                 let body = response.text().await.unwrap_or_default();
-                Err(HfError::Http {
+                Err(HFError::Http {
                     status: reqwest::StatusCode::from_u16(status).unwrap(),
                     url: url_str,
                     body,

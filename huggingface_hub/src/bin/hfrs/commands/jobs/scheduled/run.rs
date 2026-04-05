@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{CreateScheduledJobParams, HfApi};
+use huggingface_hub::{CreateScheduledJobParams, HFClient};
 
 use crate::output::CommandResult;
 
@@ -60,7 +60,7 @@ pub struct Args {
     pub concurrency: bool,
 }
 
-pub async fn execute(api: &HfApi, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     let env = if args.env.is_empty() {
         None
     } else {

@@ -6,7 +6,7 @@ description = "Rust client for the Hugging Face Hub API"
 license = "Apache-2.0"
 
 [package.metadata.docs.rs]
-features = ["blocking", "xet", "spaces", "inference_endpoints", "collections", "discussions", "webhooks", "jobs", "access_requests", "likes", "papers"]
+features = ["blocking", "xet", "spaces", "jobs"]
 
 [dependencies]
 bytes = "1"
@@ -42,26 +42,12 @@ default = []
 blocking = ["tokio/rt"]
 xet = ["dep:hf-xet", "dep:xet-client", "dep:async-trait", "dep:sha2"]
 spaces = []
-inference_endpoints = []
-collections = []
-discussions = []
-webhooks = []
 jobs = []
-access_requests = []
-likes = []
-papers = []
 cli = [
     "blocking",
     "xet",
     "spaces",
-    "inference_endpoints",
-    "collections",
-    "discussions",
-    "webhooks",
     "jobs",
-    "access_requests",
-    "likes",
-    "papers",
     "tokio/macros",
     "tokio/rt-multi-thread",
     "dep:clap",
@@ -117,44 +103,9 @@ path = "examples/spaces.rs"
 required-features = ["spaces"]
 
 [[example]]
-name = "inference_endpoints"
-path = "examples/inference_endpoints.rs"
-required-features = ["inference_endpoints"]
-
-[[example]]
-name = "collections"
-path = "examples/collections.rs"
-required-features = ["collections"]
-
-[[example]]
-name = "discussions"
-path = "examples/discussions.rs"
-required-features = ["discussions"]
-
-[[example]]
-name = "webhooks"
-path = "examples/webhooks.rs"
-required-features = ["webhooks"]
-
-[[example]]
 name = "jobs"
 path = "examples/jobs.rs"
 required-features = ["jobs"]
-
-[[example]]
-name = "access_requests"
-path = "examples/access_requests.rs"
-required-features = ["access_requests"]
-
-[[example]]
-name = "likes"
-path = "examples/likes.rs"
-required-features = ["likes"]
-
-[[example]]
-name = "papers"
-path = "examples/papers.rs"
-required-features = ["papers"]
 
 [[example]]
 name = "download_upload"
