@@ -1,11 +1,12 @@
 use futures::stream::{Stream, StreamExt};
+use futures::TryStreamExt;
 use url::Url;
 
+use crate::diff::HFFileDiff;
 use crate::error::Result;
 use crate::repository::{
     HFRepository, RepoCreateBranchParams, RepoCreateTagParams, RepoDeleteBranchParams, RepoDeleteTagParams,
-    RepoGetCommitDiffParams, RepoGetRawDiffParams, RepoGetRawDiffStreamParams, RepoListCommitsParams,
-    RepoListRefsParams,
+    RepoGetCommitDiffParams, RepoGetRawDiffParams, RepoListCommitsParams, RepoListRefsParams,
 };
 use crate::types::{GitCommitInfo, GitRefs};
 
@@ -76,7 +77,7 @@ impl HFRepository {
         Ok(response.text().await?)
     }
 
-    /// Fetch the raw diff between two revisions as a parsed stream of [`crate::diff::HFFileDiff`] entries.
+    /// Fetch the raw diff between two revisions as a parsed stream of [`HFFileDiff`] entries.
     ///
     /// Each item in the returned stream is one parsed diff entry. Parse errors
     /// are logged as warnings and yielded as `Err` items.
@@ -84,9 +85,8 @@ impl HFRepository {
     /// Endpoint: GET /api/{repo_type}s/{repo_id}/compare/{compare}?raw=true
     pub async fn get_raw_diff_stream(
         &self,
-        params: &RepoGetRawDiffStreamParams,
-    ) -> Result<impl Stream<Item = std::result::Result<crate::diff::HFFileDiff, crate::diff::HFDiffParseError>> + Unpin>
-    {
+        params: &RepoGetRawDiffParams,
+    ) -> Result<impl Stream<Item = Result<HFFileDiff>> + '_> {
         let url = format!("{}/compare/{}", self.api_url(Some(self.repo_type), &self.repo_path()), params.compare);
 
         let response = self
@@ -102,7 +102,7 @@ impl HFRepository {
             .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
             .await?;
         let byte_stream = response.bytes_stream().map(|r| r.map_err(std::io::Error::other));
-        Ok(crate::diff::stream_raw_diff(byte_stream))
+        Ok(crate::diff::stream_raw_diff(byte_stream).map_err(Into::into))
     }
 
     /// Create a new branch, optionally starting from a specific revision.

@@ -235,6 +235,9 @@ fn format_hf_error(err: &HFError) -> String {
             format!("Invalid repository type: expected {expected:?}, got {actual:?}")
         },
         HFError::InvalidParameter(msg) => msg.clone(),
+        HFError::DiffParse(e) => {
+            format!("Failed to parse diff: {e}")
+        },
         HFError::Other(msg) => msg.clone(),
     }
 }

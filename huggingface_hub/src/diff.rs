@@ -20,11 +20,6 @@ pub enum HFDiffParseError {
     Io(#[from] std::io::Error),
 }
 
-/// The hash of Git's empty tree. Using it as the "old" tree in a diff returns
-/// raw diff values for all files in the revision (file size, path, blob id,
-/// binary flag).
-pub const GIT_EMPTY_TREE_HASH: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
-
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct HFFileDiff {
     pub old_blob_id: String,
@@ -67,7 +62,7 @@ impl From<char> for GitStatus {
 /// Parse a single line of HF raw diff output into an `HFFileDiff`.
 ///
 /// Format reference: <https://git-scm.com/docs/diff-format#_raw_output_format>
-pub fn parse_hf_diff_line(line: &str) -> Result<HFFileDiff, HFDiffParseError> {
+fn parse_hf_diff_line(line: &str) -> Result<HFFileDiff, HFDiffParseError> {
     let original_line = line;
     let fmt_err = || HFDiffParseError::InvalidFormat {
         line: original_line.to_owned(),
@@ -147,19 +142,12 @@ pub fn parse_hf_diff_line(line: &str) -> Result<HFFileDiff, HFDiffParseError> {
     })
 }
 
-/// Parse a full raw HF diff string into a list of `HFFileDiff` entries.
-///
-/// Format reference: <https://git-scm.com/docs/diff-format#_raw_output_format>
-pub fn parse_raw_diff(raw_diff: &str) -> Result<Vec<HFFileDiff>, HFDiffParseError> {
-    raw_diff.lines().map(parse_hf_diff_line).collect()
-}
-
-/// Streaming version of [`parse_raw_diff`].
+/// Stream-parse raw HF diff output line by line.
 ///
 /// Takes a byte stream (e.g. from `HFRepository::get_raw_diff_stream`) and returns
 /// a stream of `HFFileDiff` items, parsing each line as it arrives without buffering
 /// the entire response.
-pub fn stream_raw_diff<S, E>(byte_stream: S) -> impl Stream<Item = Result<HFFileDiff, HFDiffParseError>> + Unpin
+pub(crate) fn stream_raw_diff<S, E>(byte_stream: S) -> impl Stream<Item = Result<HFFileDiff, HFDiffParseError>> + Unpin
 where
     S: Stream<Item = Result<Bytes, E>>,
     E: Into<std::io::Error>,
@@ -192,152 +180,69 @@ where
 mod tests {
     use futures::StreamExt;
 
-    use super::{parse_hf_diff_line, parse_raw_diff, stream_raw_diff, GitStatus, HFFileDiff};
+    use super::{parse_hf_diff_line, stream_raw_diff, GitStatus, HFFileDiff};
 
     #[test]
     fn modified_hf_diff() {
-        let file_diffs = parse_raw_diff(
-            r#"T 2305	:100644 100644 97e7432a448baa9e97ec5e4f03c57b09b8e116ed... 0000000000000000000000000000000000000000... M	apps/scan_orchestrator/src/dispatcher.rs
-T 4422	:100644 100644 c417bf5a3fbec60b22aeab13cfa4d9439155303b... 0000000000000000000000000000000000000000... M	apps/scan_orchestrator/src/git.rs
-T 4591	:100644 100644 3435c69bc88a70105d6b864e5e462fac490ec2ff... 0000000000000000000000000000000000000000... M	apps/shared/src/gitaly/mod.rs
-T 864	:100644 100644 cb1a9405e1ce054eca9aef81cdb782963a84a0b0... 0000000000000000000000000000000000000000... M	apps/shared/src/message_queue/rabbitmq.rs
-T 452	:100644 100644 f7b95e09e0573a829c338fe46e451b5609424a70... 0000000000000000000000000000000000000000... M	apps/shared/src/scanner/file.rs"#,
-        )
-        .unwrap();
         assert_eq!(
-            file_diffs,
-            vec![
-                HFFileDiff {
-                    old_blob_id: "97e7432a448baa9e97ec5e4f03c57b09b8e116ed".to_owned(),
-                    new_blob_id: "0000000000000000000000000000000000000000".to_owned(),
-                    status: GitStatus::Modification,
-                    file_path: "apps/scan_orchestrator/src/dispatcher.rs".to_owned(),
-                    new_file_path: None,
-                    is_binary: false,
-                    new_file_size: 2305,
-                },
-                HFFileDiff {
-                    old_blob_id: "c417bf5a3fbec60b22aeab13cfa4d9439155303b".to_owned(),
-                    new_blob_id: "0000000000000000000000000000000000000000".to_owned(),
-                    status: GitStatus::Modification,
-                    file_path: "apps/scan_orchestrator/src/git.rs".to_owned(),
-                    new_file_path: None,
-                    is_binary: false,
-                    new_file_size: 4422,
-                },
-                HFFileDiff {
-                    old_blob_id: "3435c69bc88a70105d6b864e5e462fac490ec2ff".to_owned(),
-                    new_blob_id: "0000000000000000000000000000000000000000".to_owned(),
-                    status: GitStatus::Modification,
-                    file_path: "apps/shared/src/gitaly/mod.rs".to_owned(),
-                    new_file_path: None,
-                    is_binary: false,
-                    new_file_size: 4591,
-                },
-                HFFileDiff {
-                    old_blob_id: "cb1a9405e1ce054eca9aef81cdb782963a84a0b0".to_owned(),
-                    new_blob_id: "0000000000000000000000000000000000000000".to_owned(),
-                    status: GitStatus::Modification,
-                    file_path: "apps/shared/src/message_queue/rabbitmq.rs".to_owned(),
-                    new_file_path: None,
-                    is_binary: false,
-                    new_file_size: 864,
-                },
-                HFFileDiff {
-                    old_blob_id: "f7b95e09e0573a829c338fe46e451b5609424a70".to_owned(),
-                    new_blob_id: "0000000000000000000000000000000000000000".to_owned(),
-                    status: GitStatus::Modification,
-                    file_path: "apps/shared/src/scanner/file.rs".to_owned(),
-                    new_file_path: None,
-                    is_binary: false,
-                    new_file_size: 452,
-                }
-            ]
-        )
+            parse_hf_diff_line("T 2305\t:100644 100644 97e7432a448baa9e97ec5e4f03c57b09b8e116ed... 0000000000000000000000000000000000000000... M\tapps/scan_orchestrator/src/dispatcher.rs").unwrap(),
+            HFFileDiff {
+                old_blob_id: "97e7432a448baa9e97ec5e4f03c57b09b8e116ed".to_owned(),
+                new_blob_id: "0000000000000000000000000000000000000000".to_owned(),
+                status: GitStatus::Modification,
+                file_path: "apps/scan_orchestrator/src/dispatcher.rs".to_owned(),
+                new_file_path: None,
+                is_binary: false,
+                new_file_size: 2305,
+            }
+        );
     }
 
     #[test]
-    fn rename_and_copy_hf_diff() {
-        let file_diffs = parse_raw_diff(
-            r#"B 421211	:100644 100644 97e7432a448baa9e97ec5e4f03c57b09b8e116ed... 0000000000000000000000000000000000000000... C68	apps/scan_orchestrator/src/dispatcher.rs apps/scan_orchestrator/src/blob
-T 1679	:100644 100644 f7b95e09e0573a829c338fe46e451b5609424a70... 0000000000000000000000000000000000000000... R	apps/shared/src/scanner/file.rs apps/shared/src/scanner/file3.rs"#,
-        )
-        .unwrap();
+    fn binary_copy_with_score() {
         assert_eq!(
-            file_diffs,
-            vec![
-                HFFileDiff {
-                    old_blob_id: "97e7432a448baa9e97ec5e4f03c57b09b8e116ed".to_owned(),
-                    new_blob_id: "0000000000000000000000000000000000000000".to_owned(),
-                    status: GitStatus::Copy,
-                    file_path: "apps/scan_orchestrator/src/dispatcher.rs".to_owned(),
-                    new_file_path: Some("apps/scan_orchestrator/src/blob".to_owned()),
-                    is_binary: true,
-                    new_file_size: 421211,
-                },
-                HFFileDiff {
-                    old_blob_id: "f7b95e09e0573a829c338fe46e451b5609424a70".to_owned(),
-                    new_blob_id: "0000000000000000000000000000000000000000".to_owned(),
-                    status: GitStatus::Rename,
-                    file_path: "apps/shared/src/scanner/file.rs".to_owned(),
-                    new_file_path: Some("apps/shared/src/scanner/file3.rs".to_owned()),
-                    is_binary: false,
-                    new_file_size: 1679,
-                }
-            ]
-        )
+            parse_hf_diff_line("B 421211\t:100644 100644 97e7432a448baa9e97ec5e4f03c57b09b8e116ed... 0000000000000000000000000000000000000000... C68\tapps/scan_orchestrator/src/dispatcher.rs apps/scan_orchestrator/src/blob").unwrap(),
+            HFFileDiff {
+                old_blob_id: "97e7432a448baa9e97ec5e4f03c57b09b8e116ed".to_owned(),
+                new_blob_id: "0000000000000000000000000000000000000000".to_owned(),
+                status: GitStatus::Copy,
+                file_path: "apps/scan_orchestrator/src/dispatcher.rs".to_owned(),
+                new_file_path: Some("apps/scan_orchestrator/src/blob".to_owned()),
+                is_binary: true,
+                new_file_size: 421211,
+            }
+        );
     }
 
     #[test]
-    fn special_chars() {
-        let file_diffs = parse_raw_diff(
-            r#"T 37861440	:000000 100644 0000000000000000000000000000000000000000... 30a03d21620ebc6167e350aef9e2ac2774cf372d... A	AI_popai/エイミ Eimi-ブルーアーカイブ Blue Archive (230270)/259889/eimi_(blue_archive).safetensors
-T 228455604	:000000 100644 0000000000000000000000000000000000000000... 77367f06242f620081e0103c599818bfde8d4c75... D	Faeia/💀SDXL Antler Pagan💀 (236040)/266140/SDXLAntlerPagan.safetensors
-T 228455084	:000000 100644 0000000000000000000000000000000000000000... c6c5a5a38c3c6eb2049e9727ad4ba8d1f252ef7c... D	Faeia/😡SDXL Rage Style😡 (234815)/264786/SDXLRageStyle.safetensors
-T 228455220	:000000 100644 0000000000000000000000000000000000000000... fccf5af199707c0b50cd321fc17b1de38071290a... A	Faeia/🥩SDXL Elf Meat - A Reindeer Delicacy🥩 (231879)/261722/SDXLElfMeat.safetensors"#,
-        )
-        .unwrap();
+    fn rename_without_score() {
         assert_eq!(
-            file_diffs,
-            vec![
-                HFFileDiff {
-                    old_blob_id: "0000000000000000000000000000000000000000".to_owned(),
-                    new_blob_id: "30a03d21620ebc6167e350aef9e2ac2774cf372d".to_owned(),
-                    status: GitStatus::Addition,
-                    file_path: "AI_popai/エイミ Eimi-ブルーアーカイブ Blue Archive (230270)/259889/eimi_(blue_archive).safetensors".to_owned(),
-                    new_file_path: None,
-                    is_binary: false,
-                    new_file_size: 37861440,
-                },
-                HFFileDiff {
-                    old_blob_id: "0000000000000000000000000000000000000000".to_owned(),
-                    new_blob_id: "77367f06242f620081e0103c599818bfde8d4c75".to_owned(),
-                    status: GitStatus::Deletion,
-                    file_path: "Faeia/💀SDXL Antler Pagan💀 (236040)/266140/SDXLAntlerPagan.safetensors".to_owned(),
-                    new_file_path: None,
-                    is_binary: false,
-                    new_file_size: 228455604,
-                },
-                HFFileDiff {
-                    old_blob_id: "0000000000000000000000000000000000000000".to_owned(),
-                    new_blob_id: "c6c5a5a38c3c6eb2049e9727ad4ba8d1f252ef7c".to_owned(),
-                    status: GitStatus::Deletion,
-                    file_path: "Faeia/😡SDXL Rage Style😡 (234815)/264786/SDXLRageStyle.safetensors".to_owned(),
-                    new_file_path: None,
-                    is_binary: false,
-                    new_file_size: 228455084,
-                },
-                HFFileDiff {
-                    old_blob_id: "0000000000000000000000000000000000000000".to_owned(),
-                    new_blob_id: "fccf5af199707c0b50cd321fc17b1de38071290a".to_owned(),
-                    status: GitStatus::Addition,
-                    file_path: "Faeia/🥩SDXL Elf Meat - A Reindeer Delicacy🥩 (231879)/261722/SDXLElfMeat.safetensors".to_owned(),
-                    new_file_path: None,
-                    is_binary: false,
-                    new_file_size: 228455220,
-                }
-            ]
-        )
+            parse_hf_diff_line("T 1679\t:100644 100644 f7b95e09e0573a829c338fe46e451b5609424a70... 0000000000000000000000000000000000000000... R\tapps/shared/src/scanner/file.rs apps/shared/src/scanner/file3.rs").unwrap(),
+            HFFileDiff {
+                old_blob_id: "f7b95e09e0573a829c338fe46e451b5609424a70".to_owned(),
+                new_blob_id: "0000000000000000000000000000000000000000".to_owned(),
+                status: GitStatus::Rename,
+                file_path: "apps/shared/src/scanner/file.rs".to_owned(),
+                new_file_path: Some("apps/shared/src/scanner/file3.rs".to_owned()),
+                is_binary: false,
+                new_file_size: 1679,
+            }
+        );
+    }
+
+    #[test]
+    fn unicode_and_emoji_paths() {
+        let d = parse_hf_diff_line("T 37861440\t:000000 100644 0000000000000000000000000000000000000000... 30a03d21620ebc6167e350aef9e2ac2774cf372d... A\tAI_popai/エイミ Eimi-ブルーアーカイブ Blue Archive (230270)/259889/eimi_(blue_archive).safetensors").unwrap();
+        assert_eq!(d.status, GitStatus::Addition);
+        assert_eq!(
+            d.file_path,
+            "AI_popai/エイミ Eimi-ブルーアーカイブ Blue Archive (230270)/259889/eimi_(blue_archive).safetensors"
+        );
+        assert_eq!(d.new_file_size, 37861440);
+
+        let d = parse_hf_diff_line("T 228455604\t:000000 100644 0000000000000000000000000000000000000000... 77367f06242f620081e0103c599818bfde8d4c75... D\tFaeia/💀SDXL Antler Pagan💀 (236040)/266140/SDXLAntlerPagan.safetensors").unwrap();
+        assert_eq!(d.status, GitStatus::Deletion);
+        assert!(d.file_path.contains("💀"));
     }
 
     // A valid line used as a base for truncation tests.

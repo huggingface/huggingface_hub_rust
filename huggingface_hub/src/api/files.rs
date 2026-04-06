@@ -161,16 +161,9 @@ impl HFRepository {
 
                 let content_length = params.range.as_ref().map(|r| r.end.saturating_sub(r.start)).or(Some(file_size));
 
-                let stream = crate::xet::xet_download_stream(
-                    &self.hf_client,
-                    &repo_path,
-                    Some(self.repo_type),
-                    revision,
-                    xet_hash,
-                    file_size,
-                    params.range.clone(),
-                )
-                .await?;
+                let stream = self
+                    .xet_download_stream(revision, xet_hash, file_size, params.range.clone())
+                    .await?;
 
                 return Ok((content_length, Box::new(Box::pin(stream))));
             }
@@ -239,16 +232,9 @@ impl HFRepository {
 
             if has_xet_hash {
                 let local_dir = params.local_dir.as_ref().unwrap();
-                return crate::xet::xet_download_to_local_dir(
-                    &self.hf_client,
-                    &repo_path,
-                    Some(self.repo_type),
-                    revision,
-                    &params.filename,
-                    local_dir,
-                    &head_response,
-                )
-                .await;
+                return self
+                    .xet_download_to_local_dir(revision, &params.filename, local_dir, &head_response)
+                    .await;
             }
         }
 
@@ -454,16 +440,7 @@ impl HFRepository {
                 }
                 let _lock = cache::acquire_lock(cache_dir, repo_folder, &etag).await?;
 
-                crate::xet::xet_download_to_blob(
-                    &self.hf_client,
-                    &repo_path,
-                    Some(self.repo_type),
-                    revision,
-                    &xet_hash,
-                    file_size,
-                    &blob,
-                )
-                .await?;
+                self.xet_download_to_blob(revision, &xet_hash, file_size, &blob).await?;
             }
 
             return finalize_cached_file(cache_dir, repo_folder, revision, &commit_hash, &params.filename, &etag).await;
@@ -691,14 +668,7 @@ impl HFRepository {
                             path: local_dir.join(&m.filename),
                         })
                         .collect();
-                    crate::xet::xet_download_batch(
-                        &self.hf_client,
-                        &repo_path,
-                        Some(self.repo_type),
-                        &commit_hash,
-                        &batch_files,
-                    )
-                    .await
+                    self.xet_download_batch(&commit_hash, &batch_files).await
                 };
 
                 let non_xet_dl_params = build_download_params(
@@ -755,14 +725,7 @@ impl HFRepository {
                         path: cache::blob_path(cache_dir, &repo_folder, &m.etag),
                     })
                     .collect();
-                crate::xet::xet_download_batch(
-                    &self.hf_client,
-                    &repo_path,
-                    Some(self.repo_type),
-                    &commit_hash,
-                    &batch_files,
-                )
-                .await?;
+                self.xet_download_batch(&commit_hash, &batch_files).await?;
                 for m in &xet_metas {
                     cache::create_pointer_symlink(cache_dir, &repo_folder, &m.commit_hash, &m.filename, &m.etag)
                         .await?;
@@ -1321,7 +1284,7 @@ impl HFRepository {
             .map(|(path, _, _, source)| (path.clone(), (*source).clone()))
             .collect();
 
-        crate::xet::xet_upload(&self.hf_client, &xet_files, &repo_path, Some(self.repo_type), revision).await?;
+        self.xet_upload(&xet_files, revision).await?;
 
         let result: HashMap<String, (String, u64)> = lfs_with_sha
             .into_iter()

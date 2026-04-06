@@ -276,12 +276,6 @@ pub struct RepoGetRawDiffParams {
 }
 
 #[derive(TypedBuilder)]
-pub struct RepoGetRawDiffStreamParams {
-    #[builder(setter(into))]
-    pub compare: String,
-}
-
-#[derive(TypedBuilder)]
 pub struct RepoCreateBranchParams {
     #[builder(setter(into))]
     pub branch: String,
