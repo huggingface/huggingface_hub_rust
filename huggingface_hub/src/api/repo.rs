@@ -169,6 +169,8 @@ impl HFClient {
             query.push(("sort".into(), sort.clone()));
         }
         if let Some(max) = params.limit {
+            // only set the limit when it's below 1000 to get less than 1 page of data
+            // assumes 1000 is the pagination default page size
             if max < 1000 {
                 query.push(("limit".into(), max.to_string()));
             }
@@ -206,6 +208,8 @@ impl HFClient {
             query.push(("sort".into(), sort.clone()));
         }
         if let Some(max) = params.limit {
+            // only set the limit when it's below 1000 to get less than 1 page of data
+            // assumes 1000 is the pagination default page size
             if max < 1000 {
                 query.push(("limit".into(), max.to_string()));
             }
@@ -234,6 +238,8 @@ impl HFClient {
             query.push(("sort".into(), sort.clone()));
         }
         if let Some(max) = params.limit {
+            // only set the limit when it's below 1000 to get less than 1 page of data
+            // assumes 1000 is the pagination default page size
             if max < 1000 {
                 query.push(("limit".into(), max.to_string()));
             }

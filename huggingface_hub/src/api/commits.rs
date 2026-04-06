@@ -186,3 +186,9 @@ sync_api_stream! {
         fn list_commits(&self, params: &RepoListCommitsParams) -> GitCommitInfo;
     }
 }
+
+sync_api_async_stream! {
+    impl HFRepository -> HFRepositorySync {
+        fn get_raw_diff_stream(&self, params: &RepoGetRawDiffParams) -> HFFileDiff;
+    }
+}
