@@ -169,8 +169,8 @@ impl HFClient {
             query.push(("sort".into(), sort.clone()));
         }
         if let Some(max) = params.limit {
-            // only set the limit when it's below 1000 to get less than 1 page of data
-            // assumes 1000 is the pagination default page size
+            // The Hub API usually returns up to 1000 items per page by default,
+            // so only set an explicit limit for smaller requests.
             if max < 1000 {
                 query.push(("limit".into(), max.to_string()));
             }
@@ -208,8 +208,8 @@ impl HFClient {
             query.push(("sort".into(), sort.clone()));
         }
         if let Some(max) = params.limit {
-            // only set the limit when it's below 1000 to get less than 1 page of data
-            // assumes 1000 is the pagination default page size
+            // The Hub API usually returns up to 1000 items per page by default,
+            // so only set an explicit limit for smaller requests.
             if max < 1000 {
                 query.push(("limit".into(), max.to_string()));
             }
@@ -238,8 +238,8 @@ impl HFClient {
             query.push(("sort".into(), sort.clone()));
         }
         if let Some(max) = params.limit {
-            // only set the limit when it's below 1000 to get less than 1 page of data
-            // assumes 1000 is the pagination default page size
+            // The Hub API usually returns up to 1000 items per page by default,
+            // so only set an explicit limit for smaller requests.
             if max < 1000 {
                 query.push(("limit".into(), max.to_string()));
             }
@@ -408,8 +408,8 @@ sync_api! {
     impl HFRepository -> HFRepositorySync {
         fn info(&self, params: &crate::repository::RepoInfoParams) -> Result<crate::types::RepoInfo>;
         fn exists(&self) -> Result<bool>;
-        fn revision_exists(&self, params: &crate::repository::RepoRevisionExistsParams) -> Result<bool>;
-        fn file_exists(&self, params: &crate::repository::RepoFileExistsParams) -> Result<bool>;
-        fn update_settings(&self, params: &crate::repository::RepoUpdateSettingsParams) -> Result<()>;
+        fn revision_exists(&self, params: &RepoRevisionExistsParams) -> Result<bool>;
+        fn file_exists(&self, params: &RepoFileExistsParams) -> Result<bool>;
+        fn update_settings(&self, params: &RepoUpdateSettingsParams) -> Result<()>;
     }
 }

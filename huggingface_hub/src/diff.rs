@@ -102,7 +102,7 @@ fn parse_hf_diff_line(line: &str) -> Result<HFFileDiff, HFDiffParseError> {
         if !char.is_ascii_digit() {
             break;
         }
-        i += 1;
+        i += char.len_utf8();
     }
     let line = line.get(i + 1..).ok_or_else(&fmt_err)?;
     let separator_is_tab = line.contains('\t');
@@ -115,7 +115,7 @@ fn parse_hf_diff_line(line: &str) -> Result<HFFileDiff, HFDiffParseError> {
                 (false, ' ') => break,
                 _ => (),
             }
-            i += 1;
+            i += char.len_utf8();
         }
         i
     } else {
@@ -243,6 +243,14 @@ mod tests {
         let d = parse_hf_diff_line("T 228455604\t:000000 100644 0000000000000000000000000000000000000000... 77367f06242f620081e0103c599818bfde8d4c75... D\tFaeia/💀SDXL Antler Pagan💀 (236040)/266140/SDXLAntlerPagan.safetensors").unwrap();
         assert_eq!(d.status, GitStatus::Deletion);
         assert!(d.file_path.contains("💀"));
+    }
+
+    #[test]
+    fn rename_with_unicode_paths() {
+        let d = parse_hf_diff_line("T 1679\t:100644 100644 f7b95e09e0573a829c338fe46e451b5609424a70... 0000000000000000000000000000000000000000... R\tエイミ/old_file.rs\tエイミ/new_file.rs").unwrap();
+        assert_eq!(d.status, GitStatus::Rename);
+        assert_eq!(d.file_path, "エイミ/old_file.rs");
+        assert_eq!(d.new_file_path, Some("エイミ/new_file.rs".to_owned()));
     }
 
     // A valid line used as a base for truncation tests.

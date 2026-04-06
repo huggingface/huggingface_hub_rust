@@ -169,6 +169,23 @@ impl HFRepository {
             }
         }
 
+        #[cfg(not(feature = "xet"))]
+        {
+            let head_response = self.client.head(&url).headers(self.auth_headers()).send().await?;
+            let head_response = self
+                .check_response(
+                    head_response,
+                    Some(&repo_path),
+                    crate::error::NotFoundContext::Entry {
+                        path: params.filename.clone(),
+                    },
+                )
+                .await?;
+            if head_response.headers().get(constants::HEADER_X_XET_HASH).is_some() {
+                return Err(HFError::XetNotEnabled);
+            }
+        }
+
         let mut request = self.client.get(&url).headers(self.auth_headers());
 
         if let Some(ref range) = params.range {

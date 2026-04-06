@@ -61,7 +61,7 @@ pub type HFRepo = HFRepository;
 /// ```
 #[derive(Clone)]
 pub struct HFSpace {
-    repo: HFRepository,
+    pub(crate) repo: HFRepository,
 }
 
 impl fmt::Debug for HFRepository {
@@ -510,11 +510,6 @@ impl HFSpace {
         Self {
             repo: self.repo.without_revision(),
         }
-    }
-
-    /// Consume this handle and return the underlying [`HFRepository`].
-    pub fn into_repo(self) -> HFRepository {
-        self.repo
     }
 }
 

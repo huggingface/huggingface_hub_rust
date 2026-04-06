@@ -189,7 +189,7 @@ pub enum GatedApprovalMode {
 }
 
 impl Serialize for GatedApprovalMode {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -201,10 +201,10 @@ impl Serialize for GatedApprovalMode {
     }
 }
 
-impl std::str::FromStr for GatedApprovalMode {
+impl FromStr for GatedApprovalMode {
     type Err = crate::error::HFError;
 
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "false" | "disabled" => Ok(GatedApprovalMode::Disabled),
             "auto" => Ok(GatedApprovalMode::Auto),
@@ -223,10 +223,10 @@ pub enum GatedNotificationsMode {
     RealTime,
 }
 
-impl std::str::FromStr for GatedNotificationsMode {
+impl FromStr for GatedNotificationsMode {
     type Err = crate::error::HFError;
 
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "bulk" => Ok(GatedNotificationsMode::Bulk),
             "real-time" | "realtime" => Ok(GatedNotificationsMode::RealTime),
