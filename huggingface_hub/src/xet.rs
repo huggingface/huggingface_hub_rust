@@ -39,9 +39,9 @@ async fn fetch_xet_connection_info(
     revision: &str,
 ) -> Result<XetConnectionInfo> {
     let segment = constants::repo_type_api_segment(repo_type);
-    let url = format!("{}/api/{}/{}/xet-{}-token/{}", api.endpoint, segment, repo_id, token_type, revision);
+    let url = format!("{}/api/{}/{}/xet-{}-token/{}", api.endpoint(), segment, repo_id, token_type, revision);
 
-    let response = api.client.get(&url).headers(api.auth_headers()).send().await?;
+    let response = api.http_client().get(&url).headers(api.auth_headers()).send().await?;
 
     let response = api
         .check_response(response, Some(repo_id), crate::error::NotFoundContext::Repo)
@@ -63,7 +63,7 @@ fn xet_token_url(
     revision: &str,
 ) -> String {
     let segment = constants::repo_type_api_segment(repo_type);
-    format!("{}/api/{}/{}/xet-{}-token/{}", api.endpoint, segment, repo_id, token_type, revision)
+    format!("{}/api/{}/{}/xet-{}-token/{}", api.endpoint(), segment, repo_id, token_type, revision)
 }
 
 fn build_xet_session() -> Result<XetSession> {
@@ -109,7 +109,7 @@ impl HFRepository {
             .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
             .with_token_refresh_url(
                 xet_token_url(&self.hf_client, "read", &repo_path, repo_type, revision),
-                self.auth_headers(),
+                self.hf_client.auth_headers(),
             )
             .build()
             .await
@@ -155,7 +155,7 @@ impl HFRepository {
             .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
             .with_token_refresh_url(
                 xet_token_url(&self.hf_client, "read", &repo_path, repo_type, revision),
-                self.auth_headers(),
+                self.hf_client.auth_headers(),
             )
             .build()
             .await
@@ -194,7 +194,7 @@ impl HFRepository {
             .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
             .with_token_refresh_url(
                 xet_token_url(&self.hf_client, "read", &repo_path, repo_type, revision),
-                self.auth_headers(),
+                self.hf_client.auth_headers(),
             )
             .build()
             .await
@@ -252,7 +252,7 @@ impl HFRepository {
             .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
             .with_token_refresh_url(
                 xet_token_url(&self.hf_client, "read", &repo_path, repo_type, revision),
-                self.auth_headers(),
+                self.hf_client.auth_headers(),
             )
             .build()
             .await
@@ -292,7 +292,7 @@ impl HFRepository {
             .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
             .with_token_refresh_url(
                 xet_token_url(&self.hf_client, "write", &repo_path, repo_type, revision),
-                self.auth_headers(),
+                self.hf_client.auth_headers(),
             )
             .build()
             .await

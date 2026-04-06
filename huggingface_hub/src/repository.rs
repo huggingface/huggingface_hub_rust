@@ -43,7 +43,7 @@ pub type HFRepo = HFRepository;
 ///
 /// `HFSpace` wraps an [`HFRepository`] fixed to [`RepoType::Space`] and exposes hardware,
 /// secret, and variable management. It derefs to [`HFRepository`], so all general repo
-/// methods are accessible directly.
+/// methods (e.g. `exists`, `info`, `download_file`) are accessible directly.
 ///
 /// Created via [`HFClient::space`] or [`TryFrom<HFRepository>`].
 ///
@@ -569,14 +569,6 @@ impl TryFrom<HFRepository> for HFSpace {
 impl From<HFSpace> for Arc<HFRepository> {
     fn from(space: HFSpace) -> Self {
         space.repo.clone()
-    }
-}
-
-impl Deref for HFRepository {
-    type Target = HFClient;
-
-    fn deref(&self) -> &Self::Target {
-        &self.hf_client
     }
 }
 

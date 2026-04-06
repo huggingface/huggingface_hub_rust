@@ -47,7 +47,7 @@ impl HFRepository {
     /// subdirectories. Use `limit` to cap the total number of entries yielded.
     pub fn list_tree(&self, params: &RepoListTreeParams) -> Result<impl Stream<Item = Result<RepoTreeEntry>> + '_> {
         let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
-        let url_str = format!("{}/tree/{}", self.api_url(Some(self.repo_type), &self.repo_path()), revision);
+        let url_str = format!("{}/tree/{}", self.hf_client.api_url(Some(self.repo_type), &self.repo_path()), revision);
         let url = Url::parse(&url_str)?;
 
         let mut query: Vec<(String, String)> = Vec::new();
@@ -58,23 +58,32 @@ impl HFRepository {
             query.push(("expand".into(), "true".into()));
         }
 
-        Ok(self.paginate(url, query, params.limit))
+        Ok(self.hf_client.paginate(url, query, params.limit))
     }
 
     /// Get info about specific paths in a repository.
     /// Endpoint: POST /api/{repo_type}s/{repo_id}/paths-info/{revision}
     pub async fn get_paths_info(&self, params: &RepoGetPathsInfoParams) -> Result<Vec<RepoTreeEntry>> {
         let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
-        let url = format!("{}/paths-info/{}", self.api_url(Some(self.repo_type), &self.repo_path()), revision);
+        let url =
+            format!("{}/paths-info/{}", self.hf_client.api_url(Some(self.repo_type), &self.repo_path()), revision);
 
         let body = serde_json::json!({
             "paths": params.paths,
         });
 
-        let response = self.client.post(&url).headers(self.auth_headers()).json(&body).send().await?;
+        let response = self
+            .hf_client
+            .http_client()
+            .post(&url)
+            .headers(self.hf_client.auth_headers())
+            .json(&body)
+            .send()
+            .await?;
 
         let repo_path = self.repo_path();
         let response = self
+            .hf_client
             .check_response(
                 response,
                 Some(&repo_path),
@@ -99,7 +108,7 @@ impl HFRepository {
         if params.local_dir.is_some() {
             self.download_file_to_local_dir(params).await
         } else {
-            if !self.cache_enabled {
+            if !self.hf_client.cache_enabled() {
                 return Err(HFError::CacheNotEnabled);
             }
             self.download_file_to_cache(params).await
@@ -132,10 +141,19 @@ impl HFRepository {
 
         let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
         let repo_path = self.repo_path();
-        let url = self.download_url(Some(self.repo_type), &repo_path, revision, &params.filename);
+        let url = self
+            .hf_client
+            .download_url(Some(self.repo_type), &repo_path, revision, &params.filename);
 
-        let head_response = self.client.head(&url).headers(self.auth_headers()).send().await?;
         let head_response = self
+            .hf_client
+            .http_client()
+            .head(&url)
+            .headers(self.hf_client.auth_headers())
+            .send()
+            .await?;
+        let head_response = self
+            .hf_client
             .check_response(
                 head_response,
                 Some(&repo_path),
@@ -170,7 +188,7 @@ impl HFRepository {
             }
         }
 
-        let mut request = self.client.get(&url).headers(self.auth_headers());
+        let mut request = self.hf_client.http_client().get(&url).headers(self.hf_client.auth_headers());
 
         if let Some(ref range) = params.range {
             request = request
@@ -179,6 +197,7 @@ impl HFRepository {
 
         let response = request.send().await?;
         let response = self
+            .hf_client
             .check_response(
                 response,
                 Some(&repo_path),
@@ -213,11 +232,20 @@ impl HFRepository {
     async fn download_file_to_local_dir(&self, params: &RepoDownloadFileParams) -> Result<PathBuf> {
         let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
         let repo_path = self.repo_path();
-        let url = self.download_url(Some(self.repo_type), &repo_path, revision, &params.filename);
-
-        let head_response = self.client.head(&url).headers(self.auth_headers()).send().await?;
+        let url = self
+            .hf_client
+            .download_url(Some(self.repo_type), &repo_path, revision, &params.filename);
 
         let head_response = self
+            .hf_client
+            .http_client()
+            .head(&url)
+            .headers(self.hf_client.auth_headers())
+            .send()
+            .await?;
+
+        let head_response = self
+            .hf_client
             .check_response(
                 head_response,
                 Some(&repo_path),
@@ -242,16 +270,19 @@ impl HFRepository {
         #[cfg(not(feature = "xet"))]
         {
             if has_xet_hash {
-                return Err(HFError::Other(
-                    "File requires xet transfer but the 'xet' feature is not enabled. \
-                     Rebuild with --features xet to download this file."
-                        .to_string(),
-                ));
+                return Err(HFError::XetNotEnabled);
             }
         }
 
-        let response = self.client.get(&url).headers(self.auth_headers()).send().await?;
         let response = self
+            .hf_client
+            .http_client()
+            .get(&url)
+            .headers(self.hf_client.auth_headers())
+            .send()
+            .await?;
+        let response = self
+            .hf_client
             .check_response(
                 response,
                 Some(&repo_path),
@@ -278,7 +309,7 @@ impl HFRepository {
     /// Matches Python's `try_to_load_from_cache`: checks the snapshot pointer
     /// first, then consults `.no_exist` markers for negative cache hits.
     fn resolve_from_cache_only(&self, repo_folder: &str, revision: &str, filename: &str) -> Result<PathBuf> {
-        let cache_dir = &self.cache_dir;
+        let cache_dir = self.hf_client.cache_dir();
 
         let commit_hash = if cache::is_commit_hash(revision) {
             Some(revision.to_string())
@@ -309,7 +340,7 @@ impl HFRepository {
     /// On Windows, where copies are used instead of symlinks, `read_link` will fail
     /// and this returns `None`, disabling conditional-request (If-None-Match) optimization.
     fn find_cached_etag(&self, repo_folder: &str, revision: &str, filename: &str) -> Option<String> {
-        let cache_dir = &self.cache_dir;
+        let cache_dir = self.hf_client.cache_dir();
 
         let commit_hash = if cache::is_commit_hash(revision) {
             Some(revision.to_string())
@@ -326,7 +357,7 @@ impl HFRepository {
 
     async fn download_file_to_cache(&self, params: &RepoDownloadFileParams) -> Result<PathBuf> {
         let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
-        let cache_dir = &self.cache_dir;
+        let cache_dir = self.hf_client.cache_dir();
         let repo_folder = cache::repo_folder_name(&self.repo_path(), Some(self.repo_type));
         let force_download = params.force_download.unwrap_or(false);
 
@@ -362,7 +393,9 @@ impl HFRepository {
         force_download: bool,
     ) -> Result<PathBuf> {
         let repo_path = self.repo_path();
-        let url = self.download_url(Some(self.repo_type), &repo_path, revision, &params.filename);
+        let url = self
+            .hf_client
+            .download_url(Some(self.repo_type), &repo_path, revision, &params.filename);
 
         let cached_etag = if !force_download {
             self.find_cached_etag(repo_folder, revision, &params.filename)
@@ -370,14 +403,20 @@ impl HFRepository {
             None
         };
 
-        let mut head_headers = self.auth_headers();
+        let mut head_headers = self.hf_client.auth_headers();
         if let Some(ref etag_val) = cached_etag {
             if let Ok(hv) = reqwest::header::HeaderValue::from_str(&format!("\"{etag_val}\"")) {
                 head_headers.insert(IF_NONE_MATCH, hv);
             }
         }
 
-        let head_response = self.no_redirect_client.head(&url).headers(head_headers).send().await?;
+        let head_response = self
+            .hf_client
+            .no_redirect_client()
+            .head(&url)
+            .headers(head_headers)
+            .send()
+            .await?;
 
         let status = head_response.status();
 
@@ -418,14 +457,15 @@ impl HFRepository {
         });
 
         if !status.is_success() && !status.is_redirection() {
-            self.check_response(
-                head_response,
-                Some(&repo_path),
-                crate::error::NotFoundContext::Entry {
-                    path: params.filename.clone(),
-                },
-            )
-            .await?;
+            self.hf_client
+                .check_response(
+                    head_response,
+                    Some(&repo_path),
+                    crate::error::NotFoundContext::Entry {
+                        path: params.filename.clone(),
+                    },
+                )
+                .await?;
         }
 
         let etag = etag?;
@@ -468,7 +508,13 @@ impl HFRepository {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        let response = self.client.get(&url).headers(self.auth_headers()).send().await?;
+        let response = self
+            .hf_client
+            .http_client()
+            .get(&url)
+            .headers(self.hf_client.auth_headers())
+            .send()
+            .await?;
         stream_response_to_file(response, &incomplete_path).await?;
         tokio::fs::rename(&incomplete_path, &blob).await?;
 
@@ -523,13 +569,13 @@ impl HFRepository {
     }
 
     pub async fn snapshot_download(&self, params: &RepoSnapshotDownloadParams) -> Result<PathBuf> {
-        if params.local_dir.is_none() && !self.cache_enabled {
+        if params.local_dir.is_none() && !self.hf_client.cache_enabled() {
             return Err(HFError::CacheNotEnabled);
         }
         let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
         let max_workers = params.max_workers.unwrap_or(8);
         let repo_folder = cache::repo_folder_name(&self.repo_path(), Some(self.repo_type));
-        let cache_dir = &self.cache_dir;
+        let cache_dir = self.hf_client.cache_dir();
 
         if params.local_files_only == Some(true) {
             let commit_hash = if cache::is_commit_hash(revision) {
@@ -576,9 +622,9 @@ impl HFRepository {
             let commit_hash_ref = &commit_hash;
             let head_futs = filenames.iter().map(|filename| {
                 let url = self
-                    .download_url(Some(self.repo_type), &repo_path, commit_hash_ref, filename);
-                let client = &self.no_redirect_client;
-                let auth = self.auth_headers();
+                    .hf_client.download_url(Some(self.repo_type), &repo_path, commit_hash_ref, filename);
+                let client = self.hf_client.no_redirect_client();
+                let auth = self.hf_client.auth_headers();
                 let filename = filename.clone();
                 let repo_folder_ref = &repo_folder;
                 async move {
@@ -906,7 +952,7 @@ impl HFRepository {
     /// Endpoint: POST /api/{repo_type}s/{repo_id}/commit/{revision}
     pub async fn create_commit(&self, params: &RepoCreateCommitParams) -> Result<CommitInfo> {
         let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
-        let url = format!("{}/commit/{}", self.api_url(Some(self.repo_type), &self.repo_path()), revision);
+        let url = format!("{}/commit/{}", self.hf_client.api_url(Some(self.repo_type), &self.repo_path()), revision);
 
         // Determine which files should be uploaded via xet (LFS) vs. inline
         // (regular). Files uploaded via xet are referenced by their SHA256 OID
@@ -961,10 +1007,10 @@ impl HFRepository {
             })
             .collect();
 
-        let mut headers = self.auth_headers();
+        let mut headers = self.hf_client.auth_headers();
         headers.insert(reqwest::header::CONTENT_TYPE, "application/x-ndjson".parse().unwrap());
 
-        let mut request = self.client.post(&url).headers(headers).body(body);
+        let mut request = self.hf_client.http_client().post(&url).headers(headers).body(body);
 
         if params.create_pr == Some(true) {
             request = request.query(&[("create_pr", "1")]);
@@ -973,6 +1019,7 @@ impl HFRepository {
         let response = request.send().await?;
         let repo_path = self.repo_path();
         let response = self
+            .hf_client
             .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(response.json().await?)
@@ -1231,7 +1278,7 @@ impl HFRepository {
     ) -> Result<HashMap<String, String>> {
         use base64::Engine;
 
-        let url = format!("{}/preupload/{}", self.api_url(repo_type, repo_id), revision);
+        let url = format!("{}/preupload/{}", self.hf_client.api_url(repo_type, repo_id), revision);
 
         let files_payload: Vec<serde_json::Value> = files
             .iter()
@@ -1246,9 +1293,17 @@ impl HFRepository {
 
         let body = serde_json::json!({ "files": files_payload });
 
-        let response = self.client.post(&url).headers(self.auth_headers()).json(&body).send().await?;
+        let response = self
+            .hf_client
+            .http_client()
+            .post(&url)
+            .headers(self.hf_client.auth_headers())
+            .json(&body)
+            .send()
+            .await?;
 
         let response = self
+            .hf_client
             .check_response(response, Some(repo_id), crate::error::NotFoundContext::Repo)
             .await?;
 
@@ -1312,7 +1367,7 @@ impl HFRepository {
         objects: &[(&str, u64)],
     ) -> Result<Option<String>> {
         let prefix = constants::repo_type_url_prefix(repo_type);
-        let url = format!("{}/{}{}.git/info/lfs/objects/batch", self.endpoint, prefix, repo_id);
+        let url = format!("{}/{}{}.git/info/lfs/objects/batch", self.hf_client.endpoint(), prefix, repo_id);
 
         let objects_payload: Vec<serde_json::Value> = objects
             .iter()
@@ -1332,13 +1387,21 @@ impl HFRepository {
             "ref": { "name": revision },
         });
 
-        let mut headers = self.auth_headers();
+        let mut headers = self.hf_client.auth_headers();
         headers.insert(reqwest::header::ACCEPT, "application/vnd.git-lfs+json".parse().unwrap());
         headers.insert(reqwest::header::CONTENT_TYPE, "application/vnd.git-lfs+json".parse().unwrap());
 
-        let response = self.client.post(&url).headers(headers).json(&body).send().await?;
+        let response = self
+            .hf_client
+            .http_client()
+            .post(&url)
+            .headers(headers)
+            .json(&body)
+            .send()
+            .await?;
 
         let response = self
+            .hf_client
             .check_response(response, Some(repo_id), crate::error::NotFoundContext::Repo)
             .await?;
 
