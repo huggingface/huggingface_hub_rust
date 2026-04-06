@@ -1,3 +1,4 @@
+use std::ops::Deref;
 use std::sync::Arc;
 
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT};
@@ -38,7 +39,15 @@ impl Clone for HFClient {
     }
 }
 
-pub(crate) struct HFClientInner {
+impl Deref for HFClient {
+    type Target = HFClientInner;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+pub struct HFClientInner {
     pub(crate) client: ClientWithMiddleware,
     pub(crate) no_redirect_client: ClientWithMiddleware,
     pub(crate) endpoint: String,

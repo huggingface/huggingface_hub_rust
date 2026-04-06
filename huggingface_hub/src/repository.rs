@@ -544,8 +544,16 @@ impl From<HFSpace> for HFRepository {
     }
 }
 
+impl Deref for HFRepository {
+    type Target = HFClient;
+
+    fn deref(&self) -> &Self::Target {
+        &self.client
+    }
+}
+
 impl Deref for HFSpace {
-    type Target = HFRepo;
+    type Target = HFRepository;
 
     fn deref(&self) -> &Self::Target {
         &self.repo

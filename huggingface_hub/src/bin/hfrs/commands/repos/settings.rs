@@ -45,14 +45,8 @@ pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
 
     let gated: Option<GatedApprovalMode> = args.gated.map(|g| g.parse()).transpose()?;
-    let gated_notifications_mode: Option<GatedNotificationsMode> = args
-        .gated_notifications_mode
-        .map(|m| match m.to_lowercase().as_str() {
-            "bulk" => Ok(GatedNotificationsMode::Bulk),
-            "real-time" | "realtime" => Ok(GatedNotificationsMode::RealTime),
-            other => Err(anyhow::anyhow!("Unknown notifications mode: {other}. Expected 'bulk' or 'real-time'")),
-        })
-        .transpose()?;
+    let gated_notifications_mode: Option<GatedNotificationsMode> =
+        args.gated_notifications_mode.map(|m| m.parse()).transpose()?;
 
     let params = RepoUpdateSettingsParams {
         private: args.private,

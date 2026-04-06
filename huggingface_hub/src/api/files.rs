@@ -8,6 +8,7 @@ use reqwest::header::IF_NONE_MATCH;
 #[cfg(feature = "xet")]
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
+use tracing::warn;
 use url::Url;
 
 use crate::error::{HFError, Result};
@@ -130,6 +131,15 @@ impl HFRepository {
         &self,
         params: &RepoDownloadFileStreamParams,
     ) -> Result<(Option<u64>, Box<dyn Stream<Item = std::result::Result<bytes::Bytes, HFError>> + Send + Unpin>)> {
+        if let Some(ref range) = params.range {
+            if range.start >= range.end {
+                return Err(HFError::InvalidParameter(format!(
+                    "range start ({}) must be less than end ({})",
+                    range.start, range.end
+                )));
+            }
+        }
+
         let revision = self.effective_revision(params.revision.as_deref());
         let repo_path = self.repo_path();
         let url = self
@@ -164,7 +174,10 @@ impl HFRepository {
                     .get(reqwest::header::CONTENT_LENGTH)
                     .and_then(|v| v.to_str().ok())
                     .and_then(|v| v.parse().ok())
-                    .unwrap_or(0);
+                    .unwrap_or_else(|| {
+                        warn!(url = %url, "missing or invalid Content-Length header for xet file, defaulting file size to 0");
+                        0
+                    });
 
                 let content_length = params.range.as_ref().map(|r| r.end.saturating_sub(r.start)).or(Some(file_size));
 
@@ -460,7 +473,10 @@ impl HFRepository {
             .or_else(|| head_response.headers().get(reqwest::header::CONTENT_LENGTH))
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.parse().ok())
-            .unwrap_or(0);
+            .unwrap_or_else(|| {
+                warn!(url = %url, "missing or invalid Content-Length/X-Linked-Size header, defaulting file size to 0");
+                0
+            });
 
         if !status.is_success() && !status.is_redirection() {
             self.client
@@ -682,7 +698,10 @@ impl HFRepository {
                         .or_else(|| resp.headers().get(reqwest::header::CONTENT_LENGTH))
                         .and_then(|v| v.to_str().ok())
                         .and_then(|v| v.parse().ok())
-                        .unwrap_or(0);
+                        .unwrap_or_else(|| {
+                            warn!(file = %filename, "missing or invalid Content-Length/X-Linked-Size header, defaulting file size to 0");
+                            0
+                        });
                     Ok::<_, HFError>(Some(FileMetadataInfo {
                         filename,
                         etag,

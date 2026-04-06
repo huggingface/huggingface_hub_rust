@@ -223,6 +223,20 @@ pub enum GatedNotificationsMode {
     RealTime,
 }
 
+impl std::str::FromStr for GatedNotificationsMode {
+    type Err = crate::error::HFError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "bulk" => Ok(GatedNotificationsMode::Bulk),
+            "real-time" | "realtime" => Ok(GatedNotificationsMode::RealTime),
+            _ => Err(crate::error::HFError::Other(format!(
+                "Unknown gated notifications mode: {s}. Expected 'bulk' or 'real-time'"
+            ))),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{RepoTreeEntry, RepoType};
