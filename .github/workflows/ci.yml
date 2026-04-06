@@ -56,8 +56,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+      - name: Install huggingface_hub CLI in venv
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install huggingface_hub[cli]
       - name: All tests
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_TEST_WRITE: "1"
+          PATH: ${{ github.workspace }}/.venv/bin:${{ env.PATH }}
         run: cargo test -p huggingface-hub --all-features
