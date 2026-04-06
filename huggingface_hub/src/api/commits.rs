@@ -2,6 +2,7 @@ use futures::stream::{Stream, StreamExt};
 use futures::TryStreamExt;
 use url::Url;
 
+use crate::constants;
 use crate::diff::HFFileDiff;
 use crate::error::Result;
 use crate::repository::{
@@ -19,7 +20,7 @@ impl HFRepository {
         &self,
         params: &RepoListCommitsParams,
     ) -> Result<impl Stream<Item = Result<GitCommitInfo>> + '_> {
-        let revision = self.effective_revision(params.revision.as_deref());
+        let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
         let url_str = format!("{}/commits/{}", self.api_url(Some(self.repo_type), &self.repo_path()), revision);
         let url = Url::parse(&url_str)?;
         Ok(self.paginate(url, vec![], params.limit))
@@ -139,7 +140,7 @@ impl HFRepository {
     /// Create a lightweight or annotated tag, optionally at a specific revision.
     /// Endpoint: POST /api/{repo_type}s/{repo_id}/tag/{revision}
     pub async fn create_tag(&self, params: &RepoCreateTagParams) -> Result<()> {
-        let revision = self.effective_revision(params.revision.as_deref());
+        let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
         let url = format!("{}/tag/{}", self.api_url(Some(self.repo_type), &self.repo_path()), revision);
 
         let mut body = serde_json::json!({ "tag": params.tag });

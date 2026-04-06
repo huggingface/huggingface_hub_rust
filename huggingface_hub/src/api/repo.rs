@@ -104,7 +104,7 @@ impl HFRepository {
 
     /// Return `true` if the given file exists in the repository at the specified revision.
     pub async fn file_exists(&self, params: &RepoFileExistsParams) -> Result<bool> {
-        let revision = self.effective_revision(params.revision.as_deref());
+        let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
         let url = self.download_url(Some(self.repo_type), &self.repo_path(), revision, &params.filename);
         let response = self.client.head(&url).headers(self.auth_headers()).send().await?;
         match response.status().as_u16() {

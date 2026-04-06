@@ -88,19 +88,10 @@ impl HFRepository {
     ) -> Result<PathBuf> {
         let repo_path = self.repo_path();
         let repo_type = Some(self.repo_type);
-        let headers = head_response.headers();
+        let file_hash = crate::api::files::extract_xet_hash(head_response)
+            .ok_or_else(|| HFError::Other("Missing X-Xet-Hash header".to_string()))?;
 
-        let file_hash = headers
-            .get(constants::HEADER_X_XET_HASH)
-            .and_then(|v| v.to_str().ok())
-            .ok_or_else(|| HFError::Other("Missing X-Xet-Hash header".to_string()))?
-            .to_string();
-
-        let file_size: u64 = headers
-            .get(reqwest::header::CONTENT_LENGTH)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0);
+        let file_size: u64 = crate::api::files::extract_file_size(head_response).unwrap_or(0);
 
         let conn = fetch_xet_connection_info(&self.hf_client, "read", &repo_path, repo_type, revision).await?;
         let session = build_xet_session()?;

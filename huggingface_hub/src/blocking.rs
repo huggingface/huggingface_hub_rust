@@ -33,7 +33,7 @@ pub struct HFClientSync {
 /// macro in the corresponding `api/` modules.
 #[derive(Clone)]
 pub struct HFRepositorySync {
-    pub(crate) inner: repo::HFRepository,
+    pub(crate) inner: Arc<repo::HFRepository>,
     pub(crate) runtime: Arc<tokio::runtime::Runtime>,
 }
 
@@ -44,8 +44,8 @@ pub struct HFRepositorySync {
 /// `sync_api!` macro.
 #[derive(Clone)]
 pub struct HFSpaceSync {
-    repo: HFRepositorySync,
-    pub(crate) inner: repo::HFSpace,
+    repo_sync: Arc<HFRepositorySync>,
+    pub(crate) inner: Arc<repo::HFSpace>,
 }
 
 impl fmt::Debug for HFClientSync {
@@ -62,7 +62,10 @@ impl fmt::Debug for HFRepositorySync {
 
 impl fmt::Debug for HFSpaceSync {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("HFSpaceSync").field("inner", &self.inner).finish()
+        f.debug_struct("HFSpaceSync")
+            .field("inner", &self.inner)
+            .field("repo_sync", &self.repo_sync)
+            .finish()
     }
 }
 
@@ -136,23 +139,9 @@ impl HFRepositorySync {
         name: impl Into<String>,
     ) -> Self {
         Self {
-            inner: repo::HFRepository::new(client.inner.clone(), repo_type, owner, name),
+            inner: Arc::new(repo::HFRepository::new(client.inner.clone(), repo_type, owner, name)),
             runtime: client.runtime.clone(),
         }
-    }
-
-    pub(crate) fn from_inner(inner: repo::HFRepository, runtime: Arc<tokio::runtime::Runtime>) -> Self {
-        Self { inner, runtime }
-    }
-
-    /// Returns a new handle pinned to the given revision (branch, tag, or commit SHA).
-    pub fn with_revision(&self, revision: impl Into<String>) -> Self {
-        Self::from_inner(self.inner.with_revision(revision), self.runtime.clone())
-    }
-
-    /// Returns a new handle with the pinned revision cleared, using the repo's default branch.
-    pub fn without_revision(&self) -> Self {
-        Self::from_inner(self.inner.without_revision(), self.runtime.clone())
     }
 }
 
@@ -167,33 +156,16 @@ impl Deref for HFRepositorySync {
 impl HFSpaceSync {
     /// Creates a blocking space handle for the given owner and name.
     pub fn new(client: HFClientSync, owner: impl Into<String>, name: impl Into<String>) -> Self {
-        let owner = owner.into();
-        let name = name.into();
-        let inner = repo::HFSpace::new(client.inner.clone(), &owner, &name);
-        let repo = HFRepositorySync::new(client.clone(), types::RepoType::Space, owner, name);
-        Self { repo, inner }
-    }
-
-    /// Returns a new handle pinned to the given revision (branch, tag, or commit SHA).
-    pub fn with_revision(&self, revision: impl Into<String>) -> Self {
-        let rev = revision.into();
-        Self {
-            inner: self.inner.with_revision(&rev),
-            repo: self.repo.with_revision(rev),
-        }
-    }
-
-    /// Returns a new handle with the pinned revision cleared, using the space's default branch.
-    pub fn without_revision(&self) -> Self {
-        Self {
-            inner: self.inner.without_revision(),
-            repo: self.repo.without_revision(),
-        }
+        let repo_sync = Arc::new(HFRepositorySync::new(client, types::RepoType::Space, owner, name));
+        let inner = Arc::new(repo::HFSpace {
+            repo: repo_sync.inner.clone(),
+        });
+        Self { repo_sync, inner }
     }
 
     /// Converts this space handle into a plain [`HFRepositorySync`], discarding space-specific state.
-    pub fn into_repo(self) -> HFRepositorySync {
-        self.repo
+    pub fn repo(&self) -> &HFRepositorySync {
+        &self.repo_sync
     }
 }
 
@@ -201,7 +173,7 @@ impl Deref for HFSpaceSync {
     type Target = HFRepoSync;
 
     fn deref(&self) -> &Self::Target {
-        &self.repo
+        &self.repo_sync
     }
 }
 
@@ -209,14 +181,25 @@ impl TryFrom<HFRepositorySync> for HFSpaceSync {
     type Error = HFError;
 
     fn try_from(repo: HFRepositorySync) -> Result<Self> {
-        let inner = repo::HFSpace::try_from(repo.inner.clone())?;
-        Ok(Self { repo, inner })
+        if repo.inner.repo_type() != types::RepoType::Space {
+            return Err(HFError::InvalidRepoType {
+                expected: types::RepoType::Space,
+                actual: repo.inner.repo_type(),
+            });
+        }
+        let inner = Arc::new(repo::HFSpace {
+            repo: repo.inner.clone(),
+        });
+        Ok(Self {
+            repo_sync: Arc::new(repo),
+            inner,
+        })
     }
 }
 
-impl From<HFSpaceSync> for HFRepositorySync {
+impl From<HFSpaceSync> for Arc<HFRepositorySync> {
     fn from(space: HFSpaceSync) -> Self {
-        space.repo
+        space.repo_sync
     }
 }
 
@@ -243,12 +226,11 @@ mod tests {
     #[test]
     fn test_sync_repo_constructors() {
         let api = HFClientSync::from_api(HFClient::builder().build().unwrap()).unwrap();
-        let repo = api.model("openai-community", "gpt2").with_revision("main");
+        let repo = api.model("openai-community", "gpt2");
         let space = api.space("huggingface", "transformers-benchmarks");
 
         assert_eq!(repo.owner(), "openai-community");
         assert_eq!(repo.name(), "gpt2");
-        assert_eq!(repo.default_revision(), Some("main"));
         assert_eq!(repo.repo_type(), types::RepoType::Model);
         assert_eq!(space.repo_type(), types::RepoType::Space);
     }

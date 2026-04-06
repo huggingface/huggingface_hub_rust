@@ -1,6 +1,10 @@
 use crate::error::Result;
-use crate::repository::HFSpace;
-use crate::types::{RepoUrl, SpaceRuntime};
+use crate::repository::{
+    HFSpace, SpaceHardwareRequestParams, SpaceSecretDeleteParams, SpaceSecretParams, SpaceSleepTimeParams,
+    SpaceVariableParams,
+};
+use crate::types::{DuplicateSpaceParams, RepoUrl, SpaceRuntime};
+use crate::SpaceVariableDeleteParams;
 
 impl HFSpace {
     /// Fetch the current runtime state of the Space (hardware, stage, URL, etc.).
@@ -14,10 +18,7 @@ impl HFSpace {
     }
 
     /// Request an upgrade or downgrade of the Space's hardware tier.
-    pub async fn request_hardware(
-        &self,
-        params: &crate::repository::SpaceHardwareRequestParams,
-    ) -> Result<SpaceRuntime> {
+    pub async fn request_hardware(&self, params: &SpaceHardwareRequestParams) -> Result<SpaceRuntime> {
         let url = format!("{}/api/spaces/{}/hardware", self.endpoint, self.repo_path());
         let mut body = serde_json::json!({ "flavor": params.hardware });
         if let Some(sleep_time) = params.sleep_time {
@@ -31,7 +32,7 @@ impl HFSpace {
     }
 
     /// Configure the number of seconds of inactivity before the Space is put to sleep.
-    pub async fn set_sleep_time(&self, params: &crate::repository::SpaceSleepTimeParams) -> Result<()> {
+    pub async fn set_sleep_time(&self, params: &SpaceSleepTimeParams) -> Result<()> {
         let url = format!("{}/api/spaces/{}/sleeptime", self.endpoint, self.repo_path());
         let body = serde_json::json!({ "seconds": params.sleep_time });
         let response = self.client.post(&url).headers(self.auth_headers()).json(&body).send().await?;
@@ -61,7 +62,7 @@ impl HFSpace {
     }
 
     /// Add or update a secret (encrypted environment variable) on the Space.
-    pub async fn add_secret(&self, params: &crate::repository::SpaceSecretParams) -> Result<()> {
+    pub async fn add_secret(&self, params: &SpaceSecretParams) -> Result<()> {
         let url = format!("{}/api/spaces/{}/secrets", self.endpoint, self.repo_path());
         let mut body = serde_json::json!({
             "key": params.key,
@@ -77,7 +78,7 @@ impl HFSpace {
     }
 
     /// Delete a secret from the Space by key.
-    pub async fn delete_secret(&self, params: &crate::repository::SpaceSecretDeleteParams) -> Result<()> {
+    pub async fn delete_secret(&self, params: &SpaceSecretDeleteParams) -> Result<()> {
         let url = format!("{}/api/spaces/{}/secrets", self.endpoint, self.repo_path());
         let body = serde_json::json!({ "key": params.key });
         let response = self.client.delete(&url).headers(self.auth_headers()).json(&body).send().await?;
@@ -87,7 +88,7 @@ impl HFSpace {
     }
 
     /// Add or update a public environment variable on the Space.
-    pub async fn add_variable(&self, params: &crate::repository::SpaceVariableParams) -> Result<()> {
+    pub async fn add_variable(&self, params: &SpaceVariableParams) -> Result<()> {
         let url = format!("{}/api/spaces/{}/variables", self.endpoint, self.repo_path());
         let mut body = serde_json::json!({
             "key": params.key,
@@ -103,7 +104,7 @@ impl HFSpace {
     }
 
     /// Delete a public environment variable from the Space by key.
-    pub async fn delete_variable(&self, params: &crate::repository::SpaceVariableDeleteParams) -> Result<()> {
+    pub async fn delete_variable(&self, params: &SpaceVariableDeleteParams) -> Result<()> {
         let url = format!("{}/api/spaces/{}/variables", self.endpoint, self.repo_path());
         let body = serde_json::json!({ "key": params.key });
         let response = self.client.delete(&url).headers(self.auth_headers()).json(&body).send().await?;
@@ -113,7 +114,7 @@ impl HFSpace {
     }
 
     /// Duplicate this Space to a new repository.
-    pub async fn duplicate(&self, params: &crate::types::DuplicateSpaceParams) -> Result<RepoUrl> {
+    pub async fn duplicate(&self, params: &DuplicateSpaceParams) -> Result<RepoUrl> {
         let url = format!("{}/api/spaces/{}/duplicate", self.endpoint, self.repo_path());
         let mut body = serde_json::Map::new();
         if let Some(ref to_id) = params.to_id {
@@ -148,15 +149,15 @@ impl HFSpace {
 sync_api! {
     #[cfg(feature = "spaces")]
     impl HFSpace -> HFSpaceSync {
-        fn runtime(&self) -> crate::error::Result<SpaceRuntime>;
-        fn request_hardware(&self, params: &crate::repository::SpaceHardwareRequestParams) -> crate::error::Result<SpaceRuntime>;
-        fn set_sleep_time(&self, params: &crate::repository::SpaceSleepTimeParams) -> crate::error::Result<()>;
-        fn pause(&self) -> crate::error::Result<SpaceRuntime>;
-        fn restart(&self) -> crate::error::Result<SpaceRuntime>;
-        fn add_secret(&self, params: &crate::repository::SpaceSecretParams) -> crate::error::Result<()>;
-        fn delete_secret(&self, params: &crate::repository::SpaceSecretDeleteParams) -> crate::error::Result<()>;
-        fn add_variable(&self, params: &crate::repository::SpaceVariableParams) -> crate::error::Result<()>;
-        fn delete_variable(&self, params: &crate::repository::SpaceVariableDeleteParams) -> crate::error::Result<()>;
-        fn duplicate(&self, params: &crate::types::DuplicateSpaceParams) -> crate::error::Result<RepoUrl>;
+        fn runtime(&self) -> Result<SpaceRuntime>;
+        fn request_hardware(&self, params: &SpaceHardwareRequestParams) -> Result<SpaceRuntime>;
+        fn set_sleep_time(&self, params: &SpaceSleepTimeParams) -> Result<()>;
+        fn pause(&self) -> Result<SpaceRuntime>;
+        fn restart(&self) -> Result<SpaceRuntime>;
+        fn add_secret(&self, params: &SpaceSecretParams) -> Result<()>;
+        fn delete_secret(&self, params: &SpaceSecretDeleteParams) -> Result<()>;
+        fn add_variable(&self, params: &SpaceVariableParams) -> Result<()>;
+        fn delete_variable(&self, params: &SpaceVariableDeleteParams) -> Result<()>;
+        fn duplicate(&self, params: &DuplicateSpaceParams) -> Result<RepoUrl>;
     }
 }

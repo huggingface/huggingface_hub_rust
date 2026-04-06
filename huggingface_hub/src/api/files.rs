@@ -22,8 +22,8 @@ use crate::{cache, constants};
 impl HFRepository {
     /// Return a flat list of all file paths in the repository at the given revision.
     pub async fn list_files(&self, params: &RepoListFilesParams) -> Result<Vec<String>> {
-        let revision = self.resolve_revision(params.revision.as_deref());
-        let stream = self.list_tree(&crate::repository::RepoListTreeParams {
+        let revision = params.revision.clone();
+        let stream = self.list_tree(&RepoListTreeParams {
             revision,
             recursive: true,
             expand: false,
@@ -46,7 +46,7 @@ impl HFRepository {
     /// Returns `Result<impl Stream<Item = Result<RepoTreeEntry>>>`. Set `recursive` to traverse
     /// subdirectories. Use `limit` to cap the total number of entries yielded.
     pub fn list_tree(&self, params: &RepoListTreeParams) -> Result<impl Stream<Item = Result<RepoTreeEntry>> + '_> {
-        let revision = self.effective_revision(params.revision.as_deref());
+        let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
         let url_str = format!("{}/tree/{}", self.api_url(Some(self.repo_type), &self.repo_path()), revision);
         let url = Url::parse(&url_str)?;
 
@@ -64,7 +64,7 @@ impl HFRepository {
     /// Get info about specific paths in a repository.
     /// Endpoint: POST /api/{repo_type}s/{repo_id}/paths-info/{revision}
     pub async fn get_paths_info(&self, params: &RepoGetPathsInfoParams) -> Result<Vec<RepoTreeEntry>> {
-        let revision = self.effective_revision(params.revision.as_deref());
+        let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
         let url = format!("{}/paths-info/{}", self.api_url(Some(self.repo_type), &self.repo_path()), revision);
 
         let body = serde_json::json!({
@@ -130,7 +130,7 @@ impl HFRepository {
             }
         }
 
-        let revision = self.effective_revision(params.revision.as_deref());
+        let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
         let repo_path = self.repo_path();
         let url = self.download_url(Some(self.repo_type), &repo_path, revision, &params.filename);
 
@@ -147,21 +147,16 @@ impl HFRepository {
 
         #[cfg(feature = "xet")]
         {
-            let headers = head_response.headers();
-            if let Some(xet_hash) = headers.get(constants::HEADER_X_XET_HASH).and_then(|v| v.to_str().ok()) {
-                let file_size: u64 = headers
-                    .get(reqwest::header::CONTENT_LENGTH)
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or_else(|| {
-                        tracing::warn!(url = %url, "missing or invalid Content-Length header for xet file, defaulting file size to 0");
-                        0
-                    });
+            if let Some(xet_hash) = extract_xet_hash(&head_response) {
+                let file_size: u64 = extract_file_size(&head_response).unwrap_or_else(|| {
+                    tracing::warn!(url = %url, "missing or invalid Content-Length/X-Linked-Size header for xet file, defaulting file size to 0");
+                    0
+                });
 
                 let content_length = params.range.as_ref().map(|r| r.end.saturating_sub(r.start)).or(Some(file_size));
 
                 let stream = self
-                    .xet_download_stream(revision, xet_hash, file_size, params.range.clone())
+                    .xet_download_stream(revision, &xet_hash, file_size, params.range.clone())
                     .await?;
 
                 return Ok((content_length, Box::new(Box::pin(stream))));
@@ -170,7 +165,7 @@ impl HFRepository {
 
         #[cfg(not(feature = "xet"))]
         {
-            if head_response.headers().get(constants::HEADER_X_XET_HASH).is_some() {
+            if extract_xet_hash(&head_response).is_some() {
                 return Err(HFError::XetNotEnabled);
             }
         }
@@ -193,7 +188,7 @@ impl HFRepository {
             )
             .await?;
 
-        let content_length = response.content_length();
+        let content_length = extract_file_size(&response);
         let stream = response.bytes_stream().map(|r| r.map_err(HFError::from));
         Ok((content_length, Box::new(Box::pin(stream))))
     }
@@ -216,31 +211,42 @@ impl HFRepository {
     }
 
     async fn download_file_to_local_dir(&self, params: &RepoDownloadFileParams) -> Result<PathBuf> {
-        let revision = self.effective_revision(params.revision.as_deref());
+        let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
         let repo_path = self.repo_path();
         let url = self.download_url(Some(self.repo_type), &repo_path, revision, &params.filename);
 
+        let head_response = self.client.head(&url).headers(self.auth_headers()).send().await?;
+
+        let head_response = self
+            .check_response(
+                head_response,
+                Some(&repo_path),
+                crate::error::NotFoundContext::Entry {
+                    path: params.filename.clone(),
+                },
+            )
+            .await?;
+
+        let has_xet_hash = head_response.headers().get(constants::HEADER_X_XET_HASH).is_some();
+
         #[cfg(feature = "xet")]
         {
-            let head_response = self.client.head(&url).headers(self.auth_headers()).send().await?;
-
-            let head_response = self
-                .check_response(
-                    head_response,
-                    Some(&repo_path),
-                    crate::error::NotFoundContext::Entry {
-                        path: params.filename.clone(),
-                    },
-                )
-                .await?;
-
-            let has_xet_hash = head_response.headers().get(constants::HEADER_X_XET_HASH).is_some();
-
             if has_xet_hash {
                 let local_dir = params.local_dir.as_ref().unwrap();
                 return self
                     .xet_download_to_local_dir(revision, &params.filename, local_dir, &head_response)
                     .await;
+            }
+        }
+
+        #[cfg(not(feature = "xet"))]
+        {
+            if has_xet_hash {
+                return Err(HFError::Other(
+                    "File requires xet transfer but the 'xet' feature is not enabled. \
+                     Rebuild with --features xet to download this file."
+                        .to_string(),
+                ));
             }
         }
 
@@ -319,7 +325,7 @@ impl HFRepository {
     }
 
     async fn download_file_to_cache(&self, params: &RepoDownloadFileParams) -> Result<PathBuf> {
-        let revision = self.effective_revision(params.revision.as_deref());
+        let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
         let cache_dir = &self.cache_dir;
         let repo_folder = cache::repo_folder_name(&self.repo_path(), Some(self.repo_type));
         let force_download = params.force_download.unwrap_or(false);
@@ -403,24 +409,13 @@ impl HFRepository {
         let etag =
             extract_etag(&head_response).ok_or_else(|| HFError::Other("Missing ETag header in response".to_string()));
         let commit_hash = extract_commit_hash(&head_response);
-        let has_xet_hash = head_response.headers().get(constants::HEADER_X_XET_HASH).is_some();
+        let xet_hash = extract_xet_hash(&head_response);
+        let has_xet_hash = xet_hash.is_some();
         #[cfg(feature = "xet")]
-        let xet_hash = head_response
-            .headers()
-            .get(constants::HEADER_X_XET_HASH)
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string());
-        #[cfg(feature = "xet")]
-        let file_size: u64 = head_response
-            .headers()
-            .get(constants::HEADER_X_LINKED_SIZE)
-            .or_else(|| head_response.headers().get(reqwest::header::CONTENT_LENGTH))
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.parse().ok())
-            .unwrap_or_else(|| {
-                tracing::warn!(url = %url, "missing or invalid Content-Length/X-Linked-Size header, defaulting file size to 0");
-                0
-            });
+        let file_size: u64 = extract_file_size(&head_response).unwrap_or_else(|| {
+            tracing::warn!(url = %url, "missing or invalid Content-Length/X-Linked-Size header, defaulting file size to 0");
+            0
+        });
 
         if !status.is_success() && !status.is_redirection() {
             self.check_response(
@@ -501,7 +496,7 @@ impl HFRepository {
         allow_patterns: Option<&Vec<String>>,
         ignore_patterns: Option<&Vec<String>>,
     ) -> Result<Vec<String>> {
-        let stream = self.list_tree(&crate::repository::RepoListTreeParams {
+        let stream = self.list_tree(&RepoListTreeParams {
             revision: Some(revision.to_string()),
             recursive: true,
             expand: false,
@@ -531,20 +526,20 @@ impl HFRepository {
         if params.local_dir.is_none() && !self.cache_enabled {
             return Err(HFError::CacheNotEnabled);
         }
-        let revision = self.effective_revision(params.revision.as_deref());
+        let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
         let max_workers = params.max_workers.unwrap_or(8);
-        let repo_folder = crate::cache::repo_folder_name(&self.repo_path(), Some(self.repo_type));
+        let repo_folder = cache::repo_folder_name(&self.repo_path(), Some(self.repo_type));
         let cache_dir = &self.cache_dir;
 
         if params.local_files_only == Some(true) {
-            let commit_hash = if crate::cache::is_commit_hash(revision) {
+            let commit_hash = if cache::is_commit_hash(revision) {
                 revision.to_string()
             } else {
-                crate::cache::read_ref(cache_dir, &repo_folder, revision)
-                    .await?
-                    .ok_or_else(|| HFError::LocalEntryNotFound {
+                cache::read_ref(cache_dir, &repo_folder, revision).await?.ok_or_else(|| {
+                    HFError::LocalEntryNotFound {
                         path: format!("{}/{}", repo_folder, revision),
-                    })?
+                    }
+                })?
             };
             let snapshot_dir = cache_dir.join(&repo_folder).join("snapshots").join(&commit_hash);
             if snapshot_dir.exists() {
@@ -564,7 +559,7 @@ impl HFRepository {
         let force = params.force_download == Some(true);
 
         if !force && params.local_dir.is_none() {
-            filenames.retain(|f| !crate::cache::snapshot_path(cache_dir, &repo_folder, &commit_hash, f).exists());
+            filenames.retain(|f| !cache::snapshot_path(cache_dir, &repo_folder, &commit_hash, f).exists());
         }
 
         #[cfg(feature = "xet")]
@@ -613,21 +608,11 @@ impl HFRepository {
                     let etag =
                         extract_etag(&resp).ok_or_else(|| HFError::Other(format!("Missing ETag for {filename}")))?;
                     let commit = extract_commit_hash(&resp).unwrap_or_else(|| commit_hash_ref.clone());
-                    let xet_hash = resp
-                        .headers()
-                        .get(constants::HEADER_X_XET_HASH)
-                        .and_then(|v| v.to_str().ok())
-                        .map(|s| s.to_string());
-                    let file_size: u64 = resp
-                        .headers()
-                        .get(constants::HEADER_X_LINKED_SIZE)
-                        .or_else(|| resp.headers().get(reqwest::header::CONTENT_LENGTH))
-                        .and_then(|v| v.to_str().ok())
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or_else(|| {
-                            tracing::warn!(file = %filename, "missing or invalid Content-Length/X-Linked-Size header, defaulting file size to 0");
-                            0
-                        });
+                    let xet_hash = extract_xet_hash(&resp);
+                    let file_size: u64 = extract_file_size(&resp).unwrap_or_else(|| {
+                        tracing::warn!(file = %filename, "missing or invalid Content-Length/X-Linked-Size header, defaulting file size to 0");
+                        0
+                    });
                     Ok::<_, HFError>(Some(FileMetadataInfo {
                         filename,
                         etag,
@@ -783,8 +768,8 @@ impl HFRepository {
             download_concurrently(self, &dl_params, max_workers).await?;
         }
 
-        if !crate::cache::is_commit_hash(revision) {
-            crate::cache::write_ref(cache_dir, &repo_folder, revision, &commit_hash).await?;
+        if !cache::is_commit_hash(revision) {
+            cache::write_ref(cache_dir, &repo_folder, revision, &commit_hash).await?;
         }
 
         Ok(cache_dir.join(&repo_folder).join("snapshots").join(&commit_hash))
@@ -805,6 +790,23 @@ fn extract_commit_hash(response: &reqwest::Response) -> Option<String> {
     response
         .headers()
         .get(constants::HEADER_X_REPO_COMMIT)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+}
+
+pub(crate) fn extract_file_size(response: &reqwest::Response) -> Option<u64> {
+    let headers = response.headers();
+    headers
+        .get(constants::HEADER_X_LINKED_SIZE)
+        .or_else(|| headers.get(reqwest::header::CONTENT_LENGTH))
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse().ok())
+}
+
+pub(crate) fn extract_xet_hash(response: &reqwest::Response) -> Option<String> {
+    response
+        .headers()
+        .get(constants::HEADER_X_XET_HASH)
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string())
 }
@@ -879,7 +881,7 @@ async fn download_concurrently(
         .await
 }
 
-async fn stream_response_to_file(response: reqwest::Response, dest: &std::path::Path) -> Result<()> {
+async fn stream_response_to_file(response: reqwest::Response, dest: &Path) -> Result<()> {
     let mut file = tokio::fs::File::create(dest).await?;
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
@@ -903,10 +905,10 @@ impl HFRepository {
     ///
     /// Endpoint: POST /api/{repo_type}s/{repo_id}/commit/{revision}
     pub async fn create_commit(&self, params: &RepoCreateCommitParams) -> Result<CommitInfo> {
-        let revision = self.effective_revision(params.revision.as_deref());
+        let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
         let url = format!("{}/commit/{}", self.api_url(Some(self.repo_type), &self.repo_path()), revision);
 
-        // Determine which files should be uploaded via xet (LFS) vs inline
+        // Determine which files should be uploaded via xet (LFS) vs. inline
         // (regular). Files uploaded via xet are referenced by their SHA256 OID
         // in the commit NDJSON.
         let lfs_uploaded: HashMap<String, (String, u64)> =
@@ -1007,7 +1009,7 @@ impl HFRepository {
             }],
             commit_message,
             commit_description: params.commit_description.clone(),
-            revision: self.resolve_revision(params.revision.as_deref()),
+            revision: params.revision.clone(),
             create_pr: params.create_pr,
             parent_commit: params.parent_commit.clone(),
         })
@@ -1032,8 +1034,8 @@ impl HFRepository {
         .await?;
 
         if let Some(ref delete_patterns) = params.delete_patterns {
-            let revision = self.effective_revision(params.revision.as_deref());
-            let stream = self.list_tree(&crate::repository::RepoListTreeParams {
+            let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
+            let stream = self.list_tree(&RepoListTreeParams {
                 revision: Some(revision.to_string()),
                 recursive: true,
                 expand: false,
@@ -1056,7 +1058,7 @@ impl HFRepository {
             operations,
             commit_message,
             commit_description: params.commit_description.clone(),
-            revision: self.resolve_revision(params.revision.as_deref()),
+            revision: params.revision.clone(),
             create_pr: params.create_pr,
             parent_commit: None,
         })
@@ -1076,7 +1078,7 @@ impl HFRepository {
             }],
             commit_message,
             commit_description: None,
-            revision: self.resolve_revision(params.revision.as_deref()),
+            revision: params.revision.clone(),
             create_pr: params.create_pr,
             parent_commit: None,
         })
@@ -1085,9 +1087,9 @@ impl HFRepository {
 
     /// Delete a folder from a repository. Lists files under the path and deletes them.
     pub async fn delete_folder(&self, params: &RepoDeleteFolderParams) -> Result<CommitInfo> {
-        let revision = self.effective_revision(params.revision.as_deref());
+        let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
 
-        let stream = self.list_tree(&crate::repository::RepoListTreeParams {
+        let stream = self.list_tree(&RepoListTreeParams {
             revision: Some(revision.to_string()),
             recursive: true,
             expand: false,
@@ -1152,7 +1154,7 @@ impl HFRepository {
     /// Check upload modes for all files and upload LFS files via xet.
     ///
     /// Always calls the preupload endpoint to determine upload mode per file.
-    /// If any files require LFS and the "xet" feature is not enabled, returns
+    /// If any files require LFS and the "xet" feature is not enabled, it returns
     /// `HFError::XetNotEnabled`.
     ///
     /// Returns a map of path_in_repo -> (sha256_oid, size) for files that were
@@ -1223,7 +1225,7 @@ impl HFRepository {
     async fn fetch_upload_modes(
         &self,
         repo_id: &str,
-        repo_type: Option<crate::types::RepoType>,
+        repo_type: Option<RepoType>,
         revision: &str,
         files: &[(&str, u64, &[u8])],
     ) -> Result<HashMap<String, String>> {
@@ -1305,7 +1307,7 @@ impl HFRepository {
     async fn post_lfs_batch_info(
         &self,
         repo_id: &str,
-        repo_type: Option<crate::types::RepoType>,
+        repo_type: Option<RepoType>,
         revision: &str,
         objects: &[(&str, u64)],
     ) -> Result<Option<String>> {
@@ -1392,8 +1394,8 @@ async fn read_size_and_sample(source: &AddSource) -> Result<(u64, Vec<u8>)> {
 /// Recursively collect files from a directory into CommitOperation::Add entries.
 /// Respects allow_patterns and ignore_patterns (glob-style).
 async fn collect_files_recursive(
-    root: &std::path::Path,
-    current: &std::path::Path,
+    root: &Path,
+    current: &Path,
     base_repo_path: &str,
     allow_patterns: &Option<Vec<String>>,
     ignore_patterns: &Option<Vec<String>>,
