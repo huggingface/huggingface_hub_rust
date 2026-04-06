@@ -2,8 +2,6 @@ use std::fmt;
 use std::ops::Deref;
 use std::sync::Arc;
 
-use futures::StreamExt;
-
 use crate::client::HFClient;
 use crate::error::{HFError, Result};
 use crate::{repository as repo, types};
@@ -30,7 +28,7 @@ pub struct HFClientSync {
 /// Synchronous/blocking counterpart to [`repo::HFRepository`].
 ///
 /// Holds a reference to the underlying async handle and the shared tokio runtime.
-/// Derefs to [`repo::HFRepository`] so all accessor methods (owner, name, repo_path,
+/// Derefs to [`repo::HFRepository`], so all accessor methods (owner, name, repo_path,
 /// etc.) are available directly. Blocking API methods are defined via the `sync_api!`
 /// macro in the corresponding `api/` modules.
 #[derive(Clone)]
@@ -48,7 +46,6 @@ pub struct HFRepositorySync {
 pub struct HFSpaceSync {
     repo: HFRepositorySync,
     pub(crate) inner: repo::HFSpace,
-    pub(crate) runtime: Arc<tokio::runtime::Runtime>,
 }
 
 impl fmt::Debug for HFClientSync {
@@ -72,7 +69,7 @@ impl fmt::Debug for HFSpaceSync {
 impl HFClientSync {
     /// Creates an `HFClientSync` using default configuration from the environment.
     ///
-    /// Reads `HF_TOKEN`, `HF_ENDPOINT`, and other standard environment variables.
+    /// Reads `HF_TOKEN`, `HF_ENDPOINT`, and other the standard environment variables.
     ///
     /// # Errors
     ///
@@ -157,21 +154,6 @@ impl HFRepositorySync {
     pub fn without_revision(&self) -> Self {
         Self::from_inner(self.inner.without_revision(), self.runtime.clone())
     }
-
-    pub fn download_file_stream(
-        &self,
-        params: &repo::RepoDownloadFileStreamParams,
-    ) -> Result<(Option<u64>, Vec<bytes::Bytes>)> {
-        self.runtime.block_on(async {
-            let (content_length, stream) = self.inner.download_file_stream(params).await?;
-            futures::pin_mut!(stream);
-            let mut chunks = Vec::new();
-            while let Some(chunk) = stream.next().await {
-                chunks.push(chunk?);
-            }
-            Ok((content_length, chunks))
-        })
-    }
 }
 
 impl Deref for HFRepositorySync {
@@ -189,11 +171,7 @@ impl HFSpaceSync {
         let name = name.into();
         let inner = repo::HFSpace::new(client.inner.clone(), &owner, &name);
         let repo = HFRepositorySync::new(client.clone(), types::RepoType::Space, owner, name);
-        Self {
-            repo,
-            inner,
-            runtime: client.runtime,
-        }
+        Self { repo, inner }
     }
 
     /// Returns a new handle pinned to the given revision (branch, tag, or commit SHA).
@@ -202,7 +180,6 @@ impl HFSpaceSync {
         Self {
             inner: self.inner.with_revision(&rev),
             repo: self.repo.with_revision(rev),
-            runtime: self.runtime.clone(),
         }
     }
 
@@ -211,7 +188,6 @@ impl HFSpaceSync {
         Self {
             inner: self.inner.without_revision(),
             repo: self.repo.without_revision(),
-            runtime: self.runtime.clone(),
         }
     }
 
@@ -234,8 +210,7 @@ impl TryFrom<HFRepositorySync> for HFSpaceSync {
 
     fn try_from(repo: HFRepositorySync) -> Result<Self> {
         let inner = repo::HFSpace::try_from(repo.inner.clone())?;
-        let runtime = repo.runtime.clone();
-        Ok(Self { repo, inner, runtime })
+        Ok(Self { repo, inner })
     }
 }
 

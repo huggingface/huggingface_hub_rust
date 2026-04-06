@@ -134,20 +134,19 @@ impl HFRepository {
         let repo_path = self.repo_path();
         let url = self.download_url(Some(self.repo_type), &repo_path, revision, &params.filename);
 
+        let head_response = self.client.head(&url).headers(self.auth_headers()).send().await?;
+        let head_response = self
+            .check_response(
+                head_response,
+                Some(&repo_path),
+                crate::error::NotFoundContext::Entry {
+                    path: params.filename.clone(),
+                },
+            )
+            .await?;
+
         #[cfg(feature = "xet")]
         {
-            let head_response = self.client.head(&url).headers(self.auth_headers()).send().await?;
-
-            let head_response = self
-                .check_response(
-                    head_response,
-                    Some(&repo_path),
-                    crate::error::NotFoundContext::Entry {
-                        path: params.filename.clone(),
-                    },
-                )
-                .await?;
-
             let headers = head_response.headers();
             if let Some(xet_hash) = headers.get(constants::HEADER_X_XET_HASH).and_then(|v| v.to_str().ok()) {
                 let file_size: u64 = headers
@@ -171,16 +170,6 @@ impl HFRepository {
 
         #[cfg(not(feature = "xet"))]
         {
-            let head_response = self.client.head(&url).headers(self.auth_headers()).send().await?;
-            let head_response = self
-                .check_response(
-                    head_response,
-                    Some(&repo_path),
-                    crate::error::NotFoundContext::Entry {
-                        path: params.filename.clone(),
-                    },
-                )
-                .await?;
             if head_response.headers().get(constants::HEADER_X_XET_HASH).is_some() {
                 return Err(HFError::XetNotEnabled);
             }
@@ -1459,16 +1448,16 @@ fn matches_any_glob(patterns: &[String], path: &str) -> bool {
 
 sync_api! {
     impl HFRepository -> HFRepositorySync {
-        fn list_files(&self, params: &RepoListFilesParams) -> crate::error::Result<Vec<String>>;
-        fn get_paths_info(&self, params: &RepoGetPathsInfoParams) -> crate::error::Result<Vec<RepoTreeEntry>>;
-        fn download_file(&self, params: &RepoDownloadFileParams) -> crate::error::Result<std::path::PathBuf>;
-        fn download_file_to_bytes(&self, params: &RepoDownloadFileToBytesParams) -> crate::error::Result<bytes::Bytes>;
-        fn snapshot_download(&self, params: &RepoSnapshotDownloadParams) -> crate::error::Result<std::path::PathBuf>;
-        fn create_commit(&self, params: &RepoCreateCommitParams) -> crate::error::Result<CommitInfo>;
-        fn upload_file(&self, params: &RepoUploadFileParams) -> crate::error::Result<CommitInfo>;
-        fn upload_folder(&self, params: &RepoUploadFolderParams) -> crate::error::Result<CommitInfo>;
-        fn delete_file(&self, params: &RepoDeleteFileParams) -> crate::error::Result<CommitInfo>;
-        fn delete_folder(&self, params: &RepoDeleteFolderParams) -> crate::error::Result<CommitInfo>;
+        fn list_files(&self, params: &RepoListFilesParams) -> Result<Vec<String>>;
+        fn get_paths_info(&self, params: &RepoGetPathsInfoParams) -> Result<Vec<RepoTreeEntry>>;
+        fn download_file(&self, params: &RepoDownloadFileParams) -> Result<PathBuf>;
+        fn download_file_to_bytes(&self, params: &RepoDownloadFileToBytesParams) -> Result<bytes::Bytes>;
+        fn snapshot_download(&self, params: &RepoSnapshotDownloadParams) -> Result<PathBuf>;
+        fn create_commit(&self, params: &RepoCreateCommitParams) -> Result<CommitInfo>;
+        fn upload_file(&self, params: &RepoUploadFileParams) -> Result<CommitInfo>;
+        fn upload_folder(&self, params: &RepoUploadFolderParams) -> Result<CommitInfo>;
+        fn delete_file(&self, params: &RepoDeleteFileParams) -> Result<CommitInfo>;
+        fn delete_folder(&self, params: &RepoDeleteFolderParams) -> Result<CommitInfo>;
     }
 }
 
