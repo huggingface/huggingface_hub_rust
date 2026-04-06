@@ -28,7 +28,7 @@ To enable Xet high-performance transfers:
 
 ```toml
 [dependencies]
-huggingface-hub = { git = "https://github.com/huggingface-internal/huggingface-hub-rs.git", features = ["xet"] }
+huggingface-hub = { git = "https://github.com/huggingface/huggingface-hub-rs.git", features = ["xet"] }
 ```
 
 ## Quick Start
