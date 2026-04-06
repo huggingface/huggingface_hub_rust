@@ -13,8 +13,8 @@ use url::Url;
 use crate::error::{HFError, Result};
 use crate::repository::{
     HFRepository, RepoCreateCommitParams, RepoDeleteFileParams, RepoDeleteFolderParams, RepoDownloadFileParams,
-    RepoDownloadFileStreamParams, RepoGetPathsInfoParams, RepoListFilesParams, RepoListTreeParams,
-    RepoSnapshotDownloadParams, RepoUploadFileParams, RepoUploadFolderParams,
+    RepoDownloadFileStreamParams, RepoDownloadFileToBytesParams, RepoGetPathsInfoParams, RepoListFilesParams,
+    RepoListTreeParams, RepoSnapshotDownloadParams, RepoUploadFileParams, RepoUploadFolderParams,
 };
 use crate::types::{AddSource, CommitInfo, CommitOperation, RepoTreeEntry, RepoType};
 use crate::{cache, constants};
@@ -205,6 +205,23 @@ impl HFRepository {
         let content_length = response.content_length();
         let stream = response.bytes_stream().map(|r| r.map_err(HFError::from));
         Ok((content_length, Box::new(Box::pin(stream))))
+    }
+
+    /// Download a file (or byte range) into memory and return the contents as [`bytes::Bytes`].
+    ///
+    /// This is a convenience wrapper around [`download_file_stream`](Self::download_file_stream)
+    /// that collects the entire stream into a single buffer. When `range` is set,
+    /// only the specified byte range is fetched.
+    pub async fn download_file_to_bytes(&self, params: &RepoDownloadFileToBytesParams) -> Result<bytes::Bytes> {
+        let (content_length, stream) = self.download_file_stream(params).await?;
+        futures::pin_mut!(stream);
+
+        let capacity = content_length.unwrap_or(0) as usize;
+        let mut buf = bytes::BytesMut::with_capacity(capacity);
+        while let Some(chunk) = stream.next().await {
+            buf.extend_from_slice(&chunk?);
+        }
+        Ok(buf.freeze())
     }
 
     async fn download_file_to_local_dir(&self, params: &RepoDownloadFileParams) -> Result<PathBuf> {
@@ -1514,6 +1531,7 @@ sync_api! {
         fn list_files(&self, params: &RepoListFilesParams) -> crate::error::Result<Vec<String>>;
         fn get_paths_info(&self, params: &RepoGetPathsInfoParams) -> crate::error::Result<Vec<RepoTreeEntry>>;
         fn download_file(&self, params: &RepoDownloadFileParams) -> crate::error::Result<std::path::PathBuf>;
+        fn download_file_to_bytes(&self, params: &RepoDownloadFileToBytesParams) -> crate::error::Result<bytes::Bytes>;
         fn snapshot_download(&self, params: &RepoSnapshotDownloadParams) -> crate::error::Result<std::path::PathBuf>;
         fn create_commit(&self, params: &RepoCreateCommitParams) -> crate::error::Result<CommitInfo>;
         fn upload_file(&self, params: &RepoUploadFileParams) -> crate::error::Result<CommitInfo>;

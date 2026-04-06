@@ -150,6 +150,9 @@ pub struct RepoDownloadFileStreamParams {
     pub range: Option<std::ops::Range<u64>>,
 }
 
+pub type RepoDownloadFileToBytesParams = RepoDownloadFileStreamParams;
+pub type RepoDownloadFileToBytesParamsBuilder = RepoDownloadFileStreamParamsBuilder;
+
 #[derive(Default, TypedBuilder)]
 pub struct RepoSnapshotDownloadParams {
     #[builder(default, setter(into, strip_option))]
