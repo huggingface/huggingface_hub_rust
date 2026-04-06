@@ -4,7 +4,7 @@
 //! Run: cargo run -p huggingface-hub --example diff
 
 use futures::StreamExt;
-use huggingface_hub::diff::{parse_raw_diff, stream_raw_diff, GIT_EMPTY_TREE_HASH};
+use huggingface_hub::diff::{parse_raw_diff, GIT_EMPTY_TREE_HASH};
 use huggingface_hub::{HFClient, RepoGetRawDiffParams, RepoGetRawDiffStreamParams, RepoListCommitsParams};
 
 #[tokio::main]
@@ -39,12 +39,10 @@ async fn main() -> huggingface_hub::Result<()> {
     // --- Stream a diff against the empty tree (all files in HEAD) ---
 
     let compare = format!("{GIT_EMPTY_TREE_HASH}..main");
-    let byte_stream = repo
+    let mut diff_stream = repo
         .get_raw_diff_stream(&RepoGetRawDiffStreamParams::builder().compare(&compare).build())
         .await?;
 
-    let byte_stream = byte_stream.map(|r| r.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e)));
-    let mut diff_stream = stream_raw_diff(byte_stream);
     let mut count = 0;
     println!("\nStreaming all files in main (first 10):");
     while let Some(result) = diff_stream.next().await {

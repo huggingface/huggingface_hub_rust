@@ -38,9 +38,9 @@ async fn fetch_xet_connection_info(
     revision: &str,
 ) -> Result<XetConnectionInfo> {
     let segment = constants::repo_type_api_segment(repo_type);
-    let url = format!("{}/api/{}/{}/xet-{}-token/{}", api.inner.endpoint, segment, repo_id, token_type, revision);
+    let url = format!("{}/api/{}/{}/xet-{}-token/{}", api.endpoint, segment, repo_id, token_type, revision);
 
-    let response = api.inner.client.get(&url).headers(api.auth_headers()).send().await?;
+    let response = api.client.get(&url).headers(api.auth_headers()).send().await?;
 
     let response = api
         .check_response(response, Some(repo_id), crate::error::NotFoundContext::Repo)
@@ -62,7 +62,7 @@ fn xet_token_url(
     revision: &str,
 ) -> String {
     let segment = constants::repo_type_api_segment(repo_type);
-    format!("{}/api/{}/{}/xet-{}-token/{}", api.inner.endpoint, segment, repo_id, token_type, revision)
+    format!("{}/api/{}/{}/xet-{}-token/{}", api.endpoint, segment, repo_id, token_type, revision)
 }
 
 fn build_xet_session() -> Result<XetSession> {

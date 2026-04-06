@@ -9,8 +9,8 @@ impl HFClient {
     /// Get authenticated user info.
     /// Endpoint: GET /api/whoami-v2
     pub async fn whoami(&self) -> Result<User> {
-        let url = format!("{}/api/whoami-v2", self.inner.endpoint);
-        let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;
+        let url = format!("{}/api/whoami-v2", self.endpoint);
+        let response = self.client.get(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
@@ -28,8 +28,8 @@ impl HFClient {
     /// Get overview of a user.
     /// Endpoint: GET /api/users/{username}/overview
     pub async fn get_user_overview(&self, username: &str) -> Result<User> {
-        let url = format!("{}/api/users/{}/overview", self.inner.endpoint, username);
-        let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;
+        let url = format!("{}/api/users/{}/overview", self.endpoint, username);
+        let response = self.client.get(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
@@ -39,8 +39,8 @@ impl HFClient {
     /// Get overview of an organization.
     /// Endpoint: GET /api/organizations/{organization}/overview
     pub async fn get_organization_overview(&self, organization: &str) -> Result<Organization> {
-        let url = format!("{}/api/organizations/{}/overview", self.inner.endpoint, organization);
-        let response = self.inner.client.get(&url).headers(self.auth_headers()).send().await?;
+        let url = format!("{}/api/organizations/{}/overview", self.endpoint, organization);
+        let response = self.client.get(&url).headers(self.auth_headers()).send().await?;
         let response = self
             .check_response(response, None, crate::error::NotFoundContext::Generic)
             .await?;
@@ -54,7 +54,7 @@ impl HFClient {
         username: &str,
         limit: Option<usize>,
     ) -> Result<impl Stream<Item = Result<User>> + '_> {
-        let url = Url::parse(&format!("{}/api/users/{}/followers", self.inner.endpoint, username))?;
+        let url = Url::parse(&format!("{}/api/users/{}/followers", self.endpoint, username))?;
         Ok(self.paginate(url, vec![], limit))
     }
 
@@ -65,7 +65,7 @@ impl HFClient {
         username: &str,
         limit: Option<usize>,
     ) -> Result<impl Stream<Item = Result<User>> + '_> {
-        let url = Url::parse(&format!("{}/api/users/{}/following", self.inner.endpoint, username))?;
+        let url = Url::parse(&format!("{}/api/users/{}/following", self.endpoint, username))?;
         Ok(self.paginate(url, vec![], limit))
     }
 
@@ -76,7 +76,7 @@ impl HFClient {
         organization: &str,
         limit: Option<usize>,
     ) -> Result<impl Stream<Item = Result<User>> + '_> {
-        let url = Url::parse(&format!("{}/api/organizations/{}/members", self.inner.endpoint, organization))?;
+        let url = Url::parse(&format!("{}/api/organizations/{}/members", self.endpoint, organization))?;
         Ok(self.paginate(url, vec![], limit))
     }
 }

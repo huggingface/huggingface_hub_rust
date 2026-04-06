@@ -30,7 +30,7 @@ use crate::types::{AddSource, CommitOperation, RepoInfo, RepoType};
 /// ```
 #[derive(Clone)]
 pub struct HFRepository {
-    pub(crate) client: HFClient,
+    pub(crate) hf_client: HFClient,
     owner: String,
     name: String,
     pub(crate) repo_type: RepoType,
@@ -411,7 +411,7 @@ impl HFRepository {
     /// Construct a new repository handle. Prefer the factory methods on [`HFClient`] instead.
     pub fn new(client: HFClient, repo_type: RepoType, owner: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
-            client,
+            hf_client: client,
             owner: owner.into(),
             name: name.into(),
             repo_type,
@@ -421,7 +421,7 @@ impl HFRepository {
 
     /// Return a reference to the underlying [`HFClient`].
     pub fn client(&self) -> &HFClient {
-        &self.client
+        &self.hf_client
     }
 
     /// The repository owner (user or organization name).
@@ -548,7 +548,7 @@ impl Deref for HFRepository {
     type Target = HFClient;
 
     fn deref(&self) -> &Self::Target {
-        &self.client
+        &self.hf_client
     }
 }
 

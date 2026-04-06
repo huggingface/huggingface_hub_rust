@@ -221,7 +221,7 @@ impl HFClient {
     /// Build authorization headers for requests
     pub(crate) fn auth_headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
-        if let Some(ref token) = self.inner.token {
+        if let Some(ref token) = self.token {
             if let Ok(val) = HeaderValue::from_str(&format!("Bearer {token}")) {
                 headers.insert(AUTHORIZATION, val);
             }
@@ -232,7 +232,7 @@ impl HFClient {
     /// Build a URL for the API: {endpoint}/api/{segment}/{repo_id}
     pub(crate) fn api_url(&self, repo_type: Option<crate::types::RepoType>, repo_id: &str) -> String {
         let segment = constants::repo_type_api_segment(repo_type);
-        format!("{}/api/{}/{}", self.inner.endpoint, segment, repo_id)
+        format!("{}/api/{}/{}", self.endpoint, segment, repo_id)
     }
 
     /// Build a download URL: {endpoint}/{prefix}{repo_id}/resolve/{revision}/{filename}
@@ -244,7 +244,7 @@ impl HFClient {
         filename: &str,
     ) -> String {
         let prefix = constants::repo_type_url_prefix(repo_type);
-        format!("{}/{}{}/resolve/{}/{}", self.inner.endpoint, prefix, repo_id, revision, filename)
+        format!("{}/{}{}/resolve/{}/{}", self.endpoint, prefix, repo_id, revision, filename)
     }
 
     /// Check an HTTP response and map error status codes to HFError variants.
@@ -337,13 +337,13 @@ mod tests {
     #[test]
     fn test_builder_cache_dir_explicit() {
         let api = HFClientBuilder::new().cache_dir("/tmp/my-cache").build().unwrap();
-        assert_eq!(api.inner.cache_dir, std::path::PathBuf::from("/tmp/my-cache"));
+        assert_eq!(api.cache_dir, std::path::PathBuf::from("/tmp/my-cache"));
     }
 
     #[test]
     fn test_builder_cache_dir_default() {
         let api = HFClientBuilder::new().build().unwrap();
-        let path_str = api.inner.cache_dir.to_string_lossy();
+        let path_str = api.cache_dir.to_string_lossy();
         assert!(path_str.contains("huggingface") && path_str.ends_with("hub"));
     }
 }
