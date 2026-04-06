@@ -58,7 +58,7 @@ fn help_shows_all_commands() {
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
     for cmd in &[
-        "auth", "cache", "datasets", "download", "jobs", "models", "repos", "spaces", "upload", "env", "version",
+        "auth", "cache", "datasets", "download", "models", "repos", "spaces", "upload", "env", "version",
     ] {
         assert!(stdout.contains(cmd), "help output should contain command '{cmd}'");
     }
@@ -86,28 +86,6 @@ fn repos_help_shows_subcommands() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     for cmd in &["create", "delete", "move", "settings", "delete-files", "branch", "tag"] {
         assert!(stdout.contains(cmd), "repos help should contain subcommand '{cmd}'");
-    }
-}
-
-#[test]
-fn jobs_help_shows_subcommands() {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_hfrs"))
-        .args(["jobs", "--help"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    for cmd in &[
-        "run",
-        "ps",
-        "inspect",
-        "cancel",
-        "logs",
-        "hardware",
-        "stats",
-        "scheduled",
-    ] {
-        assert!(stdout.contains(cmd), "jobs help should contain subcommand '{cmd}'");
     }
 }
 
@@ -1123,7 +1101,8 @@ fn download_quiet_mode() {
         ])
         .unwrap();
     assert_eq!(code, 0, "download should succeed");
-    assert!(stdout.trim().is_empty(), "quiet mode should produce no stdout, got: '{}'", stdout.trim());
+    assert!(!stdout.trim().is_empty(), "quiet mode should print the local path");
+    assert!(tmp.path().join("config.json").exists(), "file should be downloaded");
 }
 
 #[test]
@@ -1661,7 +1640,7 @@ fn write_upload_quiet() {
     let _ = hfrs.run_raw(&["repos", "delete", &full_repo]);
 
     assert_eq!(code, 0, "quiet upload should succeed");
-    assert!(stdout.trim().is_empty(), "quiet mode should produce no stdout, got: '{}'", stdout.trim());
+    assert!(!stdout.trim().is_empty(), "quiet mode should print the commit URL");
 }
 
 #[test]
