@@ -65,5 +65,6 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_TEST_WRITE: "1"
-          PATH: ${{ github.workspace }}/.venv/bin:${{ env.PATH }}
-        run: cargo test -p huggingface-hub --all-features
+        run: |
+          export PATH="${{ github.workspace }}/.venv/bin:$PATH"
+          cargo test -p huggingface-hub --all-features
