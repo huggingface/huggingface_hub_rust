@@ -12,8 +12,8 @@
 
 use huggingface_hub::repository::{
     RepoCreateBranchParams, RepoCreateCommitParams, RepoDeleteBranchParams, RepoDownloadFileParams,
-    RepoFileExistsParams, RepoGetCommitDiffParams, RepoListCommitsParams, RepoListFilesParams, RepoListRefsParams,
-    RepoListTreeParams, RepoRevisionExistsParams, RepoUploadFileParams, RepoUploadFolderParams,
+    RepoFileExistsParams, RepoGetCommitDiffParams, RepoGetRawDiffParams, RepoListCommitsParams, RepoListFilesParams,
+    RepoListRefsParams, RepoListTreeParams, RepoRevisionExistsParams, RepoUploadFileParams, RepoUploadFolderParams,
 };
 use huggingface_hub::types::*;
 use huggingface_hub::{HFClientBuilder, HFClientSync, RepoInfo, RepoInfoParams};
@@ -254,6 +254,24 @@ fn test_sync_get_commit_diff() {
         )
         .unwrap();
     assert!(!diff.is_empty());
+}
+
+#[test]
+fn test_sync_get_raw_diff_stream() {
+    let Some(api) = sync_api() else { return };
+    let gpt2 = repo_handle(&api, "openai-community/gpt2");
+    let commits = gpt2.list_commits(&RepoListCommitsParams::default()).unwrap();
+    assert!(commits.len() >= 2);
+
+    let diffs = gpt2
+        .get_raw_diff_stream(
+            &RepoGetRawDiffParams::builder()
+                .compare(format!("{}..{}", commits[1].id, commits[0].id))
+                .build(),
+        )
+        .unwrap();
+    assert!(!diffs.is_empty());
+    assert!(!diffs[0].file_path.is_empty());
 }
 
 // --- Write operations ---

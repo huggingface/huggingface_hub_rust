@@ -29,7 +29,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy -p huggingface-hub -- -D warnings
+      - run: cargo clippy -p huggingface-hub --all-features -- -D warnings
 
   build:
     name: Build (release)
@@ -38,7 +38,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build -p huggingface-hub --release
+      - run: cargo build -p huggingface-hub --all-features --release
       - run: cargo build -p huggingface-hub --all-features --examples
 
   test:
@@ -49,13 +49,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Unit tests
-        run: cargo test -p huggingface-hub --lib
+        run: cargo test -p huggingface-hub --all-features --lib
       - name: Doc tests
-        run: cargo test -p huggingface-hub --doc
+        run: cargo test -p huggingface-hub --all-features --doc
       - name: Integration tests (read-only)
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: cargo test -p huggingface-hub --test integration_test
+        run: cargo test -p huggingface-hub --all-features --test integration_test
       - name: Set up Python for cache interop tests
         uses: actions/setup-python@v5
         with:
@@ -63,4 +63,4 @@ jobs:
       - name: Cache tests
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: cargo test -p huggingface-hub --features xet --test cache_test
+        run: cargo test -p huggingface-hub --all-features --test cache_test

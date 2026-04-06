@@ -5,8 +5,9 @@
 //!
 //! Run: source ~/hf/prod_token && cargo test -p huggingface-hub --test download_test
 
+use futures::StreamExt;
 use huggingface_hub::repository::HFRepository;
-use huggingface_hub::{HFClient, HFClientBuilder, RepoDownloadFileParams};
+use huggingface_hub::{HFClient, HFClientBuilder, RepoDownloadFileParams, RepoDownloadFileStreamParams};
 use sha2::{Digest, Sha256};
 
 fn api() -> Option<HFClient> {
@@ -211,4 +212,132 @@ async fn test_download_overwrites_existing_file() {
     let content = std::fs::read_to_string(&dest).unwrap();
     assert_ne!(content, "old content");
     assert!(content.contains("gpt2"));
+}
+
+// --- Range / partial download tests (non-xet) ---
+
+#[tokio::test]
+async fn test_download_stream_full_file() {
+    let Some(api) = api() else { return };
+    let repo = model(&api, "openai-community", "gpt2");
+
+    let (content_length, stream) = repo
+        .download_file_stream(&RepoDownloadFileStreamParams::builder().filename("config.json").build())
+        .await
+        .unwrap();
+
+    assert!(content_length.is_some());
+
+    futures::pin_mut!(stream);
+    let mut bytes = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        bytes.extend_from_slice(&chunk.unwrap());
+    }
+
+    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(json["model_type"], "gpt2");
+}
+
+#[tokio::test]
+async fn test_download_stream_range_first_bytes() {
+    let Some(api) = api() else { return };
+    let repo = model(&api, "openai-community", "gpt2");
+
+    // Download just the first 20 bytes
+    let (content_length, stream) = repo
+        .download_file_stream(
+            &RepoDownloadFileStreamParams::builder()
+                .filename("config.json")
+                .range(0..20u64)
+                .build(),
+        )
+        .await
+        .unwrap();
+
+    assert!(content_length.unwrap() <= 20);
+
+    futures::pin_mut!(stream);
+    let mut bytes = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        bytes.extend_from_slice(&chunk.unwrap());
+    }
+    assert_eq!(bytes.len(), 20);
+}
+
+#[tokio::test]
+async fn test_download_stream_range_middle_bytes() {
+    let Some(api) = api() else { return };
+    let repo = model(&api, "openai-community", "gpt2");
+
+    // First download the full file for comparison
+    let (_len, full_stream) = repo
+        .download_file_stream(&RepoDownloadFileStreamParams::builder().filename("config.json").build())
+        .await
+        .unwrap();
+    futures::pin_mut!(full_stream);
+    let mut full_bytes = Vec::new();
+    while let Some(chunk) = full_stream.next().await {
+        full_bytes.extend_from_slice(&chunk.unwrap());
+    }
+
+    // Now download a range from the middle
+    let start = 10u64;
+    let end = 50u64;
+    let (_len, range_stream) = repo
+        .download_file_stream(
+            &RepoDownloadFileStreamParams::builder()
+                .filename("config.json")
+                .range(start..end)
+                .build(),
+        )
+        .await
+        .unwrap();
+
+    futures::pin_mut!(range_stream);
+    let mut range_bytes = Vec::new();
+    while let Some(chunk) = range_stream.next().await {
+        range_bytes.extend_from_slice(&chunk.unwrap());
+    }
+
+    assert_eq!(range_bytes.len(), (end - start) as usize);
+    assert_eq!(range_bytes, &full_bytes[start as usize..end as usize]);
+}
+
+#[tokio::test]
+async fn test_download_stream_range_content_matches_full_download() {
+    let Some(api) = api() else { return };
+    let repo = model(&api, "openai-community", "gpt2");
+    let dir = tempfile::tempdir().unwrap();
+
+    // Download full file to disk for reference
+    let path = repo
+        .download_file(
+            &RepoDownloadFileParams::builder()
+                .filename("config.json")
+                .local_dir(dir.path().to_path_buf())
+                .build(),
+        )
+        .await
+        .unwrap();
+    let full_bytes = std::fs::read(&path).unwrap();
+
+    // Stream the first 100 bytes
+    let range_end = 100u64.min(full_bytes.len() as u64);
+    let (_len, stream) = repo
+        .download_file_stream(
+            &RepoDownloadFileStreamParams::builder()
+                .filename("config.json")
+                .range(0..range_end)
+                .build(),
+        )
+        .await
+        .unwrap();
+
+    futures::pin_mut!(stream);
+    let mut streamed = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        streamed.extend_from_slice(&chunk.unwrap());
+    }
+
+    assert_eq!(streamed, &full_bytes[..range_end as usize]);
 }

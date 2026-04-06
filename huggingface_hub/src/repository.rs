@@ -2,6 +2,7 @@ use std::fmt;
 use std::ops::Deref;
 use std::path::PathBuf;
 
+use serde::Serialize;
 use typed_builder::TypedBuilder;
 
 use crate::client::HFClient;
@@ -29,7 +30,7 @@ use crate::types::{AddSource, CommitOperation, RepoInfo, RepoType};
 /// ```
 #[derive(Clone)]
 pub struct HFRepository {
-    pub(crate) client: HFClient,
+    pub(crate) hf_client: HFClient,
     owner: String,
     name: String,
     pub(crate) repo_type: RepoType,
@@ -145,7 +146,12 @@ pub struct RepoDownloadFileStreamParams {
     pub filename: String,
     #[builder(default, setter(into, strip_option))]
     pub revision: Option<String>,
+    #[builder(default, setter(strip_option))]
+    pub range: Option<std::ops::Range<u64>>,
 }
+
+pub type RepoDownloadFileToBytesParams = RepoDownloadFileStreamParams;
+pub type RepoDownloadFileToBytesParamsBuilder = RepoDownloadFileStreamParamsBuilder;
 
 #[derive(Default, TypedBuilder)]
 pub struct RepoSnapshotDownloadParams {
@@ -299,14 +305,27 @@ pub struct RepoDeleteTagParams {
     pub tag: String,
 }
 
-#[derive(Default, TypedBuilder)]
+#[derive(Default, TypedBuilder, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RepoUpdateSettingsParams {
     #[builder(default, setter(strip_option))]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub private: Option<bool>,
+    #[builder(default, setter(strip_option))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gated: Option<crate::types::GatedApprovalMode>,
     #[builder(default, setter(into, strip_option))]
-    pub gated: Option<String>,
-    #[builder(default, setter(into, strip_option))]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[builder(default, setter(strip_option))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub discussions_disabled: Option<bool>,
+    #[builder(default, setter(into, strip_option))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gated_notifications_email: Option<String>,
+    #[builder(default, setter(strip_option))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gated_notifications_mode: Option<crate::types::GatedNotificationsMode>,
 }
 
 #[cfg(feature = "spaces")]
@@ -386,7 +405,7 @@ impl HFRepository {
     /// Construct a new repository handle. Prefer the factory methods on [`HFClient`] instead.
     pub fn new(client: HFClient, repo_type: RepoType, owner: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
-            client,
+            hf_client: client,
             owner: owner.into(),
             name: name.into(),
             repo_type,
@@ -396,7 +415,7 @@ impl HFRepository {
 
     /// Return a reference to the underlying [`HFClient`].
     pub fn client(&self) -> &HFClient {
-        &self.client
+        &self.hf_client
     }
 
     /// The repository owner (user or organization name).
@@ -519,8 +538,16 @@ impl From<HFSpace> for HFRepository {
     }
 }
 
+impl Deref for HFRepository {
+    type Target = HFClient;
+
+    fn deref(&self) -> &Self::Target {
+        &self.hf_client
+    }
+}
+
 impl Deref for HFSpace {
-    type Target = HFRepo;
+    type Target = HFRepository;
 
     fn deref(&self) -> &Self::Target {
         &self.repo

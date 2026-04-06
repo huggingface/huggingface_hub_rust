@@ -12,14 +12,14 @@ use url::Url;
 
 use crate::error::{HFError, Result};
 use crate::repository::{
-    RepoCreateCommitParams, RepoDeleteFileParams, RepoDeleteFolderParams, RepoDownloadFileParams,
-    RepoDownloadFileStreamParams, RepoGetPathsInfoParams, RepoListFilesParams, RepoListTreeParams,
-    RepoSnapshotDownloadParams, RepoUploadFileParams, RepoUploadFolderParams,
+    HFRepository, RepoCreateCommitParams, RepoDeleteFileParams, RepoDeleteFolderParams, RepoDownloadFileParams,
+    RepoDownloadFileStreamParams, RepoDownloadFileToBytesParams, RepoGetPathsInfoParams, RepoListFilesParams,
+    RepoListTreeParams, RepoSnapshotDownloadParams, RepoUploadFileParams, RepoUploadFolderParams,
 };
 use crate::types::{AddSource, CommitInfo, CommitOperation, RepoTreeEntry, RepoType};
 use crate::{cache, constants};
 
-impl crate::repository::HFRepository {
+impl HFRepository {
     /// Return a flat list of all file paths in the repository at the given revision.
     pub async fn list_files(&self, params: &RepoListFilesParams) -> Result<Vec<String>> {
         let revision = self.resolve_revision(params.revision.as_deref());
@@ -47,7 +47,7 @@ impl crate::repository::HFRepository {
     /// subdirectories. Use `limit` to cap the total number of entries yielded.
     pub fn list_tree(&self, params: &RepoListTreeParams) -> Result<impl Stream<Item = Result<RepoTreeEntry>> + '_> {
         let revision = self.effective_revision(params.revision.as_deref());
-        let url_str = format!("{}/tree/{}", self.client.api_url(Some(self.repo_type), &self.repo_path()), revision);
+        let url_str = format!("{}/tree/{}", self.api_url(Some(self.repo_type), &self.repo_path()), revision);
         let url = Url::parse(&url_str)?;
 
         let mut query: Vec<(String, String)> = Vec::new();
@@ -58,32 +58,23 @@ impl crate::repository::HFRepository {
             query.push(("expand".into(), "true".into()));
         }
 
-        Ok(self.client.paginate(url, query, params.limit))
+        Ok(self.paginate(url, query, params.limit))
     }
 
     /// Get info about specific paths in a repository.
     /// Endpoint: POST /api/{repo_type}s/{repo_id}/paths-info/{revision}
     pub async fn get_paths_info(&self, params: &RepoGetPathsInfoParams) -> Result<Vec<RepoTreeEntry>> {
         let revision = self.effective_revision(params.revision.as_deref());
-        let url = format!("{}/paths-info/{}", self.client.api_url(Some(self.repo_type), &self.repo_path()), revision);
+        let url = format!("{}/paths-info/{}", self.api_url(Some(self.repo_type), &self.repo_path()), revision);
 
         let body = serde_json::json!({
             "paths": params.paths,
         });
 
-        let response = self
-            .client
-            .inner
-            .client
-            .post(&url)
-            .headers(self.client.auth_headers())
-            .json(&body)
-            .send()
-            .await?;
+        let response = self.client.post(&url).headers(self.auth_headers()).json(&body).send().await?;
 
         let repo_path = self.repo_path();
         let response = self
-            .client
             .check_response(
                 response,
                 Some(&repo_path),
@@ -96,7 +87,7 @@ impl crate::repository::HFRepository {
     }
 }
 
-impl crate::repository::HFRepository {
+impl HFRepository {
     /// Download a single file from a repository.
     ///
     /// When `local_dir` is `Some`, the file is downloaded directly to that directory
@@ -108,7 +99,7 @@ impl crate::repository::HFRepository {
         if params.local_dir.is_some() {
             self.download_file_to_local_dir(params).await
         } else {
-            if !self.client.inner.cache_enabled {
+            if !self.cache_enabled {
                 return Err(HFError::CacheNotEnabled);
             }
             self.download_file_to_cache(params).await
@@ -120,27 +111,73 @@ impl crate::repository::HFRepository {
     /// Returns a `(content_length, stream)` tuple. `content_length` is `Some`
     /// when the server provides a `Content-Length` header.
     ///
+    /// When `range` is set, only the specified byte range is fetched. This works
+    /// for both regular files (via HTTP Range header) and xet-backed files (via
+    /// the xet streaming download API). For non-xet files the server must support
+    /// range requests; the returned `content_length` reflects the range size.
+    ///
     /// Endpoint: GET {endpoint}/{prefix}{repo_id}/resolve/{revision}/{filename}
     pub async fn download_file_stream(
         &self,
         params: &RepoDownloadFileStreamParams,
-    ) -> Result<(Option<u64>, impl Stream<Item = std::result::Result<bytes::Bytes, reqwest::Error>>)> {
-        let revision = self.effective_revision(params.revision.as_deref());
-        let url = self
-            .client
-            .download_url(Some(self.repo_type), &self.repo_path(), revision, &params.filename);
+    ) -> Result<(Option<u64>, Box<dyn Stream<Item = std::result::Result<bytes::Bytes, HFError>> + Send + Unpin>)> {
+        if let Some(ref range) = params.range {
+            if range.start >= range.end {
+                return Err(HFError::InvalidParameter(format!(
+                    "range start ({}) must be less than end ({})",
+                    range.start, range.end
+                )));
+            }
+        }
 
-        let response = self
-            .client
-            .inner
-            .client
-            .get(&url)
-            .headers(self.client.auth_headers())
-            .send()
-            .await?;
+        let revision = self.effective_revision(params.revision.as_deref());
         let repo_path = self.repo_path();
+        let url = self.download_url(Some(self.repo_type), &repo_path, revision, &params.filename);
+
+        #[cfg(feature = "xet")]
+        {
+            let head_response = self.client.head(&url).headers(self.auth_headers()).send().await?;
+
+            let head_response = self
+                .check_response(
+                    head_response,
+                    Some(&repo_path),
+                    crate::error::NotFoundContext::Entry {
+                        path: params.filename.clone(),
+                    },
+                )
+                .await?;
+
+            let headers = head_response.headers();
+            if let Some(xet_hash) = headers.get(constants::HEADER_X_XET_HASH).and_then(|v| v.to_str().ok()) {
+                let file_size: u64 = headers
+                    .get(reqwest::header::CONTENT_LENGTH)
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or_else(|| {
+                        tracing::warn!(url = %url, "missing or invalid Content-Length header for xet file, defaulting file size to 0");
+                        0
+                    });
+
+                let content_length = params.range.as_ref().map(|r| r.end.saturating_sub(r.start)).or(Some(file_size));
+
+                let stream = self
+                    .xet_download_stream(revision, xet_hash, file_size, params.range.clone())
+                    .await?;
+
+                return Ok((content_length, Box::new(Box::pin(stream))));
+            }
+        }
+
+        let mut request = self.client.get(&url).headers(self.auth_headers());
+
+        if let Some(ref range) = params.range {
+            request = request
+                .header(reqwest::header::RANGE, format!("bytes={}-{}", range.start, range.end.saturating_sub(1)));
+        }
+
+        let response = request.send().await?;
         let response = self
-            .client
             .check_response(
                 response,
                 Some(&repo_path),
@@ -151,29 +188,37 @@ impl crate::repository::HFRepository {
             .await?;
 
         let content_length = response.content_length();
-        Ok((content_length, response.bytes_stream()))
+        let stream = response.bytes_stream().map(|r| r.map_err(HFError::from));
+        Ok((content_length, Box::new(Box::pin(stream))))
+    }
+
+    /// Download a file (or byte range) into memory and return the contents as [`bytes::Bytes`].
+    ///
+    /// This is a convenience wrapper around [`download_file_stream`](Self::download_file_stream)
+    /// that collects the entire stream into a single buffer. When `range` is set,
+    /// only the specified byte range is fetched.
+    pub async fn download_file_to_bytes(&self, params: &RepoDownloadFileToBytesParams) -> Result<bytes::Bytes> {
+        let (content_length, stream) = self.download_file_stream(params).await?;
+        futures::pin_mut!(stream);
+
+        let capacity = content_length.unwrap_or(0) as usize;
+        let mut buf = bytes::BytesMut::with_capacity(capacity);
+        while let Some(chunk) = stream.next().await {
+            buf.extend_from_slice(&chunk?);
+        }
+        Ok(buf.freeze())
     }
 
     async fn download_file_to_local_dir(&self, params: &RepoDownloadFileParams) -> Result<PathBuf> {
         let revision = self.effective_revision(params.revision.as_deref());
         let repo_path = self.repo_path();
-        let url = self
-            .client
-            .download_url(Some(self.repo_type), &repo_path, revision, &params.filename);
+        let url = self.download_url(Some(self.repo_type), &repo_path, revision, &params.filename);
 
         #[cfg(feature = "xet")]
         {
-            let head_response = self
-                .client
-                .inner
-                .client
-                .head(&url)
-                .headers(self.client.auth_headers())
-                .send()
-                .await?;
+            let head_response = self.client.head(&url).headers(self.auth_headers()).send().await?;
 
             let head_response = self
-                .client
                 .check_response(
                     head_response,
                     Some(&repo_path),
@@ -187,29 +232,14 @@ impl crate::repository::HFRepository {
 
             if has_xet_hash {
                 let local_dir = params.local_dir.as_ref().unwrap();
-                return crate::xet::xet_download_to_local_dir(
-                    &self.client,
-                    &repo_path,
-                    Some(self.repo_type),
-                    revision,
-                    &params.filename,
-                    local_dir,
-                    &head_response,
-                )
-                .await;
+                return self
+                    .xet_download_to_local_dir(revision, &params.filename, local_dir, &head_response)
+                    .await;
             }
         }
 
+        let response = self.client.get(&url).headers(self.auth_headers()).send().await?;
         let response = self
-            .client
-            .inner
-            .client
-            .get(&url)
-            .headers(self.client.auth_headers())
-            .send()
-            .await?;
-        let response = self
-            .client
             .check_response(
                 response,
                 Some(&repo_path),
@@ -236,7 +266,7 @@ impl crate::repository::HFRepository {
     /// Matches Python's `try_to_load_from_cache`: checks the snapshot pointer
     /// first, then consults `.no_exist` markers for negative cache hits.
     fn resolve_from_cache_only(&self, repo_folder: &str, revision: &str, filename: &str) -> Result<PathBuf> {
-        let cache_dir = &self.client.inner.cache_dir;
+        let cache_dir = &self.cache_dir;
 
         let commit_hash = if cache::is_commit_hash(revision) {
             Some(revision.to_string())
@@ -267,7 +297,7 @@ impl crate::repository::HFRepository {
     /// On Windows, where copies are used instead of symlinks, `read_link` will fail
     /// and this returns `None`, disabling conditional-request (If-None-Match) optimization.
     fn find_cached_etag(&self, repo_folder: &str, revision: &str, filename: &str) -> Option<String> {
-        let cache_dir = &self.client.inner.cache_dir;
+        let cache_dir = &self.cache_dir;
 
         let commit_hash = if cache::is_commit_hash(revision) {
             Some(revision.to_string())
@@ -284,7 +314,7 @@ impl crate::repository::HFRepository {
 
     async fn download_file_to_cache(&self, params: &RepoDownloadFileParams) -> Result<PathBuf> {
         let revision = self.effective_revision(params.revision.as_deref());
-        let cache_dir = &self.client.inner.cache_dir;
+        let cache_dir = &self.cache_dir;
         let repo_folder = cache::repo_folder_name(&self.repo_path(), Some(self.repo_type));
         let force_download = params.force_download.unwrap_or(false);
 
@@ -320,9 +350,7 @@ impl crate::repository::HFRepository {
         force_download: bool,
     ) -> Result<PathBuf> {
         let repo_path = self.repo_path();
-        let url = self
-            .client
-            .download_url(Some(self.repo_type), &repo_path, revision, &params.filename);
+        let url = self.download_url(Some(self.repo_type), &repo_path, revision, &params.filename);
 
         let cached_etag = if !force_download {
             self.find_cached_etag(repo_folder, revision, &params.filename)
@@ -330,21 +358,14 @@ impl crate::repository::HFRepository {
             None
         };
 
-        let mut head_headers = self.client.auth_headers();
+        let mut head_headers = self.auth_headers();
         if let Some(ref etag_val) = cached_etag {
             if let Ok(hv) = reqwest::header::HeaderValue::from_str(&format!("\"{etag_val}\"")) {
                 head_headers.insert(IF_NONE_MATCH, hv);
             }
         }
 
-        let head_response = self
-            .client
-            .inner
-            .no_redirect_client
-            .head(&url)
-            .headers(head_headers)
-            .send()
-            .await?;
+        let head_response = self.no_redirect_client.head(&url).headers(head_headers).send().await?;
 
         let status = head_response.status();
 
@@ -390,18 +411,20 @@ impl crate::repository::HFRepository {
             .or_else(|| head_response.headers().get(reqwest::header::CONTENT_LENGTH))
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.parse().ok())
-            .unwrap_or(0);
+            .unwrap_or_else(|| {
+                tracing::warn!(url = %url, "missing or invalid Content-Length/X-Linked-Size header, defaulting file size to 0");
+                0
+            });
 
         if !status.is_success() && !status.is_redirection() {
-            self.client
-                .check_response(
-                    head_response,
-                    Some(&repo_path),
-                    crate::error::NotFoundContext::Entry {
-                        path: params.filename.clone(),
-                    },
-                )
-                .await?;
+            self.check_response(
+                head_response,
+                Some(&repo_path),
+                crate::error::NotFoundContext::Entry {
+                    path: params.filename.clone(),
+                },
+            )
+            .await?;
         }
 
         let etag = etag?;
@@ -417,16 +440,7 @@ impl crate::repository::HFRepository {
                 }
                 let _lock = cache::acquire_lock(cache_dir, repo_folder, &etag).await?;
 
-                crate::xet::xet_download_to_blob(
-                    &self.client,
-                    &repo_path,
-                    Some(self.repo_type),
-                    revision,
-                    &xet_hash,
-                    file_size,
-                    &blob,
-                )
-                .await?;
+                self.xet_download_to_blob(revision, &xet_hash, file_size, &blob).await?;
             }
 
             return finalize_cached_file(cache_dir, repo_folder, revision, &commit_hash, &params.filename, &etag).await;
@@ -453,14 +467,7 @@ impl crate::repository::HFRepository {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        let response = self
-            .client
-            .inner
-            .client
-            .get(&url)
-            .headers(self.client.auth_headers())
-            .send()
-            .await?;
+        let response = self.client.get(&url).headers(self.auth_headers()).send().await?;
         stream_response_to_file(response, &incomplete_path).await?;
         tokio::fs::rename(&incomplete_path, &blob).await?;
 
@@ -468,7 +475,7 @@ impl crate::repository::HFRepository {
     }
 }
 
-impl crate::repository::HFRepository {
+impl HFRepository {
     async fn resolve_commit_hash(&self, revision: &str) -> Result<String> {
         if cache::is_commit_hash(revision) {
             return Ok(revision.to_string());
@@ -515,13 +522,13 @@ impl crate::repository::HFRepository {
     }
 
     pub async fn snapshot_download(&self, params: &RepoSnapshotDownloadParams) -> Result<PathBuf> {
-        if params.local_dir.is_none() && !self.client.inner.cache_enabled {
+        if params.local_dir.is_none() && !self.cache_enabled {
             return Err(HFError::CacheNotEnabled);
         }
         let revision = self.effective_revision(params.revision.as_deref());
         let max_workers = params.max_workers.unwrap_or(8);
         let repo_folder = crate::cache::repo_folder_name(&self.repo_path(), Some(self.repo_type));
-        let cache_dir = &self.client.inner.cache_dir;
+        let cache_dir = &self.cache_dir;
 
         if params.local_files_only == Some(true) {
             let commit_hash = if crate::cache::is_commit_hash(revision) {
@@ -568,10 +575,9 @@ impl crate::repository::HFRepository {
             let commit_hash_ref = &commit_hash;
             let head_futs = filenames.iter().map(|filename| {
                 let url = self
-                    .client
                     .download_url(Some(self.repo_type), &repo_path, commit_hash_ref, filename);
-                let client = &self.client.inner.no_redirect_client;
-                let auth = self.client.auth_headers();
+                let client = &self.no_redirect_client;
+                let auth = self.auth_headers();
                 let filename = filename.clone();
                 let repo_folder_ref = &repo_folder;
                 async move {
@@ -612,7 +618,10 @@ impl crate::repository::HFRepository {
                         .or_else(|| resp.headers().get(reqwest::header::CONTENT_LENGTH))
                         .and_then(|v| v.to_str().ok())
                         .and_then(|v| v.parse().ok())
-                        .unwrap_or(0);
+                        .unwrap_or_else(|| {
+                            tracing::warn!(file = %filename, "missing or invalid Content-Length/X-Linked-Size header, defaulting file size to 0");
+                            0
+                        });
                     Ok::<_, HFError>(Some(FileMetadataInfo {
                         filename,
                         etag,
@@ -659,14 +668,7 @@ impl crate::repository::HFRepository {
                             path: local_dir.join(&m.filename),
                         })
                         .collect();
-                    crate::xet::xet_download_batch(
-                        &self.client,
-                        &repo_path,
-                        Some(self.repo_type),
-                        &commit_hash,
-                        &batch_files,
-                    )
-                    .await
+                    self.xet_download_batch(&commit_hash, &batch_files).await
                 };
 
                 let non_xet_dl_params = build_download_params(
@@ -723,14 +725,7 @@ impl crate::repository::HFRepository {
                         path: cache::blob_path(cache_dir, &repo_folder, &m.etag),
                     })
                     .collect();
-                crate::xet::xet_download_batch(
-                    &self.client,
-                    &repo_path,
-                    Some(self.repo_type),
-                    &commit_hash,
-                    &batch_files,
-                )
-                .await?;
+                self.xet_download_batch(&commit_hash, &batch_files).await?;
                 for m in &xet_metas {
                     cache::create_pointer_symlink(cache_dir, &repo_folder, &m.commit_hash, &m.filename, &m.etag)
                         .await?;
@@ -868,7 +863,7 @@ fn build_download_params(
 }
 
 async fn download_concurrently(
-    api: &crate::repository::HFRepository,
+    api: &HFRepository,
     params: &[RepoDownloadFileParams],
     max_workers: usize,
 ) -> Result<Vec<PathBuf>> {
@@ -889,7 +884,7 @@ async fn stream_response_to_file(response: reqwest::Response, dest: &std::path::
     Ok(())
 }
 
-impl crate::repository::HFRepository {
+impl HFRepository {
     /// Create a commit with multiple operations.
     ///
     /// Files are checked against the Hub's preupload endpoint to determine
@@ -903,7 +898,7 @@ impl crate::repository::HFRepository {
     /// Endpoint: POST /api/{repo_type}s/{repo_id}/commit/{revision}
     pub async fn create_commit(&self, params: &RepoCreateCommitParams) -> Result<CommitInfo> {
         let revision = self.effective_revision(params.revision.as_deref());
-        let url = format!("{}/commit/{}", self.client.api_url(Some(self.repo_type), &self.repo_path()), revision);
+        let url = format!("{}/commit/{}", self.api_url(Some(self.repo_type), &self.repo_path()), revision);
 
         // Determine which files should be uploaded via xet (LFS) vs inline
         // (regular). Files uploaded via xet are referenced by their SHA256 OID
@@ -958,10 +953,10 @@ impl crate::repository::HFRepository {
             })
             .collect();
 
-        let mut headers = self.client.auth_headers();
+        let mut headers = self.auth_headers();
         headers.insert(reqwest::header::CONTENT_TYPE, "application/x-ndjson".parse().unwrap());
 
-        let mut request = self.client.inner.client.post(&url).headers(headers).body(body);
+        let mut request = self.client.post(&url).headers(headers).body(body);
 
         if params.create_pr == Some(true) {
             request = request.query(&[("create_pr", "1")]);
@@ -970,7 +965,6 @@ impl crate::repository::HFRepository {
         let response = request.send().await?;
         let repo_path = self.repo_path();
         let response = self
-            .client
             .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(response.json().await?)
@@ -1148,7 +1142,7 @@ struct LfsBatchResponse {
     transfer: Option<String>,
 }
 
-impl crate::repository::HFRepository {
+impl HFRepository {
     /// Check upload modes for all files and upload LFS files via xet.
     ///
     /// Always calls the preupload endpoint to determine upload mode per file.
@@ -1229,7 +1223,7 @@ impl crate::repository::HFRepository {
     ) -> Result<HashMap<String, String>> {
         use base64::Engine;
 
-        let url = format!("{}/preupload/{}", self.client.api_url(repo_type, repo_id), revision);
+        let url = format!("{}/preupload/{}", self.api_url(repo_type, repo_id), revision);
 
         let files_payload: Vec<serde_json::Value> = files
             .iter()
@@ -1244,18 +1238,9 @@ impl crate::repository::HFRepository {
 
         let body = serde_json::json!({ "files": files_payload });
 
-        let response = self
-            .client
-            .inner
-            .client
-            .post(&url)
-            .headers(self.client.auth_headers())
-            .json(&body)
-            .send()
-            .await?;
+        let response = self.client.post(&url).headers(self.auth_headers()).json(&body).send().await?;
 
         let response = self
-            .client
             .check_response(response, Some(repo_id), crate::error::NotFoundContext::Repo)
             .await?;
 
@@ -1266,7 +1251,7 @@ impl crate::repository::HFRepository {
 }
 
 #[cfg(feature = "xet")]
-impl crate::repository::HFRepository {
+impl HFRepository {
     /// Compute SHA256, negotiate LFS batch transfer, and upload via xet.
     async fn upload_lfs_files_via_xet(
         &self,
@@ -1299,7 +1284,7 @@ impl crate::repository::HFRepository {
             .map(|(path, _, _, source)| (path.clone(), (*source).clone()))
             .collect();
 
-        crate::xet::xet_upload(&self.client, &xet_files, &repo_path, Some(self.repo_type), revision).await?;
+        self.xet_upload(&xet_files, revision).await?;
 
         let result: HashMap<String, (String, u64)> = lfs_with_sha
             .into_iter()
@@ -1319,7 +1304,7 @@ impl crate::repository::HFRepository {
         objects: &[(&str, u64)],
     ) -> Result<Option<String>> {
         let prefix = constants::repo_type_url_prefix(repo_type);
-        let url = format!("{}/{}{}.git/info/lfs/objects/batch", self.client.inner.endpoint, prefix, repo_id);
+        let url = format!("{}/{}{}.git/info/lfs/objects/batch", self.endpoint, prefix, repo_id);
 
         let objects_payload: Vec<serde_json::Value> = objects
             .iter()
@@ -1339,14 +1324,13 @@ impl crate::repository::HFRepository {
             "ref": { "name": revision },
         });
 
-        let mut headers = self.client.auth_headers();
+        let mut headers = self.auth_headers();
         headers.insert(reqwest::header::ACCEPT, "application/vnd.git-lfs+json".parse().unwrap());
         headers.insert(reqwest::header::CONTENT_TYPE, "application/vnd.git-lfs+json".parse().unwrap());
 
-        let response = self.client.inner.client.post(&url).headers(headers).json(&body).send().await?;
+        let response = self.client.post(&url).headers(headers).json(&body).send().await?;
 
         let response = self
-            .client
             .check_response(response, Some(repo_id), crate::error::NotFoundContext::Repo)
             .await?;
 
@@ -1454,4 +1438,25 @@ fn matches_any_glob(patterns: &[String], path: &str) -> bool {
     patterns
         .iter()
         .any(|p| Glob::new(p).ok().map(|g| g.compile_matcher().is_match(path)).unwrap_or(false))
+}
+
+sync_api! {
+    impl HFRepository -> HFRepositorySync {
+        fn list_files(&self, params: &RepoListFilesParams) -> crate::error::Result<Vec<String>>;
+        fn get_paths_info(&self, params: &RepoGetPathsInfoParams) -> crate::error::Result<Vec<RepoTreeEntry>>;
+        fn download_file(&self, params: &RepoDownloadFileParams) -> crate::error::Result<std::path::PathBuf>;
+        fn download_file_to_bytes(&self, params: &RepoDownloadFileToBytesParams) -> crate::error::Result<bytes::Bytes>;
+        fn snapshot_download(&self, params: &RepoSnapshotDownloadParams) -> crate::error::Result<std::path::PathBuf>;
+        fn create_commit(&self, params: &RepoCreateCommitParams) -> crate::error::Result<CommitInfo>;
+        fn upload_file(&self, params: &RepoUploadFileParams) -> crate::error::Result<CommitInfo>;
+        fn upload_folder(&self, params: &RepoUploadFolderParams) -> crate::error::Result<CommitInfo>;
+        fn delete_file(&self, params: &RepoDeleteFileParams) -> crate::error::Result<CommitInfo>;
+        fn delete_folder(&self, params: &RepoDeleteFolderParams) -> crate::error::Result<CommitInfo>;
+    }
+}
+
+sync_api_stream! {
+    impl HFRepository -> HFRepositorySync {
+        fn list_tree(&self, params: &RepoListTreeParams) -> RepoTreeEntry;
+    }
 }
