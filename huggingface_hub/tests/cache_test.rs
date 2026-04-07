@@ -852,7 +852,8 @@ fn test_hf_hub_cache_env_var() {
     let dir = tempfile::tempdir().unwrap();
     // Save and set env
     let old_val = std::env::var("HF_HUB_CACHE").ok();
-    std::env::set_var("HF_HUB_CACHE", dir.path());
+    // SAFETY: test runs serially (#[serial]) so no concurrent env access
+    unsafe { std::env::set_var("HF_HUB_CACHE", dir.path()) };
 
     let api = HFClientBuilder::new().build().unwrap();
     // Verify through a download attempt that would use the cache dir
@@ -865,8 +866,8 @@ fn test_hf_hub_cache_env_var() {
 
     // Restore env
     match old_val {
-        Some(v) => std::env::set_var("HF_HUB_CACHE", v),
-        None => std::env::remove_var("HF_HUB_CACHE"),
+        Some(v) => unsafe { std::env::set_var("HF_HUB_CACHE", v) },
+        None => unsafe { std::env::remove_var("HF_HUB_CACHE") },
     }
 }
 
@@ -879,26 +880,31 @@ fn test_xdg_cache_home_env_var() {
     let old_hf_home = std::env::var("HF_HOME").ok();
     let old_xdg = std::env::var("XDG_CACHE_HOME").ok();
 
-    // Remove higher-priority vars, set XDG_CACHE_HOME
-    std::env::remove_var("HF_HUB_CACHE");
-    std::env::remove_var("HF_HOME");
-    std::env::set_var("XDG_CACHE_HOME", dir.path());
+    // SAFETY: test runs serially (#[serial]) so no concurrent env access
+    unsafe {
+        std::env::remove_var("HF_HUB_CACHE");
+        std::env::remove_var("HF_HOME");
+        std::env::set_var("XDG_CACHE_HOME", dir.path());
+    }
 
     let api = HFClientBuilder::new().build().unwrap();
     drop(api);
 
     // Restore env
-    match old_hub_cache {
-        Some(v) => std::env::set_var("HF_HUB_CACHE", v),
-        None => std::env::remove_var("HF_HUB_CACHE"),
-    }
-    match old_hf_home {
-        Some(v) => std::env::set_var("HF_HOME", v),
-        None => std::env::remove_var("HF_HOME"),
-    }
-    match old_xdg {
-        Some(v) => std::env::set_var("XDG_CACHE_HOME", v),
-        None => std::env::remove_var("XDG_CACHE_HOME"),
+    // SAFETY: test runs serially (#[serial]) so no concurrent env access
+    unsafe {
+        match old_hub_cache {
+            Some(v) => std::env::set_var("HF_HUB_CACHE", v),
+            None => std::env::remove_var("HF_HUB_CACHE"),
+        }
+        match old_hf_home {
+            Some(v) => std::env::set_var("HF_HOME", v),
+            None => std::env::remove_var("HF_HOME"),
+        }
+        match old_xdg {
+            Some(v) => std::env::set_var("XDG_CACHE_HOME", v),
+            None => std::env::remove_var("XDG_CACHE_HOME"),
+        }
     }
 }
 
