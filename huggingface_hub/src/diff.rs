@@ -180,7 +180,7 @@ where
 mod tests {
     use futures::StreamExt;
 
-    use super::{parse_hf_diff_line, stream_raw_diff, GitStatus, HFFileDiff};
+    use super::{GitStatus, HFFileDiff, parse_hf_diff_line, stream_raw_diff};
 
     #[test]
     fn modified_hf_diff() {

@@ -2,7 +2,7 @@ mod helpers;
 
 use std::sync::OnceLock;
 
-use helpers::{require_cli, require_token, require_write, CliRunner};
+use helpers::{CliRunner, require_cli, require_token, require_write};
 
 /// Cached whoami username, fetched once and reused across all tests.
 fn whoami_username() -> &'static str {

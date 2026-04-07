@@ -1,10 +1,10 @@
+use crate::SpaceVariableDeleteParams;
 use crate::error::Result;
 use crate::repository::{
     HFSpace, SpaceHardwareRequestParams, SpaceSecretDeleteParams, SpaceSecretParams, SpaceSleepTimeParams,
     SpaceVariableParams,
 };
 use crate::types::{DuplicateSpaceParams, RepoUrl, SpaceRuntime};
-use crate::SpaceVariableDeleteParams;
 
 impl HFSpace {
     /// Fetch the current runtime state of the Space (hardware, stage, URL, etc.).

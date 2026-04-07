@@ -353,10 +353,11 @@ async fn test_upload_200mb_random_data_and_verify() {
         .expect("Large file upload via xet should succeed");
     assert!(commit.commit_oid.is_some());
 
-    assert!(repo
-        .file_exists(&RepoFileExistsParams::builder().filename("large_random.bin").build())
-        .await
-        .unwrap());
+    assert!(
+        repo.file_exists(&RepoFileExistsParams::builder().filename("large_random.bin").build())
+            .await
+            .unwrap()
+    );
 
     let dl_dir = tempfile::tempdir().unwrap();
     let downloaded_path = repo

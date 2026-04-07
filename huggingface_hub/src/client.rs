@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT};
+use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT};
 use reqwest_middleware::ClientWithMiddleware;
-use reqwest_retry::policies::ExponentialBackoff;
 use reqwest_retry::RetryTransientMiddleware;
+use reqwest_retry::policies::ExponentialBackoff;
 use tracing::debug;
 
 use crate::constants;
@@ -232,10 +232,10 @@ impl HFClient {
     /// Build authorization headers for requests
     pub(crate) fn auth_headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
-        if let Some(ref token) = self.inner.token {
-            if let Ok(val) = HeaderValue::from_str(&format!("Bearer {token}")) {
-                headers.insert(AUTHORIZATION, val);
-            }
+        if let Some(ref token) = self.inner.token
+            && let Ok(val) = HeaderValue::from_str(&format!("Bearer {token}"))
+        {
+            headers.insert(AUTHORIZATION, val);
         }
         headers
     }
@@ -303,27 +303,27 @@ impl HFClient {
 /// Resolve token from environment or token file.
 /// Priority: HF_TOKEN env → HF_TOKEN_PATH file → $HF_HOME/token file.
 fn resolve_token() -> Option<String> {
-    if let Ok(val) = std::env::var(constants::HF_HUB_DISABLE_IMPLICIT_TOKEN) {
-        if !val.is_empty() {
-            debug!("implicit token disabled via HF_HUB_DISABLE_IMPLICIT_TOKEN");
-            return None;
-        }
+    if let Ok(val) = std::env::var(constants::HF_HUB_DISABLE_IMPLICIT_TOKEN)
+        && !val.is_empty()
+    {
+        debug!("implicit token disabled via HF_HUB_DISABLE_IMPLICIT_TOKEN");
+        return None;
     }
 
-    if let Ok(token) = std::env::var(constants::HF_TOKEN) {
+    if let Ok(token) = std::env::var(constants::HF_TOKEN)
+        && !token.is_empty()
+    {
+        debug!("resolved token from HF_TOKEN env var");
+        return Some(token);
+    }
+
+    if let Ok(path) = std::env::var(constants::HF_TOKEN_PATH)
+        && let Ok(token) = std::fs::read_to_string(&path)
+    {
+        let token = token.trim().to_string();
         if !token.is_empty() {
-            debug!("resolved token from HF_TOKEN env var");
+            debug!("resolved token from HF_TOKEN_PATH file");
             return Some(token);
-        }
-    }
-
-    if let Ok(path) = std::env::var(constants::HF_TOKEN_PATH) {
-        if let Ok(token) = std::fs::read_to_string(&path) {
-            let token = token.trim().to_string();
-            if !token.is_empty() {
-                debug!("resolved token from HF_TOKEN_PATH file");
-                return Some(token);
-            }
         }
     }
 

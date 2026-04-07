@@ -239,7 +239,7 @@ impl HFRepository {
         file_hash: &str,
         file_size: u64,
         range: Option<std::ops::Range<u64>>,
-    ) -> Result<impl futures::Stream<Item = std::result::Result<bytes::Bytes, crate::error::HFError>>> {
+    ) -> Result<impl futures::Stream<Item = Result<bytes::Bytes>> + use<>> {
         let repo_path = self.repo_path();
         let repo_type = Some(self.repo_type);
         let conn = fetch_xet_connection_info(&self.hf_client, "read", &repo_path, repo_type, revision).await?;

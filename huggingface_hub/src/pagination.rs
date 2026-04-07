@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
-use futures::stream::{self, Stream};
 use futures::StreamExt;
+use futures::stream::{self, Stream};
 use reqwest::header::HeaderMap;
 use serde::de::DeserializeOwned;
 use url::Url;

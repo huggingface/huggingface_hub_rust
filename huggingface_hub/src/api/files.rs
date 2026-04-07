@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use futures::stream::{Stream, StreamExt};
 use futures::TryStreamExt;
+use futures::stream::{Stream, StreamExt};
 use globset::Glob;
 use reqwest::header::IF_NONE_MATCH;
 #[cfg(feature = "xet")]
@@ -130,13 +130,13 @@ impl HFRepository {
         &self,
         params: &RepoDownloadFileStreamParams,
     ) -> Result<(Option<u64>, Box<dyn Stream<Item = std::result::Result<bytes::Bytes, HFError>> + Send + Unpin>)> {
-        if let Some(ref range) = params.range {
-            if range.start >= range.end {
-                return Err(HFError::InvalidParameter(format!(
-                    "range start ({}) must be less than end ({})",
-                    range.start, range.end
-                )));
-            }
+        if let Some(ref range) = params.range
+            && range.start >= range.end
+        {
+            return Err(HFError::InvalidParameter(format!(
+                "range start ({}) must be less than end ({})",
+                range.start, range.end
+            )));
         }
 
         let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
@@ -404,10 +404,10 @@ impl HFRepository {
         };
 
         let mut head_headers = self.hf_client.auth_headers();
-        if let Some(ref etag_val) = cached_etag {
-            if let Ok(hv) = reqwest::header::HeaderValue::from_str(&format!("\"{etag_val}\"")) {
-                head_headers.insert(IF_NONE_MATCH, hv);
-            }
+        if let Some(ref etag_val) = cached_etag
+            && let Ok(hv) = reqwest::header::HeaderValue::from_str(&format!("\"{etag_val}\""))
+        {
+            head_headers.insert(IF_NONE_MATCH, hv);
         }
 
         let head_response = self
@@ -1091,10 +1091,10 @@ impl HFRepository {
             futures::pin_mut!(stream);
             while let Some(entry) = stream.next().await {
                 let entry = entry?;
-                if let RepoTreeEntry::File { path, .. } = entry {
-                    if matches_any_glob(delete_patterns, &path) {
-                        operations.push(CommitOperation::Delete { path_in_repo: path });
-                    }
+                if let RepoTreeEntry::File { path, .. } = entry
+                    && matches_any_glob(delete_patterns, &path)
+                {
+                    operations.push(CommitOperation::Delete { path_in_repo: path });
                 }
             }
         }
@@ -1153,10 +1153,10 @@ impl HFRepository {
 
         while let Some(entry) = stream.next().await {
             let entry = entry?;
-            if let RepoTreeEntry::File { path, .. } = entry {
-                if path.starts_with(&prefix) || path == params.path_in_repo {
-                    operations.push(CommitOperation::Delete { path_in_repo: path });
-                }
+            if let RepoTreeEntry::File { path, .. } = entry
+                && (path.starts_with(&prefix) || path == params.path_in_repo)
+            {
+                operations.push(CommitOperation::Delete { path_in_repo: path });
             }
         }
 
@@ -1477,15 +1477,15 @@ async fn collect_files_recursive(
             let relative = path.strip_prefix(root).map_err(|e| HFError::Other(e.to_string()))?;
             let relative_str = relative.to_string_lossy();
 
-            if let Some(ref allow) = allow_patterns {
-                if !matches_any_glob(allow, &relative_str) {
-                    continue;
-                }
+            if let Some(allow) = allow_patterns
+                && !matches_any_glob(allow, &relative_str)
+            {
+                continue;
             }
-            if let Some(ref ignore) = ignore_patterns {
-                if matches_any_glob(ignore, &relative_str) {
-                    continue;
-                }
+            if let Some(ignore) = ignore_patterns
+                && matches_any_glob(ignore, &relative_str)
+            {
+                continue;
             }
 
             let repo_path = if base_repo_path.is_empty() {

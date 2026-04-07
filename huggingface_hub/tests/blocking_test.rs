@@ -92,12 +92,15 @@ fn test_sync_repo_exists() {
 fn test_sync_file_exists() {
     let Some(api) = sync_api() else { return };
     let repo = repo_handle(&api, "gpt2");
-    assert!(repo
-        .file_exists(&RepoFileExistsParams::builder().filename("config.json").build())
-        .unwrap());
-    assert!(!repo
-        .file_exists(&RepoFileExistsParams::builder().filename("nonexistent_file.xyz").build())
-        .unwrap());
+    assert!(
+        repo.file_exists(&RepoFileExistsParams::builder().filename("config.json").build())
+            .unwrap()
+    );
+    assert!(
+        !repo
+            .file_exists(&RepoFileExistsParams::builder().filename("nonexistent_file.xyz").build())
+            .unwrap()
+    );
 }
 
 // --- Listing (stream methods collected to Vec) ---
@@ -162,12 +165,15 @@ fn test_sync_list_repo_refs() {
 fn test_sync_revision_exists() {
     let Some(api) = sync_api() else { return };
     let repo = repo_handle(&api, "gpt2");
-    assert!(repo
-        .revision_exists(&RepoRevisionExistsParams::builder().revision("main").build())
-        .unwrap());
-    assert!(!repo
-        .revision_exists(&RepoRevisionExistsParams::builder().revision("nonexistent-branch-xyz").build())
-        .unwrap());
+    assert!(
+        repo.revision_exists(&RepoRevisionExistsParams::builder().revision("main").build())
+            .unwrap()
+    );
+    assert!(
+        !repo
+            .revision_exists(&RepoRevisionExistsParams::builder().revision("nonexistent-branch-xyz").build())
+            .unwrap()
+    );
 }
 
 // --- Download ---
@@ -342,9 +348,11 @@ fn test_sync_create_and_delete_repo() {
         .unwrap();
     assert!(commit.commit_oid.is_some());
 
-    assert!(test_repo
-        .file_exists(&RepoFileExistsParams::builder().filename("test.txt").build())
-        .unwrap());
+    assert!(
+        test_repo
+            .file_exists(&RepoFileExistsParams::builder().filename("test.txt").build())
+            .unwrap()
+    );
 
     let params = DeleteRepoParams::builder().repo_id(&repo_id).build();
     api.delete_repo(&params).unwrap();

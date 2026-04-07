@@ -1,5 +1,5 @@
-use futures::stream::{Stream, StreamExt};
 use futures::TryStreamExt;
+use futures::stream::{Stream, StreamExt};
 use url::Url;
 
 use crate::constants;
