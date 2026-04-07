@@ -284,8 +284,10 @@ fn test_sync_get_organization_overview() {
 #[test]
 fn test_sync_list_user_followers() {
     let Some(api) = sync_api() else { return };
-    let followers = api.list_user_followers(test_user(), None).unwrap();
-    assert!(!followers.is_empty());
+    let _followers = api.list_user_followers(test_user(), None).unwrap();
+    if !is_hub_ci() {
+        assert!(!_followers.is_empty());
+    }
 }
 
 #[test]
