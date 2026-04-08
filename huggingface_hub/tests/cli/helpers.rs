@@ -88,7 +88,8 @@ impl CliRunner {
             .stderr(std::process::Stdio::piped())
             .spawn()?;
 
-        let timeout = Duration::from_secs(60);
+        let is_ci = std::env::var("CI").is_ok();
+        let timeout = Duration::from_secs(if is_ci { 300 } else { 60 });
         let start = std::time::Instant::now();
         loop {
             match child.try_wait()? {
