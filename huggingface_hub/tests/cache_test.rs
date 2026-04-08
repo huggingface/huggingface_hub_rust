@@ -744,7 +744,8 @@ async fn test_snapshot_download_returns_correct_path() {
         .unwrap();
 
     let path_str = snapshot_dir.to_string_lossy();
-    assert!(path_str.contains("models--gpt2"), "Should contain models--gpt2: {path_str}");
+    let expected_fragment = format!("models--{}", test_model_cache_fragment());
+    assert!(path_str.contains(&expected_fragment), "Should contain {expected_fragment}: {path_str}");
     assert!(path_str.contains("snapshots"), "Should contain snapshots: {path_str}");
 }
 
