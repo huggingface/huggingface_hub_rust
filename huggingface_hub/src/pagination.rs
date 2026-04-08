@@ -107,7 +107,7 @@ impl HFClient {
 
 /// Parse the `Link` header for a `rel="next"` URL.
 /// Format: `<https://huggingface.co/api/models?p=1>; rel="next"`
-fn parse_link_header_next(headers: &HeaderMap) -> Option<Url> {
+pub(crate) fn parse_link_header_next(headers: &HeaderMap) -> Option<Url> {
     let link_header = headers.get("link")?.to_str().ok()?;
 
     for part in link_header.split(',') {

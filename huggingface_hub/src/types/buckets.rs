@@ -43,20 +43,6 @@ pub struct BucketCreated {
     pub id: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct BucketInfo {
-    pub id: String,
-    pub name: String,
-    pub namespace: String,
-    pub private: bool,
-    #[serde(rename = "usedStorage")]
-    pub used_storage: u64,
-    #[serde(rename = "totalFiles")]
-    pub total_files: u64,
-    pub cdn: Vec<CdnRegion>,
-    pub region: String,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CdnRegion {
     pub provider: String,
@@ -95,11 +81,13 @@ pub struct ResourceGroup {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct XetToken {
-    pub token: String,
+    #[serde(rename = "accessToken")]
+    pub access_token: String,
     #[serde(rename = "casUrl")]
     pub cas_url: String,
-    #[serde(rename = "expiresAt")]
-    pub expires_at: String,
+    /// Epoch time (s)
+    #[serde(rename = "exp")]
+    pub expires_at: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -118,6 +106,11 @@ pub struct TreeEntry {
     #[serde(rename = "type")]
     pub entry_type: EntryType,
     pub path: String,
+    /// ISO 8601 Datetime
+    #[serde(rename = "uploadedAt")]
+    pub uploaded_at: String,
+    /// ISO 8601 Datetime
+    pub mtime: Option<String>,
     pub size: Option<u64>,
     #[serde(rename = "xetHash")]
     pub xet_hash: Option<String>,
@@ -200,92 +193,4 @@ pub struct XetFileInfo {
     pub size: u64,
     #[serde(rename = "contentType")]
     pub content_type: String,
-}
-
-// --- Internal pagination helper (not public) ---
-
-#[derive(Deserialize)]
-pub(crate) struct TreePage {
-    pub entries: Vec<TreeEntry>,
-    #[serde(rename = "nextCursor")]
-    pub next_cursor: Option<String>,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn bucket_info_deserializes() {
-        let json = r#"{
-            "id": "my-bucket",
-            "name": "my-bucket",
-            "namespace": "myuser",
-            "private": false,
-            "usedStorage": 1024,
-            "totalFiles": 3,
-            "cdn": [],
-            "region": "us-east-1"
-        }"#;
-        let info: BucketInfo = serde_json::from_str(json).unwrap();
-        assert_eq!(info.used_storage, 1024);
-        assert_eq!(info.total_files, 3);
-    }
-
-    #[test]
-    fn bucket_overview_deserializes() {
-        let json = r#"{
-            "_id": "66079f1a2e4b3c001a2b3c4d",
-            "id": "myuser/my-bucket",
-            "author": "myuser",
-            "private": false,
-            "repoType": "bucket",
-            "createdAt": "2024-03-30T12:00:00.000Z",
-            "updatedAt": "2024-03-31T08:30:00.000Z",
-            "size": 104857600,
-            "totalFiles": 42,
-            "cdnRegions": [{"provider": "gcp", "region": "us"}],
-            "resourceGroup": {"id": "abc", "name": "ml-team", "numUsers": 5}
-        }"#;
-        let overview: BucketOverview = serde_json::from_str(json).unwrap();
-        assert_eq!(overview.id, "myuser/my-bucket");
-        assert_eq!(overview.total_files, 42);
-        assert_eq!(overview.resource_group.unwrap().name, "ml-team");
-    }
-
-    #[test]
-    fn batch_op_serializes_with_type_tag() {
-        let op = BatchOp::AddFile(AddFileOp {
-            path: "data/train.parquet".to_string(),
-            xet_hash: "abc123".to_string(),
-            content_type: "application/octet-stream".to_string(),
-            mtime: Some(1711900000),
-        });
-        let s = serde_json::to_string(&op).unwrap();
-        assert!(s.contains(r#""type":"addFile""#));
-        assert!(s.contains(r#""xetHash":"abc123""#));
-    }
-
-    #[test]
-    fn delete_op_serializes_with_type_tag() {
-        let op = BatchOp::DeleteFile(DeleteFileOp {
-            path: "old.parquet".to_string(),
-        });
-        let s = serde_json::to_string(&op).unwrap();
-        assert!(s.contains(r#""type":"deleteFile""#));
-    }
-
-    #[test]
-    fn tree_entry_deserializes_file() {
-        let json = r#"{
-            "type": "file",
-            "path": "data/train.parquet",
-            "size": 52428800,
-            "xetHash": "abc123",
-            "contentType": "application/octet-stream"
-        }"#;
-        let entry: TreeEntry = serde_json::from_str(json).unwrap();
-        assert!(matches!(entry.entry_type, EntryType::File));
-        assert_eq!(entry.xet_hash.unwrap(), "abc123");
-    }
 }

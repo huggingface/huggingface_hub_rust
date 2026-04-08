@@ -344,7 +344,7 @@ impl HFRepositorySync {
 }
 
 impl HFBucketSync {
-    pub fn get(&self) -> Result<crate::types::BucketInfo> {
+    pub fn get(&self) -> Result<crate::types::BucketOverview> {
         self.runtime.block_on(self.inner.get())
     }
 
@@ -361,7 +361,7 @@ impl HFBucketSync {
     }
 
     pub fn list_tree(&self, path: &str, params: crate::types::ListTreeParams) -> Result<Vec<crate::types::TreeEntry>> {
-        collect_stream(self.runtime.as_ref(), self.inner.list_tree(path, params))
+        collect_stream(self.runtime.as_ref(), self.inner.list_tree(path, params)?)
     }
 
     pub fn get_paths_info(&self, paths: Vec<String>) -> Result<Vec<crate::types::PathInfo>> {

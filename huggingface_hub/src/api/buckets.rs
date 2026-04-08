@@ -1,12 +1,14 @@
 use std::collections::VecDeque;
 
 use futures::Stream;
+use url::Url;
 
 use crate::error::{HFError, NotFoundContext};
+use crate::pagination::parse_link_header_next;
 use crate::repository::HFBucket;
 use crate::types::{
-    BatchOp, BatchResult, BucketCreated, BucketInfo, BucketOverview, CreateBucketParams, ListTreeParams, PathInfo,
-    ResolvedFile, TreeEntry, TreePage, UpdateBucketParams, XetToken,
+    BatchOp, BatchResult, BucketCreated, BucketOverview, CreateBucketParams, ListTreeParams, PathInfo, ResolvedFile,
+    TreeEntry, UpdateBucketParams, XetToken,
 };
 use crate::{HFClient, Result};
 
@@ -38,7 +40,6 @@ pub(crate) async fn check_bucket_response(
         },
         409 => HFError::Conflict(body),
         429 => HFError::RateLimited,
-        507 => HFError::QuotaExceeded,
         _ => HFError::Http { status, url, body },
     })
 }
@@ -53,7 +54,7 @@ impl HFBucket {
     }
 
     /// Returns metadata about this bucket.
-    pub async fn get(&self) -> Result<BucketInfo> {
+    pub async fn get(&self) -> Result<BucketOverview> {
         let resp = self
             .client
             .inner
@@ -128,42 +129,49 @@ impl HFBucket {
     /// Uses cursor-in-body pagination: the stream fetches the next page automatically
     /// when the current page's entries are exhausted. No request is made until the
     /// first item is polled.
-    pub fn list_tree(&self, path: &str, params: ListTreeParams) -> impl Stream<Item = Result<TreeEntry>> + '_ {
+    pub fn list_tree(&self, path: &str, params: ListTreeParams) -> Result<impl Stream<Item = Result<TreeEntry>> + '_> {
         let base_url = if path.is_empty() {
             format!("{}/api/buckets/{}/{}/tree", self.client.inner.endpoint, self.namespace, self.repo)
         } else {
             format!("{}/api/buckets/{}/{}/tree/{}", self.client.inner.endpoint, self.namespace, self.repo, path)
         };
         let repo_id = self.repo_id();
+        let mut initial_url = Url::parse(&base_url)?;
+        {
+            let mut qp = initial_url.query_pairs_mut();
+            if let Some(l) = params.limit {
+                qp.append_pair("limit", l.to_string().as_str());
+            }
+            if params.recursive {
+                qp.append_pair("recursive", "true");
+            }
+            qp.finish();
+        }
 
-        futures::stream::try_unfold(
-            (VecDeque::<TreeEntry>::new(), None::<String>, false),
-            move |(mut pending, cursor, fetched)| {
+        Ok(futures::stream::try_unfold(
+            (VecDeque::<TreeEntry>::new(), Some(initial_url), false),
+            move |(mut pending, next_url, fetched)| {
                 let client = self.client.clone();
                 let repo_id = repo_id.clone();
-                let base_url = base_url.clone();
                 async move {
                     if let Some(entry) = pending.pop_front() {
-                        return Ok(Some((entry, (pending, cursor, fetched))));
+                        return Ok(Some((entry, (pending, next_url, fetched))));
                     }
-                    if fetched && cursor.is_none() {
-                        return Ok(None);
-                    }
-                    let mut req = client.inner.client.get(&base_url).headers(client.auth_headers());
-                    if let Some(ref c) = cursor {
-                        req = req.query(&[("cursor", c.as_str())]);
-                    }
-                    if let Some(l) = params.limit {
-                        req = req.query(&[("limit", l.to_string().as_str())]);
-                    }
-                    if params.recursive {
-                        req = req.query(&[("recursive", "true")]);
-                    }
+                    let url = match next_url {
+                        Some(url) => url,
+                        None if fetched => return Ok(None),
+                        None => {
+                            // if !fetched
+                            return Err(HFError::Other("Initial list Url not set".to_string()));
+                        },
+                    };
+                    let req = client.inner.client.get(url).headers(client.auth_headers());
                     let resp = req.send().await?;
                     let resp = check_bucket_response(resp, &repo_id, NotFoundContext::Repo).await?;
-                    let page: TreePage = resp.json().await?;
-                    let next_cursor = page.next_cursor;
-                    pending.extend(page.entries);
+                    let next_cursor = parse_link_header_next(resp.headers());
+                    let entries: Vec<TreeEntry> = resp.json().await?;
+
+                    pending.extend(entries);
                     if let Some(entry) = pending.pop_front() {
                         Ok(Some((entry, (pending, next_cursor, true))))
                     } else {
@@ -171,7 +179,7 @@ impl HFBucket {
                     }
                 }
             },
-        )
+        ))
     }
 
     /// Returns metadata for a batch of file paths.
@@ -347,8 +355,8 @@ impl HFClient {
 
     /// Returns a paginated stream of all buckets owned by `namespace`.
     /// Pagination is driven by `Link` response headers.
-    pub fn list_buckets(&self, namespace: &str) -> impl futures::Stream<Item = Result<BucketOverview>> + '_ {
-        let url = url::Url::parse(&format!("{}/api/buckets/{}", self.inner.endpoint, namespace))
+    pub fn list_buckets(&self, namespace: &str) -> impl Stream<Item = Result<BucketOverview>> + '_ {
+        let url = Url::parse(&format!("{}/api/buckets/{}", self.inner.endpoint, namespace))
             .expect("endpoint is a valid base URL");
         self.paginate(url, vec![], None)
     }

@@ -810,13 +810,7 @@ async fn test_space_secrets_and_variables() {
 // ---- HFBucket integration tests ----
 
 fn test_bucket_name() -> String {
-    format!(
-        "test-bucket-{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis()
-    )
+    format!("test-bucket-{}", uuid_v4_short())
 }
 
 #[tokio::test]
@@ -843,23 +837,23 @@ async fn test_create_and_delete_bucket() {
     let name = test_bucket_name();
 
     let created = api
-        .create_bucket(username, &name, huggingface_hub::CreateBucketParams::builder().private(true).build())
+        .create_bucket(username, &name, CreateBucketParams::builder().private(true).build())
         .await
         .expect("create_bucket failed");
-    assert!(created.id.contains(&name));
+    assert!(created.name.contains(&name));
 
     let bucket = api.bucket(username, &name);
     let info = bucket.get().await.expect("get failed");
-    assert_eq!(info.name, name);
-    assert!(info.private);
+    assert_eq!(info.id, format!("{username}/{name}"));
+    assert!(info.private.unwrap());
 
     bucket
-        .update_settings(huggingface_hub::UpdateBucketParams::builder().private(false).build())
+        .update_settings(UpdateBucketParams::builder().private(false).build())
         .await
         .expect("update_settings failed");
 
     let info = bucket.get().await.unwrap();
-    assert!(!info.private);
+    assert!(!info.private.unwrap());
 
     bucket.delete().await.expect("delete failed");
 
@@ -875,14 +869,15 @@ async fn test_bucket_list_tree_empty() {
     let username = cached_username().await;
     let name = test_bucket_name();
 
-    api.create_bucket(username, &name, huggingface_hub::CreateBucketParams::builder().build())
+    api.create_bucket(username, &name, CreateBucketParams::builder().build())
         .await
         .expect("create_bucket failed");
 
     let bucket = api.bucket(username, &name);
 
     let entries: Vec<_> = bucket
-        .list_tree("", huggingface_hub::ListTreeParams::builder().build())
+        .list_tree("", ListTreeParams::builder().build())
+        .unwrap()
         .collect::<Vec<_>>()
         .await
         .into_iter()
@@ -903,18 +898,18 @@ async fn test_get_xet_write_and_read_token() {
     let username = cached_username().await;
     let name = test_bucket_name();
 
-    api.create_bucket(username, &name, huggingface_hub::CreateBucketParams::builder().build())
+    api.create_bucket(username, &name, CreateBucketParams::builder().build())
         .await
         .unwrap();
 
     let bucket = api.bucket(username, &name);
 
     let write_tok = bucket.get_xet_write_token().await.expect("xet write token failed");
-    assert!(!write_tok.token.is_empty());
+    assert!(!write_tok.access_token.is_empty());
     assert!(!write_tok.cas_url.is_empty());
 
     let read_tok = bucket.get_xet_read_token().await.expect("xet read token failed");
-    assert!(!read_tok.token.is_empty());
+    assert!(!read_tok.access_token.is_empty());
 
     bucket.delete().await.unwrap();
 }

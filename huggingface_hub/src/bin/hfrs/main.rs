@@ -148,6 +148,17 @@ fn format_hf_error(err: &HFError) -> String {
         HFError::AuthRequired => {
             "Not authenticated. Run `hfrs auth login` or set the HF_TOKEN environment variable.".to_string()
         },
+        HFError::Forbidden => {
+            "Permission denied. Check that your token has the required scopes for this operation.".to_string()
+        },
+        HFError::Conflict(body) => {
+            if body.contains("already exists") {
+                "Resource already exists. Use --exist-ok to skip this error.".to_string()
+            } else {
+                format!("Conflict: {body}")
+            }
+        },
+        HFError::RateLimited => "Rate limited. Please wait a moment and try again.".to_string(),
         HFError::Http { status, url, body } => {
             let status_code = status.as_u16();
             match status_code {
@@ -157,9 +168,6 @@ fn format_hf_error(err: &HFError) -> String {
                         msg.push_str(" Note: HF_TOKEN environment variable takes precedence over `hfrs auth login`.");
                     }
                     msg
-                },
-                403 => {
-                    "Permission denied. Check that your token has the required scopes for this operation.".to_string()
                 },
                 404 => {
                     format!("Not found: {url}")
