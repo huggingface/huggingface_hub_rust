@@ -976,6 +976,12 @@ impl HFRepository {
             let line = match op {
                 CommitOperation::Add { path_in_repo, source } => {
                     if let Some((oid, size)) = lfs_uploaded.get(path_in_repo) {
+                        tracing::info!(
+                            path = path_in_repo.as_str(),
+                            oid = oid.as_str(),
+                            size,
+                            "adding lfsFile entry to commit"
+                        );
                         serde_json::json!({
                             "key": "lfsFile",
                             "value": {
@@ -986,6 +992,7 @@ impl HFRepository {
                             }
                         })
                     } else {
+                        tracing::info!(path = path_in_repo.as_str(), "adding inline base64 file entry to commit");
                         Self::inline_base64_entry(path_in_repo, source).await?
                     }
                 },
@@ -1232,6 +1239,7 @@ impl HFRepository {
         }
 
         // Step 2: Call preupload endpoint to classify files as "lfs" or "regular"
+        tracing::info!("calling preupload endpoint to classify {} files", file_infos.len());
         let upload_modes = self
             .fetch_upload_modes(
                 &self.repo_path(),
@@ -1243,6 +1251,7 @@ impl HFRepository {
                     .collect::<Vec<_>>(),
             )
             .await?;
+        tracing::info!(?upload_modes, "preupload classification complete");
 
         // Step 3: Identify LFS files (empty files are always regular)
         let lfs_files: Vec<&(String, u64, Vec<u8>, &AddSource)> = file_infos
@@ -1255,6 +1264,12 @@ impl HFRepository {
         if lfs_files.is_empty() {
             return Ok(HashMap::new());
         }
+
+        tracing::info!(
+            lfs_file_count = lfs_files.len(),
+            lfs_files = ?lfs_files.iter().map(|(p, s, _, _)| (p.as_str(), *s)).collect::<Vec<_>>(),
+            "files requiring LFS upload"
+        );
 
         // LFS files require xet upload — fail if the feature is not enabled
         #[cfg(not(feature = "xet"))]
@@ -1323,9 +1338,11 @@ impl HFRepository {
         lfs_files: &[&(String, u64, Vec<u8>, &AddSource)],
     ) -> Result<HashMap<String, (String, u64)>> {
         // Step 4: Compute SHA256 for LFS files
+        tracing::info!("computing SHA256 for {} LFS files", lfs_files.len());
         let mut lfs_with_sha: Vec<(String, u64, String, &AddSource)> = Vec::new();
         for (path, size, _, source) in lfs_files {
             let sha256_oid = sha256_of_source(source).await?;
+            tracing::info!(path = path.as_str(), size, oid = sha256_oid.as_str(), "SHA256 computed");
             lfs_with_sha.push(((*path).clone(), *size, sha256_oid, source));
         }
 
@@ -1333,12 +1350,18 @@ impl HFRepository {
         let objects: Vec<(&str, u64)> = lfs_with_sha.iter().map(|(_, size, oid, _)| (oid.as_str(), *size)).collect();
 
         let repo_path = self.repo_path();
+        tracing::info!("calling LFS batch endpoint for transfer negotiation");
         let chosen_transfer = self
             .post_lfs_batch_info(&repo_path, Some(self.repo_type), revision, &objects)
             .await?;
+        tracing::info!(?chosen_transfer, "LFS batch transfer negotiation complete");
 
         // Step 6: If server chose xet, upload via xet
         if chosen_transfer.as_deref() != Some("xet") {
+            tracing::warn!(
+                ?chosen_transfer,
+                "LFS batch did not choose xet transfer; LFS files will fall through to inline upload"
+            );
             return Ok(HashMap::new());
         }
 

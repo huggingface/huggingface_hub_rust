@@ -94,12 +94,29 @@ impl CliRunner {
         loop {
             match child.try_wait()? {
                 Some(_status) => {
-                    return Ok(child.wait_with_output()?);
+                    let output = child.wait_with_output()?;
+                    if is_ci {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        if !stderr.is_empty() {
+                            eprintln!("[CI] {} {:?} stderr:\n{}", self.bin, args, stderr);
+                        }
+                    }
+                    return Ok(output);
                 },
                 None => {
                     if start.elapsed() > timeout {
                         let _ = child.kill();
-                        anyhow::bail!("{} {:?} timed out after {}s", self.bin, args, timeout.as_secs());
+                        let output = child.wait_with_output()?;
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        anyhow::bail!(
+                            "{} {:?} timed out after {}s\n--- stdout ---\n{}\n--- stderr ---\n{}",
+                            self.bin,
+                            args,
+                            timeout.as_secs(),
+                            stdout,
+                            stderr,
+                        );
                     }
                     std::thread::sleep(Duration::from_millis(100));
                 },

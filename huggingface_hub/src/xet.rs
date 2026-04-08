@@ -282,9 +282,12 @@ impl HFRepository {
     pub(crate) async fn xet_upload(&self, files: &[(String, AddSource)], revision: &str) -> Result<Vec<XetFileInfo>> {
         let repo_path = self.repo_path();
         let repo_type = Some(self.repo_type);
+        tracing::info!(repo = repo_path.as_str(), "fetching xet write token");
         let conn = fetch_xet_connection_info(&self.hf_client, "write", &repo_path, repo_type, revision).await?;
+        tracing::info!(endpoint = conn.endpoint.as_str(), "xet write token obtained, building session");
         let session = build_xet_session()?;
 
+        tracing::info!("building xet upload commit");
         let commit = session
             .new_upload_commit()
             .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?
@@ -297,10 +300,12 @@ impl HFRepository {
             .build()
             .await
             .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?;
+        tracing::info!("xet upload commit built, queuing file uploads");
 
         let mut task_ids_in_order = Vec::with_capacity(files.len());
 
-        for (_path_in_repo, source) in files {
+        for (path_in_repo, source) in files {
+            tracing::info!(path = path_in_repo.as_str(), "queuing xet upload");
             let handle = match source {
                 AddSource::File(path) => commit
                     .upload_from_path(path.clone(), Sha256Policy::Compute)
@@ -314,10 +319,12 @@ impl HFRepository {
             task_ids_in_order.push(handle.task_id());
         }
 
+        tracing::info!(file_count = files.len(), "committing xet uploads");
         let results = commit
             .commit()
             .await
             .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?;
+        tracing::info!("xet upload commit complete");
 
         let mut xet_file_infos = Vec::with_capacity(files.len());
         for task_id in &task_ids_in_order {
