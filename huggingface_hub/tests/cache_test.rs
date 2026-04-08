@@ -985,6 +985,14 @@ fn setup_python_venv(base_dir: &std::path::Path) -> Option<std::path::PathBuf> {
 
     let pip = venv_dir.join("bin").join("pip");
     let status = std::process::Command::new(&pip)
+        .args(["install", "--upgrade", "pip"])
+        .status()
+        .ok()?;
+    if !status.success() {
+        return None;
+    }
+
+    let status = std::process::Command::new(&pip)
         .args(["install", "-q", "huggingface_hub"])
         .status()
         .ok()?;
