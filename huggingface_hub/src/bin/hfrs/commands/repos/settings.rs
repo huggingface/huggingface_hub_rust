@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{HFClient, RepoUpdateSettingsParams};
+use huggingface_hub::{GatedApprovalMode, GatedNotificationsMode, HFClient, RepoUpdateSettingsParams};
 
 use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
@@ -26,15 +26,35 @@ pub struct Args {
     /// Repository description
     #[arg(long)]
     pub description: Option<String>,
+
+    /// Disable discussions on the repository
+    #[arg(long)]
+    pub discussions_disabled: Option<bool>,
+
+    /// Email for gated access notifications
+    #[arg(long)]
+    pub gated_notifications_email: Option<String>,
+
+    /// Gated notifications mode ("bulk" or "real-time")
+    #[arg(long)]
+    pub gated_notifications_mode: Option<String>,
 }
 
 pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
     let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
+
+    let gated: Option<GatedApprovalMode> = args.gated.map(|g| g.parse()).transpose()?;
+    let gated_notifications_mode: Option<GatedNotificationsMode> =
+        args.gated_notifications_mode.map(|m| m.parse()).transpose()?;
+
     let params = RepoUpdateSettingsParams {
         private: args.private,
-        gated: args.gated,
+        gated,
         description: args.description,
+        discussions_disabled: args.discussions_disabled,
+        gated_notifications_email: args.gated_notifications_email,
+        gated_notifications_mode,
     };
     repo.update_settings(&params).await?;
     Ok(CommandResult::Silent)
