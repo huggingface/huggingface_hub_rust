@@ -25,7 +25,10 @@ impl CliRunner {
             bin: "hfrs".to_string(),
             bin_path: Some(env!("CARGO_BIN_EXE_hfrs").to_string()),
             token: std::env::var("HF_TOKEN").ok(),
-            extra_env: vec![("RUST_LOG".to_string(), "info".to_string())],
+            extra_env: vec![
+                ("RUST_LOG".to_string(), "info".to_string()),
+                ("HF_LOG_LEVEL".to_string(), "info".to_string()),
+            ],
             env_remove: Vec::new(),
         }
     }
