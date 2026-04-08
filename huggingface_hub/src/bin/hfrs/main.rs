@@ -30,10 +30,10 @@ async fn main() -> ExitCode {
         debug!(endpoint = endpoint.as_str(), "using custom API endpoint");
         builder = builder.endpoint(endpoint);
     }
-    if let Command::Download(ref args) = cli.command {
-        if let Some(ref cache_dir) = args.cache_dir {
-            builder = builder.cache_dir(cache_dir);
-        }
+    if let Command::Download(ref args) = cli.command
+        && let Some(ref cache_dir) = args.cache_dir
+    {
+        builder = builder.cache_dir(cache_dir);
     }
     let api = match builder.build() {
         Ok(api) => {
@@ -181,10 +181,10 @@ fn format_hf_error(err: &HFError) -> String {
                     if body.is_empty() {
                         format!("{status} {url}")
                     } else {
-                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
-                            if let Some(error_msg) = json.get("error").and_then(|e| e.as_str()) {
-                                return error_msg.to_string();
-                            }
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(body)
+                            && let Some(error_msg) = json.get("error").and_then(|e| e.as_str())
+                        {
+                            return error_msg.to_string();
                         }
                         format!("{status}: {body}")
                     }
@@ -235,6 +235,9 @@ fn format_hf_error(err: &HFError) -> String {
             format!("Invalid repository type: expected {expected:?}, got {actual:?}")
         },
         HFError::InvalidParameter(msg) => msg.clone(),
+        HFError::DiffParse(e) => {
+            format!("Failed to parse diff: {e}")
+        },
         HFError::Other(msg) => msg.clone(),
     }
 }

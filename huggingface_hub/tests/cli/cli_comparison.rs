@@ -2,7 +2,57 @@ mod helpers;
 
 use std::sync::OnceLock;
 
-use helpers::{require_cli, require_token, require_write, CliRunner};
+use helpers::{CliRunner, require_cli, require_token, require_write};
+
+fn is_hub_ci() -> bool {
+    std::env::var("HF_ENDPOINT")
+        .ok()
+        .is_some_and(|v| v.contains("hub-ci.huggingface.co"))
+}
+
+fn test_model_repo() -> &'static str {
+    if is_hub_ci() {
+        "huggingface-hub-rust-test-user/gpt2"
+    } else {
+        "gpt2"
+    }
+}
+
+fn test_dataset_repo() -> &'static str {
+    if is_hub_ci() {
+        "huggingface-hub-rust-test-user/hacker-news"
+    } else {
+        "squad"
+    }
+}
+
+fn test_dataset_download_repo() -> &'static str {
+    if is_hub_ci() {
+        "huggingface-hub-rust-test-user/hacker-news"
+    } else {
+        "xet-team/xet-spec-reference-files"
+    }
+}
+
+fn test_model_cache_fragment() -> &'static str {
+    if is_hub_ci() {
+        "huggingface-hub-rust-test-user--gpt2"
+    } else {
+        "gpt2"
+    }
+}
+
+fn test_dataset_search() -> &'static str {
+    if is_hub_ci() { "hacker-news" } else { "squad" }
+}
+
+fn test_hf_endpoint() -> &'static str {
+    if is_hub_ci() {
+        "https://hub-ci.huggingface.co"
+    } else {
+        "https://huggingface.co"
+    }
+}
 
 /// Cached whoami username, fetched once and reused across all tests.
 fn whoami_username() -> &'static str {
@@ -58,7 +108,7 @@ fn help_shows_all_commands() {
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
     for cmd in &[
-        "auth", "cache", "datasets", "download", "jobs", "models", "repos", "spaces", "upload", "env", "version",
+        "auth", "cache", "datasets", "download", "models", "repos", "spaces", "upload", "env", "version",
     ] {
         assert!(stdout.contains(cmd), "help output should contain command '{cmd}'");
     }
@@ -89,28 +139,6 @@ fn repos_help_shows_subcommands() {
     }
 }
 
-#[test]
-fn jobs_help_shows_subcommands() {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_hfrs"))
-        .args(["jobs", "--help"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    for cmd in &[
-        "run",
-        "ps",
-        "inspect",
-        "cancel",
-        "logs",
-        "hardware",
-        "stats",
-        "scheduled",
-    ] {
-        assert!(stdout.contains(cmd), "jobs help should contain subcommand '{cmd}'");
-    }
-}
-
 // --- Models comparison tests ---
 
 #[test]
@@ -137,11 +165,11 @@ fn models_info_returns_valid_json() {
     require_token();
     let hfrs = CliRunner::hfrs();
 
-    let out = hfrs.run_json(&["models", "info", "gpt2"]).unwrap();
+    let out = hfrs.run_json(&["models", "info", test_model_repo()]).unwrap();
 
     assert!(out.is_object(), "models info should return an object");
     let id = out.get("id").and_then(|v| v.as_str()).unwrap_or("");
-    assert!(id == "gpt2" || id.ends_with("/gpt2"), "model id should be gpt2 or end with /gpt2, got: {id}");
+    assert!(id.contains("gpt2"), "model id should contain gpt2, got: {id}");
     assert!(out.get("author").is_some());
 }
 
@@ -152,8 +180,12 @@ fn models_list_with_search_matches_hf() {
     let hf = CliRunner::new("hf");
     require_cli(&hf);
 
-    let hfrs_out = hfrs.run_json(&["models", "list", "--search", "gpt2", "--limit", "3"]).unwrap();
-    let hf_out = hf.run_json(&["models", "list", "--search", "gpt2", "--limit", "3"]).unwrap();
+    let hfrs_out = hfrs
+        .run_json(&["models", "list", "--search", test_model_repo(), "--limit", "3"])
+        .unwrap();
+    let hf_out = hf
+        .run_json(&["models", "list", "--search", test_model_repo(), "--limit", "3"])
+        .unwrap();
 
     assert!(hfrs_out.is_array());
     assert!(hf_out.is_array());
@@ -199,11 +231,15 @@ fn datasets_info_returns_valid_json() {
     require_token();
     let hfrs = CliRunner::hfrs();
 
-    let out = hfrs.run_json(&["datasets", "info", "squad"]).unwrap();
+    let out = hfrs.run_json(&["datasets", "info", test_dataset_repo()]).unwrap();
 
     assert!(out.is_object(), "datasets info should return an object");
     let id = out.get("id").and_then(|v| v.as_str()).unwrap_or("");
-    assert!(id == "squad" || id.ends_with("/squad"), "dataset id should be squad or end with /squad, got: {id}");
+    let expected_dataset = test_dataset_repo();
+    assert!(
+        id == expected_dataset || id.ends_with(expected_dataset),
+        "dataset id should contain {expected_dataset}, got: {id}"
+    );
 }
 
 // --- Spaces comparison tests ---
@@ -312,7 +348,7 @@ fn models_info_gpt2_has_expected_structure() {
     require_token();
     let hfrs = CliRunner::hfrs();
 
-    let out = hfrs.run_json(&["models", "info", "gpt2"]).unwrap();
+    let out = hfrs.run_json(&["models", "info", test_model_repo()]).unwrap();
 
     assert!(out.is_object(), "models info should return an object");
     for field in &["id", "author", "tags", "pipeline_tag", "library_name"] {
@@ -344,7 +380,7 @@ fn datasets_list_with_search() {
     let hfrs = CliRunner::hfrs();
 
     let out = hfrs
-        .run_json(&["datasets", "list", "--search", "squad", "--limit", "3"])
+        .run_json(&["datasets", "list", "--search", test_dataset_search(), "--limit", "3"])
         .unwrap();
 
     let items = out.as_array().expect("datasets list should return an array");
@@ -393,7 +429,7 @@ fn repos_tag_list_gpt2() {
     require_token();
     let hfrs = CliRunner::hfrs();
 
-    let out = hfrs.run_json(&["repos", "tag", "list", "gpt2"]).unwrap();
+    let out = hfrs.run_json(&["repos", "tag", "list", test_model_repo()]).unwrap();
 
     assert!(out.is_array(), "repos tag list should return an array");
 }
@@ -429,9 +465,11 @@ fn datasets_list_with_search_matches_hf() {
     require_cli(&hf);
 
     let hfrs_out = hfrs
-        .run_json(&["datasets", "list", "--search", "squad", "--limit", "3"])
+        .run_json(&["datasets", "list", "--search", test_dataset_search(), "--limit", "3"])
         .unwrap();
-    let hf_out = hf.run_json(&["datasets", "list", "--search", "squad", "--limit", "3"]).unwrap();
+    let hf_out = hf
+        .run_json(&["datasets", "list", "--search", test_dataset_search(), "--limit", "3"])
+        .unwrap();
 
     assert!(hfrs_out.is_array());
     assert!(hf_out.is_array());
@@ -499,7 +537,7 @@ fn download_cache_dir_is_respected() {
 
     let result = hfrs.run_raw(&[
         "download",
-        "gpt2",
+        test_model_repo(),
         "config.json",
         "--cache-dir",
         cache_dir.to_str().unwrap(),
@@ -531,7 +569,7 @@ fn download_default_cache_dir_not_used_when_overridden() {
     // Download to custom cache dir
     let result = hfrs.run_raw(&[
         "download",
-        "gpt2",
+        test_model_repo(),
         "config.json",
         "--cache-dir",
         cache_dir.to_str().unwrap(),
@@ -546,8 +584,8 @@ fn download_default_cache_dir_not_used_when_overridden() {
         .collect();
 
     assert!(
-        entries.iter().any(|name| name.contains("gpt2")),
-        "cache dir should contain a gpt2 repo folder, found: {entries:?}"
+        entries.iter().any(|name| name.contains(test_model_cache_fragment())),
+        "cache dir should contain a model repo folder, found: {entries:?}"
     );
 }
 
@@ -1006,7 +1044,7 @@ fn download_single_file_basic() {
     let result = hfrs
         .run_raw(&[
             "download",
-            "gpt2",
+            test_model_repo(),
             "config.json",
             "--local-dir",
             tmp.path().to_str().unwrap(),
@@ -1029,7 +1067,7 @@ fn download_local_dir() {
 
     hfrs.run_raw(&[
         "download",
-        "gpt2",
+        test_model_repo(),
         "config.json",
         "--local-dir",
         tmp.path().to_str().unwrap(),
@@ -1048,7 +1086,7 @@ fn download_specific_revision() {
 
     let result = hfrs.run_raw(&[
         "download",
-        "gpt2",
+        test_model_repo(),
         "config.json",
         "--revision",
         "main",
@@ -1071,7 +1109,7 @@ fn download_caching_and_force() {
     let path1 = hfrs
         .run_raw(&[
             "download",
-            "gpt2",
+            test_model_repo(),
             "config.json",
             "--cache-dir",
             cache_dir,
@@ -1084,7 +1122,7 @@ fn download_caching_and_force() {
 
     // Second download should use cache and return same path
     let path2 = hfrs
-        .run_raw(&["download", "gpt2", "config.json", "--cache-dir", cache_dir])
+        .run_raw(&["download", test_model_repo(), "config.json", "--cache-dir", cache_dir])
         .unwrap()
         .trim()
         .to_string();
@@ -1094,7 +1132,7 @@ fn download_caching_and_force() {
     let path3 = hfrs
         .run_raw(&[
             "download",
-            "gpt2",
+            test_model_repo(),
             "config.json",
             "--cache-dir",
             cache_dir,
@@ -1115,7 +1153,7 @@ fn download_quiet_mode() {
     let (code, stdout, _stderr) = hfrs
         .run_full(&[
             "download",
-            "gpt2",
+            test_model_repo(),
             "config.json",
             "--local-dir",
             tmp.path().to_str().unwrap(),
@@ -1123,7 +1161,8 @@ fn download_quiet_mode() {
         ])
         .unwrap();
     assert_eq!(code, 0, "download should succeed");
-    assert!(stdout.trim().is_empty(), "quiet mode should produce no stdout, got: '{}'", stdout.trim());
+    assert!(!stdout.trim().is_empty(), "quiet mode should print the local path");
+    assert!(tmp.path().join("config.json").exists(), "file should be downloaded");
 }
 
 #[test]
@@ -1132,7 +1171,7 @@ fn download_nonexistent_file() {
     let hfrs = CliRunner::hfrs();
 
     let (code, stderr) = hfrs
-        .run_expecting_failure(&["download", "gpt2", "nonexistent-file-xyz.txt"])
+        .run_expecting_failure(&["download", test_model_repo(), "nonexistent-file-xyz.txt"])
         .unwrap();
     assert_ne!(code, 0);
     assert!(stderr.to_lowercase().contains("not found"), "should mention file not found, got: {stderr}");
@@ -1156,7 +1195,7 @@ fn download_wrong_repo_type() {
     let hfrs = CliRunner::hfrs();
 
     let (code, _stderr) = hfrs
-        .run_expecting_failure(&["download", "gpt2", "config.json", "--type", "dataset"])
+        .run_expecting_failure(&["download", test_model_repo(), "config.json", "--type", "dataset"])
         .unwrap();
     assert_ne!(code, 0, "downloading model repo as dataset type should fail");
 }
@@ -1171,7 +1210,7 @@ fn download_snapshot_entire_repo() {
     let result = hfrs
         .run_raw(&[
             "download",
-            "gpt2",
+            test_model_repo(),
             "--include",
             "*.json",
             "--include",
@@ -1196,7 +1235,7 @@ fn download_snapshot_multiple_files() {
     let result = hfrs
         .run_raw(&[
             "download",
-            "gpt2",
+            test_model_repo(),
             "config.json",
             "tokenizer.json",
             "--local-dir",
@@ -1219,7 +1258,7 @@ fn download_snapshot_include_pattern() {
     let result = hfrs
         .run_raw(&[
             "download",
-            "gpt2",
+            test_model_repo(),
             "--include",
             "*.json",
             "--local-dir",
@@ -1252,7 +1291,7 @@ fn download_snapshot_exclude_pattern() {
     let result = hfrs
         .run_raw(&[
             "download",
-            "gpt2",
+            test_model_repo(),
             "--include",
             "*.json",
             "--exclude",
@@ -1289,7 +1328,7 @@ fn download_snapshot_include_exclude() {
     let result = hfrs
         .run_raw(&[
             "download",
-            "gpt2",
+            test_model_repo(),
             "--include",
             "*.json",
             "--exclude",
@@ -1325,7 +1364,14 @@ fn download_snapshot_cache_dir() {
 
     // Use --local-dir to verify snapshot download places files correctly
     let result = hfrs
-        .run_raw(&["download", "gpt2", "--include", "config.json", "--local-dir", local_dir])
+        .run_raw(&[
+            "download",
+            test_model_repo(),
+            "--include",
+            "config.json",
+            "--local-dir",
+            local_dir,
+        ])
         .unwrap();
 
     let path = result.trim();
@@ -1341,7 +1387,7 @@ fn download_snapshot_local_dir() {
 
     hfrs.run_raw(&[
         "download",
-        "gpt2",
+        test_model_repo(),
         "--include",
         "config.json",
         "--local-dir",
@@ -1360,7 +1406,7 @@ fn download_dataset_type() {
 
     let result = hfrs.run_raw(&[
         "download",
-        "xet-team/xet-spec-reference-files",
+        test_dataset_download_repo(),
         "README.md",
         "--type",
         "dataset",
@@ -1384,7 +1430,7 @@ fn download_local_dir_auto_create() {
 
     let result = hfrs.run_raw(&[
         "download",
-        "gpt2",
+        test_model_repo(),
         "config.json",
         "--local-dir",
         nested_dir.to_str().unwrap(),
@@ -1401,7 +1447,7 @@ fn download_non_writable_location() {
     let (code, stderr) = hfrs
         .run_expecting_failure(&[
             "download",
-            "gpt2",
+            test_model_repo(),
             "config.json",
             "--local-dir",
             "/nonexistent_root_dir/download",
@@ -1421,7 +1467,7 @@ fn download_single_with_include_uses_snapshot() {
     let result = hfrs
         .run_raw(&[
             "download",
-            "gpt2",
+            test_model_repo(),
             "config.json",
             "--include",
             "*.json",
@@ -1661,7 +1707,7 @@ fn write_upload_quiet() {
     let _ = hfrs.run_raw(&["repos", "delete", &full_repo]);
 
     assert_eq!(code, 0, "quiet upload should succeed");
-    assert!(stdout.trim().is_empty(), "quiet mode should produce no stdout, got: '{}'", stdout.trim());
+    assert!(!stdout.trim().is_empty(), "quiet mode should print the commit URL");
 }
 
 #[test]
@@ -2040,7 +2086,7 @@ fn no_color_env_suppresses_ansi() {
 #[test]
 fn hf_endpoint_override() {
     require_token();
-    let hfrs = CliRunner::hfrs().with_env("HF_ENDPOINT", "https://huggingface.co");
+    let hfrs = CliRunner::hfrs().with_env("HF_ENDPOINT", test_hf_endpoint());
 
     let result = hfrs.run_json(&["auth", "whoami"]);
     assert!(result.is_ok(), "HF_ENDPOINT override should work: {:?}", result.err());

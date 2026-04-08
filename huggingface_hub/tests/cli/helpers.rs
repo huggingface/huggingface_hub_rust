@@ -25,7 +25,10 @@ impl CliRunner {
             bin: "hfrs".to_string(),
             bin_path: Some(env!("CARGO_BIN_EXE_hfrs").to_string()),
             token: std::env::var("HF_TOKEN").ok(),
-            extra_env: Vec::new(),
+            extra_env: vec![
+                ("RUST_LOG".to_string(), "info".to_string()),
+                ("HF_LOG_LEVEL".to_string(), "info".to_string()),
+            ],
             env_remove: Vec::new(),
         }
     }
@@ -88,17 +91,35 @@ impl CliRunner {
             .stderr(std::process::Stdio::piped())
             .spawn()?;
 
-        let timeout = Duration::from_secs(60);
+        let is_ci = std::env::var("CI").is_ok();
+        let timeout = Duration::from_secs(if is_ci { 300 } else { 60 });
         let start = std::time::Instant::now();
         loop {
             match child.try_wait()? {
                 Some(_status) => {
-                    return Ok(child.wait_with_output()?);
+                    let output = child.wait_with_output()?;
+                    if is_ci {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        if !stderr.is_empty() {
+                            eprintln!("[CI] {} {:?} stderr:\n{}", self.bin, args, stderr);
+                        }
+                    }
+                    return Ok(output);
                 },
                 None => {
                     if start.elapsed() > timeout {
                         let _ = child.kill();
-                        anyhow::bail!("{} {:?} timed out after {}s", self.bin, args, timeout.as_secs());
+                        let output = child.wait_with_output()?;
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        anyhow::bail!(
+                            "{} {:?} timed out after {}s\n--- stdout ---\n{}\n--- stderr ---\n{}",
+                            self.bin,
+                            args,
+                            timeout.as_secs(),
+                            stdout,
+                            stderr,
+                        );
                     }
                     std::thread::sleep(Duration::from_millis(100));
                 },

@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
-use futures::stream::{self, Stream};
 use futures::StreamExt;
+use futures::stream::{self, Stream};
 use reqwest::header::HeaderMap;
 use serde::de::DeserializeOwned;
 use url::Url;
@@ -64,7 +64,7 @@ impl HFClient {
                     None => return Ok(None),
                 };
 
-                let mut request = self.inner.client.get(url.clone()).headers(self.auth_headers());
+                let mut request = self.http_client().get(url.clone()).headers(self.auth_headers());
                 if state.is_first_page {
                     request = request.query(&params);
                     state.is_first_page = false;

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::Args as ClapArgs;
 use huggingface_hub::{AddSource, CreateRepoParams, HFClient, RepoUploadFileParams, RepoUploadFolderParams};
 use tracing::info;

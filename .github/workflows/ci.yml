@@ -8,6 +8,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  HF_ENDPOINT: https://hub-ci.huggingface.co
+  RUST_BACKTRACE: 1
 
 jobs:
   fmt:
@@ -29,6 +31,8 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      # lint with all features, and with only default features
+      - run: cargo clippy -p huggingface-hub --all-features -- -D warnings
       - run: cargo clippy -p huggingface-hub -- -D warnings
 
   build:
@@ -38,7 +42,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p huggingface-hub --all-features --release
       - run: cargo build -p huggingface-hub --release
+      - run: cargo build -p huggingface-hub --features xet --release
       - run: cargo build -p huggingface-hub --all-features --examples
 
   test:
@@ -48,19 +54,19 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Unit tests
-        run: cargo test -p huggingface-hub --lib
-      - name: Doc tests
-        run: cargo test -p huggingface-hub --doc
-      - name: Integration tests (read-only)
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: cargo test -p huggingface-hub --test integration_test
       - name: Set up Python for cache interop tests
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
-      - name: Cache tests
+      - name: Install huggingface_hub CLI in venv
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install huggingface_hub[cli]
+      - name: All tests
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: cargo test -p huggingface-hub --features xet --test cache_test
+          HF_TEST_WRITE: "1"
+        run: |
+          source .venv/bin/activate
+          cargo test -p huggingface-hub --all-features

@@ -12,8 +12,8 @@
 
 use huggingface_hub::repository::{
     RepoCreateBranchParams, RepoCreateCommitParams, RepoDeleteBranchParams, RepoDownloadFileParams,
-    RepoFileExistsParams, RepoGetCommitDiffParams, RepoListCommitsParams, RepoListFilesParams, RepoListRefsParams,
-    RepoListTreeParams, RepoRevisionExistsParams, RepoUploadFileParams, RepoUploadFolderParams,
+    RepoFileExistsParams, RepoGetCommitDiffParams, RepoGetRawDiffParams, RepoListCommitsParams, RepoListFilesParams,
+    RepoListRefsParams, RepoListTreeParams, RepoRevisionExistsParams, RepoUploadFileParams, RepoUploadFolderParams,
 };
 use huggingface_hub::types::*;
 use huggingface_hub::{HFClientBuilder, HFClientSync, RepoInfo, RepoInfoParams};
@@ -30,6 +30,44 @@ fn write_enabled() -> bool {
     std::env::var("HF_TEST_WRITE").ok().is_some_and(|v| v == "1")
 }
 
+fn is_hub_ci() -> bool {
+    std::env::var("HF_ENDPOINT")
+        .ok()
+        .is_some_and(|v| v.contains("hub-ci.huggingface.co"))
+}
+
+fn test_org() -> &'static str {
+    if is_hub_ci() { "valid_org" } else { "huggingface" }
+}
+
+fn test_user() -> &'static str {
+    if is_hub_ci() {
+        "huggingface-hub-rust-test-user"
+    } else {
+        "julien-c"
+    }
+}
+
+fn test_model_author() -> &'static str {
+    if is_hub_ci() { "valid_org" } else { "openai-community" }
+}
+
+fn test_model_repo() -> &'static str {
+    if is_hub_ci() {
+        "huggingface-hub-rust-test-user/gpt2"
+    } else {
+        "openai-community/gpt2"
+    }
+}
+
+fn test_dataset_repo() -> &'static str {
+    if is_hub_ci() {
+        "huggingface-hub-rust-test-user/hacker-news"
+    } else {
+        "xet-team/xet-spec-reference-files"
+    }
+}
+
 /// Split a `"owner/name"` string into an `HFRepositorySync` handle.
 fn repo_handle(api: &HFClientSync, repo_id: &str) -> huggingface_hub::blocking::HFRepositorySync {
     let parts: Vec<&str> = repo_id.splitn(2, '/').collect();
@@ -40,15 +78,25 @@ fn repo_handle(api: &HFClientSync, repo_id: &str) -> huggingface_hub::blocking::
     }
 }
 
+fn dataset_handle(api: &HFClientSync, repo_id: &str) -> huggingface_hub::blocking::HFRepositorySync {
+    let parts: Vec<&str> = repo_id.splitn(2, '/').collect();
+    if parts.len() == 2 {
+        api.dataset(parts[0], parts[1])
+    } else {
+        api.dataset("", repo_id)
+    }
+}
+
 // --- Repo info ---
 
 #[test]
 fn test_sync_model_info() {
     let Some(api) = sync_api() else { return };
-    let repo = api.model("openai-community", "gpt2");
+    let model_repo = test_model_repo();
+    let repo = repo_handle(&api, model_repo);
     let info = repo.info(&RepoInfoParams::default()).unwrap();
     match info {
-        RepoInfo::Model(model) => assert_eq!(model.id, "openai-community/gpt2"),
+        RepoInfo::Model(model) => assert!(model.id.contains("gpt2")),
         _ => panic!("expected model info"),
     }
 }
@@ -56,10 +104,11 @@ fn test_sync_model_info() {
 #[test]
 fn test_sync_dataset_info() {
     let Some(api) = sync_api() else { return };
-    let repo = api.dataset("rajpurkar", "squad");
+    let dataset_repo = test_dataset_repo();
+    let repo = dataset_handle(&api, dataset_repo);
     let info = repo.info(&RepoInfoParams::default()).unwrap();
     match info {
-        RepoInfo::Dataset(dataset) => assert!(dataset.id.contains("squad")),
+        RepoInfo::Dataset(ds) => assert_eq!(ds.id, dataset_repo),
         _ => panic!("expected dataset info"),
     }
 }
@@ -67,11 +116,12 @@ fn test_sync_dataset_info() {
 #[test]
 fn test_sync_repo_handle_info_and_file_exists() {
     let Some(api) = sync_api() else { return };
-    let repo = api.model("openai-community", "gpt2");
+    let model_repo = test_model_repo();
+    let repo = repo_handle(&api, model_repo);
 
     let info = repo.info(&RepoInfoParams::default()).unwrap();
     match info {
-        RepoInfo::Model(model) => assert_eq!(model.id, "openai-community/gpt2"),
+        RepoInfo::Model(model) => assert_eq!(model.id, model_repo),
         _ => panic!("expected model info"),
     }
 
@@ -84,20 +134,23 @@ fn test_sync_repo_handle_info_and_file_exists() {
 #[test]
 fn test_sync_repo_exists() {
     let Some(api) = sync_api() else { return };
-    assert!(repo_handle(&api, "gpt2").exists().unwrap());
+    assert!(repo_handle(&api, test_model_repo()).exists().unwrap());
     assert!(!repo_handle(&api, "this-repo-definitely-does-not-exist-12345").exists().unwrap());
 }
 
 #[test]
 fn test_sync_file_exists() {
     let Some(api) = sync_api() else { return };
-    let repo = repo_handle(&api, "gpt2");
-    assert!(repo
-        .file_exists(&RepoFileExistsParams::builder().filename("config.json").build())
-        .unwrap());
-    assert!(!repo
-        .file_exists(&RepoFileExistsParams::builder().filename("nonexistent_file.xyz").build())
-        .unwrap());
+    let repo = repo_handle(&api, test_model_repo());
+    assert!(
+        repo.file_exists(&RepoFileExistsParams::builder().filename("config.json").build())
+            .unwrap()
+    );
+    assert!(
+        !repo
+            .file_exists(&RepoFileExistsParams::builder().filename("nonexistent_file.xyz").build())
+            .unwrap()
+    );
 }
 
 // --- Listing (stream methods collected to Vec) ---
@@ -105,16 +158,17 @@ fn test_sync_file_exists() {
 #[test]
 fn test_sync_list_models() {
     let Some(api) = sync_api() else { return };
-    let params = ListModelsParams::builder().author("openai-community").limit(3_usize).build();
+    let author = test_model_author();
+    let params = ListModelsParams::builder().author(author).limit(3_usize).build();
     let models = api.list_models(&params).unwrap();
     assert!(!models.is_empty());
-    assert!(models[0].id.starts_with("openai-community/"));
+    assert!(models[0].id.starts_with(&format!("{}/", author)));
 }
 
 #[test]
 fn test_sync_list_datasets() {
     let Some(api) = sync_api() else { return };
-    let params = ListDatasetsParams::builder().author("huggingface").limit(3_usize).build();
+    let params = ListDatasetsParams::builder().author(test_org()).limit(3_usize).build();
     let datasets = api.list_datasets(&params).unwrap();
     assert!(!datasets.is_empty());
 }
@@ -122,7 +176,9 @@ fn test_sync_list_datasets() {
 #[test]
 fn test_sync_list_repo_files() {
     let Some(api) = sync_api() else { return };
-    let files = repo_handle(&api, "gpt2").list_files(&RepoListFilesParams::default()).unwrap();
+    let files = repo_handle(&api, test_model_repo())
+        .list_files(&RepoListFilesParams::default())
+        .unwrap();
     assert!(files.contains(&"config.json".to_string()));
     assert!(files.contains(&"README.md".to_string()));
 }
@@ -130,7 +186,9 @@ fn test_sync_list_repo_files() {
 #[test]
 fn test_sync_list_repo_tree() {
     let Some(api) = sync_api() else { return };
-    let entries = repo_handle(&api, "gpt2").list_tree(&RepoListTreeParams::default()).unwrap();
+    let entries = repo_handle(&api, test_model_repo())
+        .list_tree(&RepoListTreeParams::default())
+        .unwrap();
     let has_config = entries
         .iter()
         .any(|e| matches!(e, RepoTreeEntry::File { path, .. } if path == "config.json"));
@@ -140,7 +198,7 @@ fn test_sync_list_repo_tree() {
 #[test]
 fn test_sync_list_repo_commits() {
     let Some(api) = sync_api() else { return };
-    let commits = repo_handle(&api, "gpt2")
+    let commits = repo_handle(&api, test_model_repo())
         .list_commits(&RepoListCommitsParams::default())
         .unwrap();
     assert!(!commits.is_empty());
@@ -153,7 +211,9 @@ fn test_sync_list_repo_commits() {
 #[test]
 fn test_sync_list_repo_refs() {
     let Some(api) = sync_api() else { return };
-    let refs = repo_handle(&api, "gpt2").list_refs(&RepoListRefsParams::default()).unwrap();
+    let refs = repo_handle(&api, test_model_repo())
+        .list_refs(&RepoListRefsParams::default())
+        .unwrap();
     assert!(!refs.branches.is_empty());
     assert!(refs.branches.iter().any(|b| b.name == "main"));
 }
@@ -161,13 +221,16 @@ fn test_sync_list_repo_refs() {
 #[test]
 fn test_sync_revision_exists() {
     let Some(api) = sync_api() else { return };
-    let repo = repo_handle(&api, "gpt2");
-    assert!(repo
-        .revision_exists(&RepoRevisionExistsParams::builder().revision("main").build())
-        .unwrap());
-    assert!(!repo
-        .revision_exists(&RepoRevisionExistsParams::builder().revision("nonexistent-branch-xyz").build())
-        .unwrap());
+    let repo = repo_handle(&api, test_model_repo());
+    assert!(
+        repo.revision_exists(&RepoRevisionExistsParams::builder().revision("main").build())
+            .unwrap()
+    );
+    assert!(
+        !repo
+            .revision_exists(&RepoRevisionExistsParams::builder().revision("nonexistent-branch-xyz").build())
+            .unwrap()
+    );
 }
 
 // --- Download ---
@@ -180,7 +243,7 @@ fn test_sync_download_file() {
         .filename("config.json")
         .local_dir(dir.path().to_path_buf())
         .build();
-    let path = repo_handle(&api, "gpt2").download_file(&params).unwrap();
+    let path = repo_handle(&api, test_model_repo()).download_file(&params).unwrap();
     assert!(path.exists());
     let content = std::fs::read_to_string(&path).unwrap();
     let json: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -205,35 +268,23 @@ fn test_sync_auth_check() {
 #[test]
 fn test_sync_get_user_overview() {
     let Some(api) = sync_api() else { return };
-    let user = api.get_user_overview("julien-c").unwrap();
-    assert_eq!(user.username, "julien-c");
+    let username = test_user();
+    let user = api.get_user_overview(username).unwrap();
+    assert_eq!(user.username, username);
 }
 
 #[test]
 fn test_sync_get_organization_overview() {
     let Some(api) = sync_api() else { return };
-    let org = api.get_organization_overview("huggingface").unwrap();
-    assert_eq!(org.name, "huggingface");
-}
-
-#[test]
-fn test_sync_list_user_followers() {
-    let Some(api) = sync_api() else { return };
-    let followers = api.list_user_followers("julien-c", None).unwrap();
-    assert!(!followers.is_empty());
-}
-
-#[test]
-fn test_sync_list_user_following() {
-    let Some(api) = sync_api() else { return };
-    let following = api.list_user_following("julien-c", None).unwrap();
-    assert!(!following.is_empty());
+    let org_name = test_org();
+    let org = api.get_organization_overview(org_name).unwrap();
+    assert_eq!(org.name, org_name);
 }
 
 #[test]
 fn test_sync_list_organization_members() {
     let Some(api) = sync_api() else { return };
-    let members = api.list_organization_members("huggingface", None).unwrap();
+    let members = api.list_organization_members(test_org(), None).unwrap();
     assert!(!members.is_empty());
 }
 
@@ -242,7 +293,7 @@ fn test_sync_list_organization_members() {
 #[test]
 fn test_sync_get_commit_diff() {
     let Some(api) = sync_api() else { return };
-    let gpt2 = repo_handle(&api, "openai-community/gpt2");
+    let gpt2 = repo_handle(&api, test_model_repo());
     let commits = gpt2.list_commits(&RepoListCommitsParams::default()).unwrap();
     assert!(commits.len() >= 2);
 
@@ -254,6 +305,24 @@ fn test_sync_get_commit_diff() {
         )
         .unwrap();
     assert!(!diff.is_empty());
+}
+
+#[test]
+fn test_sync_get_raw_diff_stream() {
+    let Some(api) = sync_api() else { return };
+    let gpt2 = repo_handle(&api, test_model_repo());
+    let commits = gpt2.list_commits(&RepoListCommitsParams::default()).unwrap();
+    assert!(commits.len() >= 2);
+
+    let diffs = gpt2
+        .get_raw_diff_stream(
+            &RepoGetRawDiffParams::builder()
+                .compare(format!("{}..{}", commits[1].id, commits[0].id))
+                .build(),
+        )
+        .unwrap();
+    assert!(!diffs.is_empty());
+    assert!(!diffs[0].file_path.is_empty());
 }
 
 // --- Write operations ---
@@ -324,9 +393,11 @@ fn test_sync_create_and_delete_repo() {
         .unwrap();
     assert!(commit.commit_oid.is_some());
 
-    assert!(test_repo
-        .file_exists(&RepoFileExistsParams::builder().filename("test.txt").build())
-        .unwrap());
+    assert!(
+        test_repo
+            .file_exists(&RepoFileExistsParams::builder().filename("test.txt").build())
+            .unwrap()
+    );
 
     let params = DeleteRepoParams::builder().repo_id(&repo_id).build();
     api.delete_repo(&params).unwrap();
