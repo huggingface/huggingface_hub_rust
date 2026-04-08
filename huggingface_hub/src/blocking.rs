@@ -63,6 +63,15 @@ pub struct HFSpaceSync {
     space: repo::HFSpace,
 }
 
+/// Synchronous handle for Storage Bucket operations.
+///
+/// Obtain via [`HFClientSync::bucket`]. All methods block the current thread.
+#[derive(Clone)]
+pub struct HFBucketSync {
+    pub(crate) inner: crate::repository::HFBucket,
+    pub(crate) runtime: Arc<tokio::runtime::Runtime>,
+}
+
 impl fmt::Debug for HFClientSync {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HFClientSync").finish()
@@ -136,6 +145,27 @@ impl HFClientSync {
     /// Creates a blocking handle for a space repository.
     pub fn space(&self, owner: impl Into<String>, name: impl Into<String>) -> HFSpaceSync {
         HFSpaceSync::new(self.clone(), owner, name)
+    }
+
+    /// Creates a synchronous bucket handle.
+    pub fn bucket(&self, namespace: impl Into<String>, repo: impl Into<String>) -> HFBucketSync {
+        HFBucketSync {
+            inner: self.inner.bucket(namespace, repo),
+            runtime: self.runtime.clone(),
+        }
+    }
+
+    pub fn create_bucket(
+        &self,
+        namespace: &str,
+        repo: &str,
+        params: crate::types::CreateBucketParams,
+    ) -> Result<crate::types::BucketCreated> {
+        self.runtime.block_on(self.inner.create_bucket(namespace, repo, params))
+    }
+
+    pub fn list_buckets(&self, namespace: &str) -> Result<Vec<crate::types::BucketOverview>> {
+        collect_stream(self.runtime.as_ref(), self.inner.list_buckets(namespace))
     }
 }
 
@@ -313,6 +343,49 @@ impl HFRepositorySync {
     }
 }
 
+impl HFBucketSync {
+    pub fn get(&self) -> Result<crate::types::BucketInfo> {
+        self.runtime.block_on(self.inner.get())
+    }
+
+    pub fn delete(&self) -> Result<()> {
+        self.runtime.block_on(self.inner.delete())
+    }
+
+    pub fn update_settings(&self, params: crate::types::UpdateBucketParams) -> Result<()> {
+        self.runtime.block_on(self.inner.update_settings(params))
+    }
+
+    pub fn batch_files(&self, ops: Vec<crate::types::BatchOp>) -> Result<crate::types::BatchResult> {
+        self.runtime.block_on(self.inner.batch_files(ops))
+    }
+
+    pub fn list_tree(&self, path: &str, params: crate::types::ListTreeParams) -> Result<Vec<crate::types::TreeEntry>> {
+        collect_stream(self.runtime.as_ref(), self.inner.list_tree(path, params))
+    }
+
+    pub fn get_paths_info(&self, paths: Vec<String>) -> Result<Vec<crate::types::PathInfo>> {
+        self.runtime.block_on(self.inner.get_paths_info(paths))
+    }
+
+    pub fn get_xet_write_token(&self) -> Result<crate::types::XetToken> {
+        self.runtime.block_on(self.inner.get_xet_write_token())
+    }
+
+    pub fn get_xet_read_token(&self) -> Result<crate::types::XetToken> {
+        self.runtime.block_on(self.inner.get_xet_read_token())
+    }
+
+    pub fn resolve_file(&self, path: &str) -> Result<crate::types::ResolvedFile> {
+        self.runtime.block_on(self.inner.resolve_file(path))
+    }
+
+    #[cfg(feature = "xet")]
+    pub fn xet_resolve_file(&self, path: &str) -> Result<crate::types::XetFileInfo> {
+        self.runtime.block_on(self.inner.xet_resolve_file(path))
+    }
+}
+
 impl HFSpaceSync {
     /// Creates a blocking space handle for the given owner and name.
     pub fn new(client: HFClientSync, owner: impl Into<String>, name: impl Into<String>) -> Self {
@@ -426,6 +499,18 @@ impl From<HFSpaceSync> for HFRepositorySync {
 
 /// Alias for [`HFRepositorySync`].
 pub type HFRepoSync = HFRepositorySync;
+
+#[cfg(test)]
+mod bucket_tests {
+    #[test]
+    fn bucket_sync_constructor() {
+        use crate::HFClientBuilder;
+        let client = crate::blocking::HFClientSync::from_api(HFClientBuilder::new().build().unwrap()).unwrap();
+        let bucket = client.bucket("myuser", "my-bucket");
+        assert_eq!(bucket.inner.namespace, "myuser");
+        assert_eq!(bucket.inner.repo, "my-bucket");
+    }
+}
 
 #[cfg(test)]
 mod tests {

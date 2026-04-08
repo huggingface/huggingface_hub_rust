@@ -61,6 +61,28 @@ pub enum HFError {
 
     #[error("{0}")]
     Other(String),
+
+    #[error("forbidden")]
+    Forbidden,
+    #[error("conflict: {0}")]
+    Conflict(String),
+    #[error("rate limited")]
+    RateLimited,
+    #[error("quota exceeded")]
+    QuotaExceeded,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_error_variants_display() {
+        assert_eq!(HFError::Forbidden.to_string(), "forbidden");
+        assert_eq!(HFError::Conflict("name taken".to_string()).to_string(), "conflict: name taken");
+        assert_eq!(HFError::RateLimited.to_string(), "rate limited");
+        assert_eq!(HFError::QuotaExceeded.to_string(), "quota exceeded");
+    }
 }
 
 impl HFError {
