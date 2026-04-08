@@ -327,12 +327,12 @@ async fn test_force_download_ignores_no_exist() {
 
     // Create a stale .no_exist marker — network download should succeed
     // regardless since .no_exist is only consulted via resolve_from_cache_only
-    let repo_folder = "models--gpt2";
+    let repo_folder = format!("models--{}", test_model_cache_fragment());
     let fake_commit = "0000000000000000000000000000000000000000";
-    let no_exist_dir = cache_dir.path().join(repo_folder).join(".no_exist").join(fake_commit);
+    let no_exist_dir = cache_dir.path().join(&repo_folder).join(".no_exist").join(fake_commit);
     std::fs::create_dir_all(&no_exist_dir).unwrap();
     std::fs::write(no_exist_dir.join("config.json"), b"").unwrap();
-    let refs_dir = cache_dir.path().join(repo_folder).join("refs");
+    let refs_dir = cache_dir.path().join(&repo_folder).join("refs");
     std::fs::create_dir_all(&refs_dir).unwrap();
     std::fs::write(refs_dir.join("main"), fake_commit).unwrap();
 
