@@ -2002,8 +2002,9 @@ fn write_upload_large_file() {
     let tmp = tempfile::tempdir().unwrap();
     let file_path = tmp.path().join("large.bin");
 
-    // Create 11MB file (above typical LFS threshold of 10MB)
-    let data = vec![0u8; 11 * 1024 * 1024];
+    // Create 11MB random file (above typical LFS threshold of 10MB)
+    let mut data = vec![0u8; 11 * 1024 * 1024];
+    rand::Fill::fill(&mut data[..], &mut rand::rng());
     std::fs::write(&file_path, &data).unwrap();
 
     let result = hfrs.run_raw(&["upload", &full_repo, file_path.to_str().unwrap()]);
