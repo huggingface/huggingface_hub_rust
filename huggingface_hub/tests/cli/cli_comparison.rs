@@ -4,61 +4,35 @@ use std::sync::OnceLock;
 
 use helpers::{CliRunner, require_cli, require_token, require_write};
 
-fn is_hub_ci() -> bool {
-    std::env::var("HF_ENDPOINT")
-        .ok()
-        .is_some_and(|v| v.contains("hub-ci.huggingface.co"))
-}
-
 fn test_model_repo() -> &'static str {
-    if is_hub_ci() {
-        "__DUMMY_TRANSFORMERS_USER__/gpt2"
-    } else {
-        "gpt2"
-    }
+    "gpt2"
 }
 
 fn test_dataset_repo() -> &'static str {
-    if is_hub_ci() {
-        "__DUMMY_TRANSFORMERS_USER__/hacker-news"
-    } else {
-        "squad"
-    }
+    "squad"
 }
 
 fn test_dataset_download_repo() -> &'static str {
-    if is_hub_ci() {
-        "__DUMMY_TRANSFORMERS_USER__/hacker-news"
-    } else {
-        "xet-team/xet-spec-reference-files"
-    }
+    "xet-team/xet-spec-reference-files"
 }
 
 fn test_model_cache_fragment() -> &'static str {
-    if is_hub_ci() {
-        "__DUMMY_TRANSFORMERS_USER__--gpt2"
-    } else {
-        "gpt2"
-    }
+    "gpt2"
 }
 
 fn test_dataset_search() -> &'static str {
-    if is_hub_ci() { "hacker-news" } else { "squad" }
+    "squad"
 }
 
 fn test_hf_endpoint() -> &'static str {
-    if is_hub_ci() {
-        "https://hub-ci.huggingface.co"
-    } else {
-        "https://huggingface.co"
-    }
+    "https://huggingface.co"
 }
 
 /// Cached whoami username, fetched once and reused across all tests.
 fn whoami_username() -> &'static str {
     static USERNAME: OnceLock<String> = OnceLock::new();
     USERNAME.get_or_init(|| {
-        let hfrs = CliRunner::hfrs();
+        let hfrs = CliRunner::hfrs_ci();
         let out = hfrs
             .run_json(&["auth", "whoami"])
             .expect("whoami should succeed for test setup");
@@ -595,7 +569,7 @@ fn download_default_cache_dir_not_used_when_overridden() {
 fn write_repo_create_and_delete() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = format!(
         "hfrs-test-{}",
@@ -620,7 +594,7 @@ fn write_repo_create_and_delete() {
 fn write_repo_create_private() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = format!(
         "hfrs-test-private-{}",
@@ -646,7 +620,7 @@ fn write_repo_create_private() {
 fn write_branch_create_and_delete() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = format!(
         "hfrs-test-branch-{}",
@@ -674,7 +648,7 @@ fn write_branch_create_and_delete() {
 fn write_tag_create_and_delete() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = format!(
         "hfrs-test-tag-{}",
@@ -1504,7 +1478,7 @@ fn download_no_repo_id_fails() {
 fn write_upload_single_file() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = unique_repo_name("hfrs-upload-file");
     let full_repo = full_repo(&repo_name);
@@ -1527,7 +1501,7 @@ fn write_upload_single_file() {
 fn write_upload_auto_create() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = unique_repo_name("hfrs-upload-autocreate");
     let full_repo = full_repo(&repo_name);
@@ -1549,7 +1523,7 @@ fn write_upload_auto_create() {
 fn write_upload_private_auto_create() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = unique_repo_name("hfrs-upload-private");
     let full_repo = full_repo(&repo_name);
@@ -1571,7 +1545,7 @@ fn write_upload_private_auto_create() {
 fn write_upload_path_in_repo() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = unique_repo_name("hfrs-upload-path");
     let full_repo = full_repo(&repo_name);
@@ -1603,7 +1577,7 @@ fn write_upload_path_in_repo() {
 fn write_upload_commit_message_and_description() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = unique_repo_name("hfrs-upload-commit");
     let full_repo = full_repo(&repo_name);
@@ -1632,7 +1606,7 @@ fn write_upload_commit_message_and_description() {
 fn write_upload_create_pr() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = unique_repo_name("hfrs-upload-pr");
     let full_repo = full_repo(&repo_name);
@@ -1661,7 +1635,7 @@ fn write_upload_create_pr() {
 fn write_upload_to_branch() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = unique_repo_name("hfrs-upload-branch");
     let full_repo = full_repo(&repo_name);
@@ -1690,7 +1664,7 @@ fn write_upload_to_branch() {
 fn write_upload_quiet() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = unique_repo_name("hfrs-upload-quiet");
     let full_repo = full_repo(&repo_name);
@@ -1714,7 +1688,7 @@ fn write_upload_quiet() {
 fn write_upload_nonexistent_path_fails() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = unique_repo_name("hfrs-upload-nopath");
     let full_repo = full_repo(&repo_name);
@@ -1734,7 +1708,7 @@ fn write_upload_nonexistent_path_fails() {
 fn write_upload_folder() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = unique_repo_name("hfrs-upload-folder");
     let full_repo = full_repo(&repo_name);
@@ -1773,7 +1747,7 @@ fn write_upload_folder() {
 fn write_upload_folder_include() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = unique_repo_name("hfrs-upload-include");
     let full_repo = full_repo(&repo_name);
@@ -1814,7 +1788,7 @@ fn write_upload_folder_include() {
 fn write_upload_folder_exclude() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = unique_repo_name("hfrs-upload-exclude");
     let full_repo = full_repo(&repo_name);
@@ -1855,7 +1829,7 @@ fn write_upload_folder_exclude() {
 fn write_upload_folder_delete() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = unique_repo_name("hfrs-upload-delete");
     let full_repo = full_repo(&repo_name);
@@ -1896,7 +1870,7 @@ fn write_upload_folder_delete() {
 fn write_upload_folder_path_in_repo() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = unique_repo_name("hfrs-upload-folder-path");
     let full_repo = full_repo(&repo_name);
@@ -1928,7 +1902,7 @@ fn write_upload_folder_path_in_repo() {
 fn write_upload_empty_excluded_folder() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = unique_repo_name("hfrs-upload-empty");
     let full_repo = full_repo(&repo_name);
@@ -1970,7 +1944,7 @@ fn upload_no_repo_id_fails() {
 fn write_upload_dataset_type() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = unique_repo_name("hfrs-upload-dataset");
     let full_repo = full_repo(&repo_name);
@@ -1992,7 +1966,7 @@ fn write_upload_dataset_type() {
 fn write_upload_large_file() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = unique_repo_name("hfrs-upload-large");
     let full_repo = full_repo(&repo_name);
@@ -2017,7 +1991,7 @@ fn write_upload_large_file() {
 fn write_upload_special_chars() {
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = unique_repo_name("hfrs-upload-special");
     let full_repo = full_repo(&repo_name);
@@ -2169,7 +2143,7 @@ fn signal_abort_during_xet_upload() {
 
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     let repo_name = unique_repo_name("hfrs-signal-upload");
     let full_repo = full_repo(&repo_name);
@@ -2230,7 +2204,7 @@ fn signal_abort_during_xet_download() {
 
     require_token();
     require_write();
-    let hfrs = CliRunner::hfrs();
+    let hfrs = CliRunner::hfrs_ci();
 
     // First: create a repo with a large xet file
     let repo_name = unique_repo_name("hfrs-signal-download");

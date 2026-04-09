@@ -12,10 +12,19 @@ use std::path::Path;
 use huggingface_hub::{HFClient, HFClientBuilder, HFError, RepoDownloadFileParams, RepoSnapshotDownloadParams};
 use serial_test::serial;
 
+/// All cache tests are read-only against hardcoded prod repos.
+/// CI: uses HF_PROD_TOKEN against huggingface.co.
+/// Local: uses HF_TOKEN with default endpoint.
 fn api() -> Option<HFClient> {
-    if is_hub_ci() {
-        let token = std::env::var("HF_CI_TOKEN").ok()?;
-        Some(HFClientBuilder::new().token(token).build().expect("Failed to create HFClient"))
+    if is_ci() {
+        let token = std::env::var("HF_PROD_TOKEN").ok()?;
+        Some(
+            HFClientBuilder::new()
+                .token(token)
+                .endpoint("https://huggingface.co")
+                .build()
+                .expect("Failed to create HFClient"),
+        )
     } else {
         if std::env::var("HF_TOKEN").is_err() {
             return None;
@@ -24,35 +33,16 @@ fn api() -> Option<HFClient> {
     }
 }
 
-/// Build a client targeting production (huggingface.co) for tests that use
-/// hardcoded prod repos (e.g. mcpotato/42-xet-test-repo).
-/// In CI: uses HF_PROD_TOKEN against huggingface.co.
-/// Locally: falls back to the default HF_TOKEN / HF_ENDPOINT.
-fn prod_api() -> Option<HFClient> {
-    if is_hub_ci() {
-        let token = std::env::var("HF_PROD_TOKEN").ok()?;
-        Some(
-            HFClientBuilder::new()
-                .token(token)
-                .endpoint("https://huggingface.co")
-                .build()
-                .expect("Failed to create prod HFClient"),
-        )
-    } else {
-        api()
-    }
-}
-
-/// Like `prod_api()` but with a custom cache directory.
-fn prod_api_with_cache(cache_dir: &std::path::Path) -> HFClient {
-    if is_hub_ci() {
+/// Like `api()` but with a custom cache directory.
+fn api_with_cache(cache_dir: &std::path::Path) -> HFClient {
+    if is_ci() {
         let token = std::env::var("HF_PROD_TOKEN").expect("HF_PROD_TOKEN required in CI for prod repo tests");
         HFClientBuilder::new()
             .token(token)
             .endpoint("https://huggingface.co")
             .cache_dir(cache_dir)
             .build()
-            .expect("Failed to create prod HFClient")
+            .expect("Failed to create HFClient")
     } else {
         HFClientBuilder::new()
             .cache_dir(cache_dir)
@@ -61,58 +51,32 @@ fn prod_api_with_cache(cache_dir: &std::path::Path) -> HFClient {
     }
 }
 
-fn is_hub_ci() -> bool {
-    std::env::var("HF_ENDPOINT")
-        .ok()
-        .is_some_and(|v| v.contains("hub-ci.huggingface.co"))
+fn is_ci() -> bool {
+    std::env::var("GITHUB_ACTIONS").is_ok()
 }
 
 fn test_model_parts() -> (&'static str, &'static str) {
-    if is_hub_ci() {
-        ("__DUMMY_TRANSFORMERS_USER__", "gpt2")
-    } else {
-        ("", "gpt2")
-    }
+    ("", "gpt2")
 }
 
 fn test_model_repo_id() -> &'static str {
-    if is_hub_ci() {
-        "__DUMMY_TRANSFORMERS_USER__/gpt2"
-    } else {
-        "gpt2"
-    }
+    "gpt2"
 }
 
 fn test_dataset_parts() -> (&'static str, &'static str) {
-    if is_hub_ci() {
-        ("__DUMMY_TRANSFORMERS_USER__", "hacker-news")
-    } else {
-        ("rajpurkar", "squad")
-    }
+    ("rajpurkar", "squad")
 }
 
 fn test_dataset_repo_id() -> &'static str {
-    if is_hub_ci() {
-        "__DUMMY_TRANSFORMERS_USER__/hacker-news"
-    } else {
-        "rajpurkar/squad"
-    }
+    "rajpurkar/squad"
 }
 
 fn test_model_cache_fragment() -> &'static str {
-    if is_hub_ci() {
-        "__DUMMY_TRANSFORMERS_USER__--gpt2"
-    } else {
-        "gpt2"
-    }
+    "gpt2"
 }
 
 fn test_dataset_cache_fragment() -> &'static str {
-    if is_hub_ci() {
-        "datasets--__DUMMY_TRANSFORMERS_USER__--hacker-news"
-    } else {
-        "datasets--rajpurkar--squad"
-    }
+    "datasets--rajpurkar--squad"
 }
 
 fn find_repo_folder(cache_dir: &Path, name_fragment: &str) -> std::path::PathBuf {
@@ -1368,9 +1332,9 @@ print("ALL_CHECKS_PASSED")
 #[cfg(feature = "xet")]
 #[tokio::test]
 async fn test_xet_download_to_cache() {
-    let Some(_) = prod_api() else { return };
+    let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = prod_api_with_cache(cache_dir.path());
+    let api = api_with_cache(cache_dir.path());
 
     let path = match api
         .model("mcpotato", "42-xet-test-repo")
@@ -1445,9 +1409,9 @@ async fn test_xet_download_to_cache() {
 #[cfg(feature = "xet")]
 #[tokio::test]
 async fn test_xet_snapshot_download_to_cache() {
-    let Some(_) = prod_api() else { return };
+    let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = prod_api_with_cache(cache_dir.path());
+    let api = api_with_cache(cache_dir.path());
 
     let snapshot_dir = match api
         .model("mcpotato", "42-xet-test-repo")
@@ -1479,9 +1443,9 @@ async fn test_xet_snapshot_download_to_cache() {
 #[cfg(feature = "xet")]
 #[tokio::test]
 async fn test_xet_cache_hit_second_download() {
-    let Some(_) = prod_api() else { return };
+    let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = prod_api_with_cache(cache_dir.path());
+    let api = api_with_cache(cache_dir.path());
 
     let repo = api.model("mcpotato", "42-xet-test-repo");
 

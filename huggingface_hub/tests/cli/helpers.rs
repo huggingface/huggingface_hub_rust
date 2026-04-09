@@ -20,7 +20,34 @@ impl CliRunner {
         }
     }
 
+    /// Default runner — targets production (hardcoded repos).
+    /// In CI: uses HF_PROD_TOKEN and overrides HF_ENDPOINT to huggingface.co.
+    /// Locally: uses HF_TOKEN with default endpoint.
     pub fn hfrs() -> Self {
+        let is_ci = std::env::var("GITHUB_ACTIONS").is_ok();
+        let token = if is_ci {
+            std::env::var("HF_PROD_TOKEN").ok()
+        } else {
+            std::env::var("HF_TOKEN").ok()
+        };
+        let mut extra_env = vec![
+            ("RUST_LOG".to_string(), "info".to_string()),
+            ("HF_LOG_LEVEL".to_string(), "info".to_string()),
+        ];
+        if is_ci {
+            extra_env.push(("HF_ENDPOINT".to_string(), "https://huggingface.co".to_string()));
+        }
+        Self {
+            bin: "hfrs".to_string(),
+            bin_path: Some(env!("CARGO_BIN_EXE_hfrs").to_string()),
+            token,
+            extra_env,
+            env_remove: Vec::new(),
+        }
+    }
+
+    /// Runner for write tests (hub-ci in CI, default endpoint locally).
+    pub fn hfrs_ci() -> Self {
         let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).ok();
         Self {
             bin: "hfrs".to_string(),
