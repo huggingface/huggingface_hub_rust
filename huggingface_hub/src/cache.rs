@@ -5,8 +5,8 @@ use std::time::SystemTime;
 
 use fs4::fs_std::FileExt;
 
-use crate::types::cache::{CachedFileInfo, CachedRepoInfo, CachedRevisionInfo, HFCacheInfo};
 use crate::types::RepoType;
+use crate::types::cache::{CachedFileInfo, CachedRepoInfo, CachedRevisionInfo, HFCacheInfo};
 
 pub(crate) struct CacheLock {
     _file: File,
@@ -150,15 +150,15 @@ async fn read_commit_refs(repo_path: &Path) -> HashMap<String, Vec<String>> {
                 let entry_path = ref_entry.path();
                 if entry_path.is_dir() {
                     stack.push(entry_path);
-                } else if entry_path.is_file() {
-                    if let Ok(content) = tokio::fs::read_to_string(&entry_path).await {
-                        let commit = content.trim().to_string();
-                        let name = entry_path
-                            .strip_prefix(&refs_dir)
-                            .map(|p| p.to_string_lossy().to_string())
-                            .unwrap_or_else(|_| ref_entry.file_name().to_string_lossy().to_string());
-                        commit_refs.entry(commit).or_default().push(name);
-                    }
+                } else if entry_path.is_file()
+                    && let Ok(content) = tokio::fs::read_to_string(&entry_path).await
+                {
+                    let commit = content.trim().to_string();
+                    let name = entry_path
+                        .strip_prefix(&refs_dir)
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| ref_entry.file_name().to_string_lossy().to_string());
+                    commit_refs.entry(commit).or_default().push(name);
                 }
             }
         }
@@ -169,8 +169,8 @@ async fn read_commit_refs(repo_path: &Path) -> HashMap<String, Vec<String>> {
 struct BlobInfo {
     blob_path: PathBuf,
     size: u64,
-    accessed: std::time::SystemTime,
-    modified: std::time::SystemTime,
+    accessed: SystemTime,
+    modified: SystemTime,
 }
 
 async fn resolve_blob_info(file_path: &Path) -> std::result::Result<BlobInfo, String> {
@@ -183,8 +183,8 @@ async fn resolve_blob_info(file_path: &Path) -> std::result::Result<BlobInfo, St
     Ok(BlobInfo {
         blob_path: resolved,
         size: meta.len(),
-        accessed: meta.accessed().unwrap_or(std::time::SystemTime::UNIX_EPOCH),
-        modified: meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH),
+        accessed: meta.accessed().unwrap_or(SystemTime::UNIX_EPOCH),
+        modified: meta.modified().unwrap_or(SystemTime::UNIX_EPOCH),
     })
 }
 

@@ -1,7 +1,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -179,6 +179,62 @@ impl RepoInfo {
 #[derive(Debug, Clone, Deserialize)]
 pub struct RepoUrl {
     pub url: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum GatedApprovalMode {
+    Disabled,
+    Auto,
+    Manual,
+}
+
+impl Serialize for GatedApprovalMode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            GatedApprovalMode::Disabled => serializer.serialize_bool(false),
+            GatedApprovalMode::Auto => serializer.serialize_str("auto"),
+            GatedApprovalMode::Manual => serializer.serialize_str("manual"),
+        }
+    }
+}
+
+impl FromStr for GatedApprovalMode {
+    type Err = crate::error::HFError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "false" | "disabled" => Ok(GatedApprovalMode::Disabled),
+            "auto" => Ok(GatedApprovalMode::Auto),
+            "manual" => Ok(GatedApprovalMode::Manual),
+            _ => Err(crate::error::HFError::Other(format!(
+                "Unknown gated approval mode: {s}. Expected 'auto', 'manual', or 'false'"
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GatedNotificationsMode {
+    Bulk,
+    RealTime,
+}
+
+impl FromStr for GatedNotificationsMode {
+    type Err = crate::error::HFError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "bulk" => Ok(GatedNotificationsMode::Bulk),
+            "real-time" | "realtime" => Ok(GatedNotificationsMode::RealTime),
+            _ => Err(crate::error::HFError::Other(format!(
+                "Unknown gated notifications mode: {s}. Expected 'bulk' or 'real-time'"
+            ))),
+        }
+    }
 }
 
 #[cfg(test)]

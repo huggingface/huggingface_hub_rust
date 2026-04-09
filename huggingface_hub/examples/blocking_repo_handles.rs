@@ -11,13 +11,8 @@ use huggingface_hub::{HFClientSync, HFSpaceSync, RepoFileExistsParams, RepoInfo,
 fn main() -> huggingface_hub::Result<()> {
     let client = HFClientSync::new()?;
 
-    let model = client.model("openai-community", "gpt2").with_revision("main");
-    println!(
-        "Model handle: owner={}, name={}, revision={:?}",
-        model.owner(),
-        model.name(),
-        model.default_revision()
-    );
+    let model = client.model("openai-community", "gpt2");
+    println!("Model handle: owner={}, name={}", model.owner(), model.name());
 
     match model.info(&RepoInfoParams::default())? {
         RepoInfo::Model(info) => println!("Model info: {} (sha: {:?})", info.id, info.sha),

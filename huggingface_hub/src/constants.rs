@@ -22,7 +22,6 @@ pub(crate) const HEADER_X_XET_HASH: &str = "x-xet-hash";
 pub(crate) const CACHE_LOCK_TIMEOUT_SECS: u64 = 10;
 pub(crate) const HEADER_X_REPO_COMMIT: &str = "x-repo-commit";
 pub(crate) const HEADER_X_LINKED_ETAG: &str = "x-linked-etag";
-#[cfg(feature = "xet")]
 pub(crate) const HEADER_X_LINKED_SIZE: &str = "x-linked-size";
 
 /// URL prefixes for different repo types

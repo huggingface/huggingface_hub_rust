@@ -1,5 +1,7 @@
 # huggingface-hub
 
+> **Note:** This library is experimental. APIs may change without notice between versions.
+
 Async Rust client for the [Hugging Face Hub API](https://huggingface.co/docs/hub/api).
 
 `huggingface-hub` provides a typed, ergonomic interface for interacting with the Hugging Face Hub from Rust. It is the Rust equivalent of the Python [`huggingface_hub`](https://github.com/huggingface/huggingface_hub) library.
@@ -20,7 +22,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-huggingface-hub = { git = "https://github.com/huggingface-internal/huggingface-hub-rs.git" }
+huggingface-hub = { git = "https://github.com/huggingface/huggingface_hub_rust.git" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
@@ -28,8 +30,18 @@ To enable Xet high-performance transfers:
 
 ```toml
 [dependencies]
-huggingface-hub = { git = "https://github.com/huggingface-internal/huggingface-hub-rs.git", features = ["xet"] }
+huggingface-hub = { git = "https://github.com/huggingface/huggingface_hub_rust.git", features = ["xet"] }
 ```
+
+## CLI Installation
+
+The `hfrs` command-line tool provides a terminal interface to the Hub. Install it with:
+
+```sh
+cargo install --git https://github.com/huggingface/huggingface_hub_rust.git --features cli huggingface-hub
+```
+
+This builds in release mode by default. Once installed, run `hfrs --help` to see available commands.
 
 ## Quick Start
 
@@ -79,21 +91,29 @@ async fn main() -> huggingface_hub::Result<()> {
 }
 ```
 
-### Check if a file exists
+### Work with a repository handle
 
 ```rust,no_run
-use huggingface_hub::{HFClient, RepoFileExistsParams};
+use huggingface_hub::{HFClient, RepoFileExistsParams, RepoInfo, RepoInfoParams};
 
 #[tokio::main]
 async fn main() -> huggingface_hub::Result<()> {
-    let api = HFClient::new()?;
-    let repo = api.model("openai-community", "gpt2");
+    let client = HFClient::new()?;
+    let repo = client.model("openai-community", "gpt2");
 
-    let exists = repo.file_exists(
-        &RepoFileExistsParams::builder()
-            .filename("config.json")
-            .build()
-    ).await?;
+    let RepoInfo::Model(model_info) = repo.info(&RepoInfoParams::default()).await? else {
+        println!("error, not a model");
+        return Ok(());
+    };
+    println!("Model: {}", model_info.id);
+
+    let exists = repo
+        .file_exists(
+            &RepoFileExistsParams::builder()
+                .filename("config.json")
+                .build(),
+        )
+        .await?;
 
     println!("config.json exists: {exists}");
     Ok(())
@@ -119,34 +139,6 @@ async fn main() -> huggingface_hub::Result<()> {
     ).await?;
 
     println!("Downloaded to: {}", path.display());
-    Ok(())
-}
-```
-
-### Work with a repository handle
-
-```rust,no_run
-use huggingface_hub::{HFClient, RepoFileExistsParams, RepoInfo, RepoInfoParams};
-
-#[tokio::main]
-async fn main() -> huggingface_hub::Result<()> {
-    let client = HFClient::new()?;
-    let repo = client.model("openai-community", "gpt2");
-
-    match repo.info(&RepoInfoParams::default()).await? {
-        RepoInfo::Model(info) => println!("Model: {}", info.id),
-        _ => unreachable!(),
-    }
-
-    let exists = repo
-        .file_exists(
-            &RepoFileExistsParams::builder()
-                .filename("config.json")
-                .build(),
-        )
-        .await?;
-
-    println!("config.json exists: {exists}");
     Ok(())
 }
 ```

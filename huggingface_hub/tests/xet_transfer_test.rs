@@ -18,9 +18,11 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use futures::StreamExt;
 use huggingface_hub::types::{AddSource, CreateRepoParams, DeleteRepoParams};
 use huggingface_hub::{
-    HFClient, HFClientBuilder, HFRepository, RepoDownloadFileParams, RepoFileExistsParams, RepoUploadFileParams,
+    HFClient, HFClientBuilder, HFRepository, RepoDownloadFileParams, RepoDownloadFileStreamParams,
+    RepoFileExistsParams, RepoUploadFileParams,
 };
 use rand::Rng;
 use sha2::{Digest, Sha256};
@@ -351,10 +353,11 @@ async fn test_upload_200mb_random_data_and_verify() {
         .expect("Large file upload via xet should succeed");
     assert!(commit.commit_oid.is_some());
 
-    assert!(repo
-        .file_exists(&RepoFileExistsParams::builder().filename("large_random.bin").build())
-        .await
-        .unwrap());
+    assert!(
+        repo.file_exists(&RepoFileExistsParams::builder().filename("large_random.bin").build())
+            .await
+            .unwrap()
+    );
 
     let dl_dir = tempfile::tempdir().unwrap();
     let downloaded_path = repo
@@ -373,4 +376,113 @@ async fn test_upload_200mb_random_data_and_verify() {
     assert_eq!(sha256_hex(&downloaded_data), expected_hash);
 
     delete_test_repo(&api, &repo_id).await;
+}
+
+// --- Xet streaming / range download tests ---
+
+#[tokio::test]
+async fn test_xet_download_stream_full() {
+    let Some(api) = api() else { return };
+
+    let repo = repo_handle(&api, "mcpotato", "42-xet-test-repo");
+
+    let result = repo
+        .download_file_stream(&RepoDownloadFileStreamParams::builder().filename("large_random.bin").build())
+        .await;
+
+    match result {
+        Ok((content_length, stream)) => {
+            assert!(content_length.is_some());
+            let len = content_length.unwrap();
+            assert!(len > 0);
+
+            futures::pin_mut!(stream);
+            let mut total = 0u64;
+            while let Some(chunk) = stream.next().await {
+                total += chunk.unwrap().len() as u64;
+            }
+            assert_eq!(total, len);
+        },
+        Err(e) => {
+            let err_str = e.to_string();
+            assert!(
+                err_str.contains("not found") || err_str.contains("Not Found"),
+                "Expected success or not-found for xet repo, got: {err_str}"
+            );
+        },
+    }
+}
+
+#[tokio::test]
+async fn test_xet_download_stream_range() {
+    let Some(api) = api() else { return };
+
+    let repo = repo_handle(&api, "mcpotato", "42-xet-test-repo");
+
+    // Download first 1024 bytes via range
+    let result = repo
+        .download_file_stream(
+            &RepoDownloadFileStreamParams::builder()
+                .filename("large_random.bin")
+                .range(0..1024u64)
+                .build(),
+        )
+        .await;
+
+    match result {
+        Ok((content_length, stream)) => {
+            assert_eq!(content_length, Some(1024));
+
+            futures::pin_mut!(stream);
+            let mut bytes = Vec::new();
+            while let Some(chunk) = stream.next().await {
+                bytes.extend_from_slice(&chunk.unwrap());
+            }
+            assert_eq!(bytes.len(), 1024);
+        },
+        Err(e) => {
+            let err_str = e.to_string();
+            assert!(
+                err_str.contains("not found") || err_str.contains("Not Found"),
+                "Expected success or not-found for xet repo, got: {err_str}"
+            );
+        },
+    }
+}
+
+#[tokio::test]
+async fn test_xet_download_stream_range_middle() {
+    let Some(api) = api() else { return };
+
+    let repo = repo_handle(&api, "mcpotato", "42-xet-test-repo");
+
+    // Download bytes 1000..2000
+    let result = repo
+        .download_file_stream(
+            &RepoDownloadFileStreamParams::builder()
+                .filename("large_random.bin")
+                .range(1000..2000u64)
+                .build(),
+        )
+        .await;
+
+    match result {
+        Ok((content_length, stream)) => {
+            assert_eq!(content_length, Some(1000));
+
+            futures::pin_mut!(stream);
+            let mut bytes = Vec::new();
+            while let Some(chunk) = stream.next().await {
+                bytes.extend_from_slice(&chunk.unwrap());
+            }
+            assert_eq!(bytes.len(), 1000);
+        },
+        Err(e) => {
+            let err_str = e.to_string();
+            assert!(
+                err_str.contains("not found") || err_str.contains("Not Found"),
+                "Expected success or not-found for xet repo, got: {err_str}"
+            );
+        },
+    }
 }

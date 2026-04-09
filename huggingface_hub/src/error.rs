@@ -59,6 +59,9 @@ pub enum HFError {
     #[error("Invalid parameter: {0}")]
     InvalidParameter(String),
 
+    #[error(transparent)]
+    DiffParse(#[from] crate::diff::HFDiffParseError),
+
     #[error("{0}")]
     Other(String),
 

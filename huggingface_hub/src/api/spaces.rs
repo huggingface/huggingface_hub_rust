@@ -1,65 +1,64 @@
+use crate::SpaceVariableDeleteParams;
 use crate::error::Result;
-use crate::types::{RepoUrl, SpaceRuntime};
+use crate::repository::{
+    HFSpace, SpaceHardwareRequestParams, SpaceSecretDeleteParams, SpaceSecretParams, SpaceSleepTimeParams,
+    SpaceVariableParams,
+};
+use crate::types::{DuplicateSpaceParams, RepoUrl, SpaceRuntime};
 
-impl crate::repository::HFSpace {
+impl HFSpace {
     /// Fetch the current runtime state of the Space (hardware, stage, URL, etc.).
     pub async fn runtime(&self) -> Result<SpaceRuntime> {
-        let url = format!("{}/api/spaces/{}/runtime", self.client.inner.endpoint, self.repo_path());
+        let url = format!("{}/api/spaces/{}/runtime", self.hf_client.endpoint(), self.repo_path());
         let response = self
-            .client
-            .inner
-            .client
+            .hf_client
+            .http_client()
             .get(&url)
-            .headers(self.client.auth_headers())
+            .headers(self.hf_client.auth_headers())
             .send()
             .await?;
         let response = self
-            .client
+            .hf_client
             .check_response(response, Some(&self.repo_path()), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(response.json().await?)
     }
 
     /// Request an upgrade or downgrade of the Space's hardware tier.
-    pub async fn request_hardware(
-        &self,
-        params: &crate::repository::SpaceHardwareRequestParams,
-    ) -> Result<SpaceRuntime> {
-        let url = format!("{}/api/spaces/{}/hardware", self.client.inner.endpoint, self.repo_path());
+    pub async fn request_hardware(&self, params: &SpaceHardwareRequestParams) -> Result<SpaceRuntime> {
+        let url = format!("{}/api/spaces/{}/hardware", self.hf_client.endpoint(), self.repo_path());
         let mut body = serde_json::json!({ "flavor": params.hardware });
         if let Some(sleep_time) = params.sleep_time {
             body["sleepTime"] = serde_json::json!(sleep_time);
         }
         let response = self
-            .client
-            .inner
-            .client
+            .hf_client
+            .http_client()
             .post(&url)
-            .headers(self.client.auth_headers())
+            .headers(self.hf_client.auth_headers())
             .json(&body)
             .send()
             .await?;
         let response = self
-            .client
+            .hf_client
             .check_response(response, Some(&self.repo_path()), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(response.json().await?)
     }
 
     /// Configure the number of seconds of inactivity before the Space is put to sleep.
-    pub async fn set_sleep_time(&self, params: &crate::repository::SpaceSleepTimeParams) -> Result<()> {
-        let url = format!("{}/api/spaces/{}/sleeptime", self.client.inner.endpoint, self.repo_path());
+    pub async fn set_sleep_time(&self, params: &SpaceSleepTimeParams) -> Result<()> {
+        let url = format!("{}/api/spaces/{}/sleeptime", self.hf_client.endpoint(), self.repo_path());
         let body = serde_json::json!({ "seconds": params.sleep_time });
         let response = self
-            .client
-            .inner
-            .client
+            .hf_client
+            .http_client()
             .post(&url)
-            .headers(self.client.auth_headers())
+            .headers(self.hf_client.auth_headers())
             .json(&body)
             .send()
             .await?;
-        self.client
+        self.hf_client
             .check_response(response, Some(&self.repo_path()), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(())
@@ -67,17 +66,16 @@ impl crate::repository::HFSpace {
 
     /// Pause the Space, stopping it from consuming compute resources.
     pub async fn pause(&self) -> Result<SpaceRuntime> {
-        let url = format!("{}/api/spaces/{}/pause", self.client.inner.endpoint, self.repo_path());
+        let url = format!("{}/api/spaces/{}/pause", self.hf_client.endpoint(), self.repo_path());
         let response = self
-            .client
-            .inner
-            .client
+            .hf_client
+            .http_client()
             .post(&url)
-            .headers(self.client.auth_headers())
+            .headers(self.hf_client.auth_headers())
             .send()
             .await?;
         let response = self
-            .client
+            .hf_client
             .check_response(response, Some(&self.repo_path()), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(response.json().await?)
@@ -85,25 +83,24 @@ impl crate::repository::HFSpace {
 
     /// Restart a paused or errored Space.
     pub async fn restart(&self) -> Result<SpaceRuntime> {
-        let url = format!("{}/api/spaces/{}/restart", self.client.inner.endpoint, self.repo_path());
+        let url = format!("{}/api/spaces/{}/restart", self.hf_client.endpoint(), self.repo_path());
         let response = self
-            .client
-            .inner
-            .client
+            .hf_client
+            .http_client()
             .post(&url)
-            .headers(self.client.auth_headers())
+            .headers(self.hf_client.auth_headers())
             .send()
             .await?;
         let response = self
-            .client
+            .hf_client
             .check_response(response, Some(&self.repo_path()), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(response.json().await?)
     }
 
     /// Add or update a secret (encrypted environment variable) on the Space.
-    pub async fn add_secret(&self, params: &crate::repository::SpaceSecretParams) -> Result<()> {
-        let url = format!("{}/api/spaces/{}/secrets", self.client.inner.endpoint, self.repo_path());
+    pub async fn add_secret(&self, params: &SpaceSecretParams) -> Result<()> {
+        let url = format!("{}/api/spaces/{}/secrets", self.hf_client.endpoint(), self.repo_path());
         let mut body = serde_json::json!({
             "key": params.key,
             "value": params.value,
@@ -112,42 +109,40 @@ impl crate::repository::HFSpace {
             body["description"] = serde_json::json!(desc);
         }
         let response = self
-            .client
-            .inner
-            .client
+            .hf_client
+            .http_client()
             .post(&url)
-            .headers(self.client.auth_headers())
+            .headers(self.hf_client.auth_headers())
             .json(&body)
             .send()
             .await?;
-        self.client
+        self.hf_client
             .check_response(response, Some(&self.repo_path()), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(())
     }
 
     /// Delete a secret from the Space by key.
-    pub async fn delete_secret(&self, params: &crate::repository::SpaceSecretDeleteParams) -> Result<()> {
-        let url = format!("{}/api/spaces/{}/secrets", self.client.inner.endpoint, self.repo_path());
+    pub async fn delete_secret(&self, params: &SpaceSecretDeleteParams) -> Result<()> {
+        let url = format!("{}/api/spaces/{}/secrets", self.hf_client.endpoint(), self.repo_path());
         let body = serde_json::json!({ "key": params.key });
         let response = self
-            .client
-            .inner
-            .client
+            .hf_client
+            .http_client()
             .delete(&url)
-            .headers(self.client.auth_headers())
+            .headers(self.hf_client.auth_headers())
             .json(&body)
             .send()
             .await?;
-        self.client
+        self.hf_client
             .check_response(response, Some(&self.repo_path()), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(())
     }
 
     /// Add or update a public environment variable on the Space.
-    pub async fn add_variable(&self, params: &crate::repository::SpaceVariableParams) -> Result<()> {
-        let url = format!("{}/api/spaces/{}/variables", self.client.inner.endpoint, self.repo_path());
+    pub async fn add_variable(&self, params: &SpaceVariableParams) -> Result<()> {
+        let url = format!("{}/api/spaces/{}/variables", self.hf_client.endpoint(), self.repo_path());
         let mut body = serde_json::json!({
             "key": params.key,
             "value": params.value,
@@ -156,42 +151,40 @@ impl crate::repository::HFSpace {
             body["description"] = serde_json::json!(desc);
         }
         let response = self
-            .client
-            .inner
-            .client
+            .hf_client
+            .http_client()
             .post(&url)
-            .headers(self.client.auth_headers())
+            .headers(self.hf_client.auth_headers())
             .json(&body)
             .send()
             .await?;
-        self.client
+        self.hf_client
             .check_response(response, Some(&self.repo_path()), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(())
     }
 
     /// Delete a public environment variable from the Space by key.
-    pub async fn delete_variable(&self, params: &crate::repository::SpaceVariableDeleteParams) -> Result<()> {
-        let url = format!("{}/api/spaces/{}/variables", self.client.inner.endpoint, self.repo_path());
+    pub async fn delete_variable(&self, params: &SpaceVariableDeleteParams) -> Result<()> {
+        let url = format!("{}/api/spaces/{}/variables", self.hf_client.endpoint(), self.repo_path());
         let body = serde_json::json!({ "key": params.key });
         let response = self
-            .client
-            .inner
-            .client
+            .hf_client
+            .http_client()
             .delete(&url)
-            .headers(self.client.auth_headers())
+            .headers(self.hf_client.auth_headers())
             .json(&body)
             .send()
             .await?;
-        self.client
+        self.hf_client
             .check_response(response, Some(&self.repo_path()), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(())
     }
 
     /// Duplicate this Space to a new repository.
-    pub async fn duplicate(&self, params: &crate::types::DuplicateSpaceParams) -> Result<RepoUrl> {
-        let url = format!("{}/api/spaces/{}/duplicate", self.client.inner.endpoint, self.repo_path());
+    pub async fn duplicate(&self, params: &DuplicateSpaceParams) -> Result<RepoUrl> {
+        let url = format!("{}/api/spaces/{}/duplicate", self.hf_client.endpoint(), self.repo_path());
         let mut body = serde_json::Map::new();
         if let Some(ref to_id) = params.to_id {
             body.insert("repository".into(), serde_json::json!(to_id));
@@ -215,18 +208,33 @@ impl crate::repository::HFSpace {
             body.insert("variables".into(), serde_json::json!(variables));
         }
         let response = self
-            .client
-            .inner
-            .client
+            .hf_client
+            .http_client()
             .post(&url)
-            .headers(self.client.auth_headers())
+            .headers(self.hf_client.auth_headers())
             .json(&body)
             .send()
             .await?;
         let response = self
-            .client
+            .hf_client
             .check_response(response, Some(&self.repo_path()), crate::error::NotFoundContext::Repo)
             .await?;
         Ok(response.json().await?)
+    }
+}
+
+sync_api! {
+    #[cfg(feature = "spaces")]
+    impl HFSpace -> HFSpaceSync {
+        fn runtime(&self) -> Result<SpaceRuntime>;
+        fn request_hardware(&self, params: &SpaceHardwareRequestParams) -> Result<SpaceRuntime>;
+        fn set_sleep_time(&self, params: &SpaceSleepTimeParams) -> Result<()>;
+        fn pause(&self) -> Result<SpaceRuntime>;
+        fn restart(&self) -> Result<SpaceRuntime>;
+        fn add_secret(&self, params: &SpaceSecretParams) -> Result<()>;
+        fn delete_secret(&self, params: &SpaceSecretDeleteParams) -> Result<()>;
+        fn add_variable(&self, params: &SpaceVariableParams) -> Result<()>;
+        fn delete_variable(&self, params: &SpaceVariableDeleteParams) -> Result<()>;
+        fn duplicate(&self, params: &DuplicateSpaceParams) -> Result<RepoUrl>;
     }
 }

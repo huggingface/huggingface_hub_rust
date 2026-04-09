@@ -33,6 +33,60 @@ fn write_enabled() -> bool {
     std::env::var("HF_TEST_WRITE").ok().is_some_and(|v| v == "1")
 }
 
+fn is_hub_ci() -> bool {
+    std::env::var("HF_ENDPOINT")
+        .ok()
+        .is_some_and(|v| v.contains("hub-ci.huggingface.co"))
+}
+
+fn test_org() -> &'static str {
+    if is_hub_ci() { "valid_org" } else { "huggingface" }
+}
+
+fn test_user() -> &'static str {
+    if is_hub_ci() {
+        "huggingface-hub-rust-test-user"
+    } else {
+        "julien-c"
+    }
+}
+
+fn test_model_author() -> &'static str {
+    if is_hub_ci() { "valid_org" } else { "openai-community" }
+}
+
+fn test_model_repo() -> &'static str {
+    if is_hub_ci() {
+        "huggingface-hub-rust-test-user/gpt2"
+    } else {
+        "openai-community/gpt2"
+    }
+}
+
+fn test_space_repo() -> (&'static str, &'static str) {
+    if is_hub_ci() {
+        ("huggingface-hub-rust-test-user", "test-space")
+    } else {
+        ("huggingface-projects", "diffusers-gallery")
+    }
+}
+
+fn test_space_info_repo() -> &'static str {
+    if is_hub_ci() {
+        "huggingface-hub-rust-test-user/test-space"
+    } else {
+        "HuggingFaceFW/blogpost-fineweb-v1"
+    }
+}
+
+fn test_dataset_repo() -> &'static str {
+    if is_hub_ci() {
+        "huggingface-hub-rust-test-user/hacker-news"
+    } else {
+        "xet-team/xet-spec-reference-files"
+    }
+}
+
 /// Cached whoami username, fetched once and reused across all tests.
 async fn cached_username() -> &'static str {
     static USERNAME: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
@@ -68,7 +122,8 @@ fn repo_typed(api: &HFClient, repo_id: &str, repo_type: RepoType) -> HFRepositor
 #[tokio::test]
 async fn test_model_info() {
     let Some(api) = api() else { return };
-    let info = repo(&api, "gpt2").info(&RepoInfoParams::default()).await.unwrap();
+    let model_repo = test_model_repo();
+    let info = repo(&api, model_repo).info(&RepoInfoParams::default()).await.unwrap();
     match info {
         RepoInfo::Model(model) => assert!(model.id.contains("gpt2")),
         _ => panic!("expected model info"),
@@ -78,11 +133,12 @@ async fn test_model_info() {
 #[tokio::test]
 async fn test_repo_handle_info_and_file_exists() {
     let Some(api) = api() else { return };
-    let repo = api.model("openai-community", "gpt2");
+    let model_repo = test_model_repo();
+    let repo = repo(&api, model_repo);
 
     let info = repo.info(&RepoInfoParams::default()).await.unwrap();
     match info {
-        RepoInfo::Model(model) => assert_eq!(model.id, "openai-community/gpt2"),
+        RepoInfo::Model(model) => assert_eq!(model.id, model_repo),
         _ => panic!("expected model info"),
     }
 
@@ -96,12 +152,13 @@ async fn test_repo_handle_info_and_file_exists() {
 #[tokio::test]
 async fn test_dataset_info() {
     let Some(api) = api() else { return };
-    let info = repo_typed(&api, "rajpurkar/squad", RepoType::Dataset)
+    let dataset_repo = test_dataset_repo();
+    let info = repo_typed(&api, dataset_repo, RepoType::Dataset)
         .info(&RepoInfoParams::default())
         .await
         .unwrap();
     match info {
-        RepoInfo::Dataset(ds) => assert!(ds.id.contains("squad")),
+        RepoInfo::Dataset(ds) => assert_eq!(ds.id, dataset_repo),
         _ => panic!("expected dataset info"),
     }
 }
@@ -109,35 +166,41 @@ async fn test_dataset_info() {
 #[tokio::test]
 async fn test_repo_exists() {
     let Some(api) = api() else { return };
-    assert!(repo(&api, "gpt2").exists().await.unwrap());
+    assert!(repo(&api, test_model_repo()).exists().await.unwrap());
     assert!(!repo(&api, "this-repo-definitely-does-not-exist-12345").exists().await.unwrap());
 }
 
 #[tokio::test]
 async fn test_file_exists() {
     let Some(api) = api() else { return };
-    assert!(repo(&api, "gpt2")
-        .file_exists(&RepoFileExistsParams::builder().filename("config.json").build())
-        .await
-        .unwrap());
+    let model_repo = test_model_repo();
+    assert!(
+        repo(&api, model_repo)
+            .file_exists(&RepoFileExistsParams::builder().filename("config.json").build())
+            .await
+            .unwrap()
+    );
 
-    assert!(!repo(&api, "gpt2")
-        .file_exists(&RepoFileExistsParams::builder().filename("nonexistent_file.xyz").build())
-        .await
-        .unwrap());
+    assert!(
+        !repo(&api, model_repo)
+            .file_exists(&RepoFileExistsParams::builder().filename("nonexistent_file.xyz").build())
+            .await
+            .unwrap()
+    );
 }
 
 #[tokio::test]
 async fn test_list_models() {
     let Some(api) = api() else { return };
-    let params = ListModelsParams::builder().author("openai-community").limit(3_usize).build();
+    let author = test_model_author();
+    let params = ListModelsParams::builder().author(author).limit(3_usize).build();
     let stream = api.list_models(&params).unwrap();
     futures::pin_mut!(stream);
 
     let mut count = 0;
     while let Some(model) = stream.next().await {
         let model = model.unwrap();
-        assert!(model.id.starts_with("openai-community/"));
+        assert!(model.id.starts_with(&format!("{}/", author)));
         count += 1;
     }
     assert!(count > 0);
@@ -146,7 +209,10 @@ async fn test_list_models() {
 #[tokio::test]
 async fn test_list_repo_files() {
     let Some(api) = api() else { return };
-    let files = repo(&api, "gpt2").list_files(&RepoListFilesParams::default()).await.unwrap();
+    let files = repo(&api, test_model_repo())
+        .list_files(&RepoListFilesParams::default())
+        .await
+        .unwrap();
     assert!(files.contains(&"config.json".to_string()));
     assert!(files.contains(&"README.md".to_string()));
 }
@@ -154,7 +220,7 @@ async fn test_list_repo_files() {
 #[tokio::test]
 async fn test_list_repo_tree() {
     let Some(api) = api() else { return };
-    let r = repo(&api, "gpt2");
+    let r = repo(&api, test_model_repo());
     let stream = r.list_tree(&RepoListTreeParams::default()).unwrap();
     futures::pin_mut!(stream);
 
@@ -174,7 +240,7 @@ async fn test_list_repo_tree() {
 #[tokio::test]
 async fn test_list_repo_commits() {
     let Some(api) = api() else { return };
-    let r = repo(&api, "gpt2");
+    let r = repo(&api, test_model_repo());
     let stream = r.list_commits(&RepoListCommitsParams::default()).unwrap();
     futures::pin_mut!(stream);
 
@@ -186,7 +252,10 @@ async fn test_list_repo_commits() {
 #[tokio::test]
 async fn test_list_repo_refs() {
     let Some(api) = api() else { return };
-    let refs = repo(&api, "gpt2").list_refs(&RepoListRefsParams::default()).await.unwrap();
+    let refs = repo(&api, test_model_repo())
+        .list_refs(&RepoListRefsParams::default())
+        .await
+        .unwrap();
     assert!(!refs.branches.is_empty());
     // "main" branch should exist
     assert!(refs.branches.iter().any(|b| b.name == "main"));
@@ -195,22 +264,27 @@ async fn test_list_repo_refs() {
 #[tokio::test]
 async fn test_revision_exists() {
     let Some(api) = api() else { return };
-    assert!(repo(&api, "gpt2")
-        .revision_exists(&RepoRevisionExistsParams::builder().revision("main").build())
-        .await
-        .unwrap());
+    let model_repo = test_model_repo();
+    assert!(
+        repo(&api, model_repo)
+            .revision_exists(&RepoRevisionExistsParams::builder().revision("main").build())
+            .await
+            .unwrap()
+    );
 
-    assert!(!repo(&api, "gpt2")
-        .revision_exists(&RepoRevisionExistsParams::builder().revision("nonexistent-branch-xyz").build())
-        .await
-        .unwrap());
+    assert!(
+        !repo(&api, model_repo)
+            .revision_exists(&RepoRevisionExistsParams::builder().revision("nonexistent-branch-xyz").build())
+            .await
+            .unwrap()
+    );
 }
 
 #[tokio::test]
 async fn test_download_file() {
     let Some(api) = api() else { return };
     let dir = tempfile::tempdir().unwrap();
-    let path = repo(&api, "gpt2")
+    let path = repo(&api, test_model_repo())
         .download_file(
             &RepoDownloadFileParams::builder()
                 .filename("config.json")
@@ -243,21 +317,23 @@ async fn test_auth_check() {
 #[tokio::test]
 async fn test_get_user_overview() {
     let Some(api) = api() else { return };
-    let user = api.get_user_overview("julien-c").await.unwrap();
-    assert_eq!(user.username, "julien-c");
+    let username = test_user();
+    let user = api.get_user_overview(username).await.unwrap();
+    assert_eq!(user.username, username);
 }
 
 #[tokio::test]
 async fn test_get_organization_overview() {
     let Some(api) = api() else { return };
-    let org = api.get_organization_overview("huggingface").await.unwrap();
-    assert_eq!(org.name, "huggingface");
+    let org_name = test_org();
+    let org = api.get_organization_overview(org_name).await.unwrap();
+    assert_eq!(org.name, org_name);
 }
 
 #[tokio::test]
 async fn test_list_user_followers() {
     let Some(api) = api() else { return };
-    let stream = api.list_user_followers("julien-c", None).unwrap();
+    let stream = api.list_user_followers(test_user(), None).unwrap();
     futures::pin_mut!(stream);
     let first = stream.next().await;
     assert!(first.is_some());
@@ -267,7 +343,7 @@ async fn test_list_user_followers() {
 #[tokio::test]
 async fn test_list_user_following() {
     let Some(api) = api() else { return };
-    let stream = api.list_user_following("julien-c", None).unwrap();
+    let stream = api.list_user_following(test_user(), None).unwrap();
     futures::pin_mut!(stream);
     let first = stream.next().await;
     assert!(first.is_some());
@@ -277,7 +353,7 @@ async fn test_list_user_following() {
 #[tokio::test]
 async fn test_list_organization_members() {
     let Some(api) = api() else { return };
-    let stream = api.list_organization_members("huggingface", None).unwrap();
+    let stream = api.list_organization_members(test_org(), None).unwrap();
     futures::pin_mut!(stream);
     let first = stream.next().await;
     assert!(first.is_some());
@@ -289,12 +365,13 @@ async fn test_list_organization_members() {
 #[tokio::test]
 async fn test_space_info() {
     let Some(api) = api() else { return };
-    let info = repo_typed(&api, "HuggingFaceFW/blogpost-fineweb-v1", RepoType::Space)
+    let space_repo = test_space_info_repo();
+    let info = repo_typed(&api, space_repo, RepoType::Space)
         .info(&RepoInfoParams::default())
         .await
         .unwrap();
     match info {
-        RepoInfo::Space(space) => assert!(space.id.contains("blogpost-fineweb-v1")),
+        RepoInfo::Space(space) => assert_eq!(space.id, space_repo),
         _ => panic!("expected space info"),
     }
 }
@@ -302,7 +379,7 @@ async fn test_space_info() {
 #[tokio::test]
 async fn test_list_datasets() {
     let Some(api) = api() else { return };
-    let params = ListDatasetsParams::builder().author("huggingface").limit(3_usize).build();
+    let params = ListDatasetsParams::builder().author(test_org()).limit(3_usize).build();
     let stream = api.list_datasets(&params).unwrap();
     futures::pin_mut!(stream);
 
@@ -317,7 +394,7 @@ async fn test_list_datasets() {
 #[tokio::test]
 async fn test_list_spaces() {
     let Some(api) = api() else { return };
-    let params = ListSpacesParams::builder().author("huggingface").limit(3_usize).build();
+    let params = ListSpacesParams::builder().author(test_org()).limit(3_usize).build();
     let stream = api.list_spaces(&params).unwrap();
     futures::pin_mut!(stream);
 
@@ -334,7 +411,7 @@ async fn test_list_spaces() {
 #[tokio::test]
 async fn test_get_paths_info() {
     let Some(api) = api() else { return };
-    let entries = repo(&api, "gpt2")
+    let entries = repo(&api, test_model_repo())
         .get_paths_info(
             &RepoGetPathsInfoParams::builder()
                 .paths(vec!["config.json".to_string(), "README.md".to_string()])
@@ -360,7 +437,7 @@ async fn test_get_paths_info() {
 async fn test_get_commit_diff() {
     let Some(api) = api() else { return };
 
-    let gpt2 = repo(&api, "openai-community/gpt2");
+    let gpt2 = repo(&api, test_model_repo());
     let stream = gpt2.list_commits(&RepoListCommitsParams::default()).unwrap();
     futures::pin_mut!(stream);
 
@@ -382,7 +459,7 @@ async fn test_get_commit_diff() {
 async fn test_get_raw_diff() {
     let Some(api) = api() else { return };
 
-    let gpt2 = repo(&api, "openai-community/gpt2");
+    let gpt2 = repo(&api, test_model_repo());
     let stream = gpt2.list_commits(&RepoListCommitsParams::default()).unwrap();
     futures::pin_mut!(stream);
 
@@ -437,10 +514,12 @@ async fn test_create_and_delete_repo() {
     assert!(commit.commit_oid.is_some());
 
     // Verify file exists
-    assert!(test_repo
-        .file_exists(&RepoFileExistsParams::builder().filename("test.txt").build())
-        .await
-        .unwrap());
+    assert!(
+        test_repo
+            .file_exists(&RepoFileExistsParams::builder().filename("test.txt").build())
+            .await
+            .unwrap()
+    );
 
     // Delete repo
     let params = DeleteRepoParams::builder().repo_id(&repo_id).build();
@@ -579,10 +658,12 @@ async fn test_delete_file() {
         .await
         .unwrap();
 
-    assert!(!test_repo
-        .file_exists(&RepoFileExistsParams::builder().filename("deleteme.txt").build())
-        .await
-        .unwrap());
+    assert!(
+        !test_repo
+            .file_exists(&RepoFileExistsParams::builder().filename("deleteme.txt").build())
+            .await
+            .unwrap()
+    );
 
     delete_test_repo(&api, &repo_id).await;
 }
@@ -625,10 +706,12 @@ async fn test_delete_folder() {
         .await
         .unwrap();
 
-    assert!(!test_repo
-        .file_exists(&RepoFileExistsParams::builder().filename("folder/a.txt").build())
-        .await
-        .unwrap());
+    assert!(
+        !test_repo
+            .file_exists(&RepoFileExistsParams::builder().filename("folder/a.txt").build())
+            .await
+            .unwrap()
+    );
 
     delete_test_repo(&api, &repo_id).await;
 }
@@ -743,7 +826,8 @@ async fn test_move_repo() {
 #[tokio::test]
 async fn test_get_space_runtime() {
     let Some(api) = api() else { return };
-    let space = api.space("huggingface-projects", "diffusers-gallery");
+    let (owner, name) = test_space_repo();
+    let space = api.space(owner, name);
     let runtime = space.runtime().await.unwrap();
     assert!(runtime.stage.is_some());
 }
@@ -763,7 +847,8 @@ async fn test_duplicate_space() {
         .private(true)
         .hardware("cpu-basic")
         .build();
-    let source = api.space("huggingface-projects", "diffusers-gallery");
+    let (owner, name) = test_space_repo();
+    let source = api.space(owner, name);
     let result = source.duplicate(&params).await.unwrap();
     assert!(result.url.contains(&to_id));
 

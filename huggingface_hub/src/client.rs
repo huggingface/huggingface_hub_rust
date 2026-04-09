@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT};
+use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT};
 use reqwest_middleware::ClientWithMiddleware;
-use reqwest_retry::policies::ExponentialBackoff;
 use reqwest_retry::RetryTransientMiddleware;
+use reqwest_retry::policies::ExponentialBackoff;
 use tracing::debug;
 
 use crate::constants;
@@ -209,13 +209,33 @@ impl HFClient {
         HFClientBuilder::new()
     }
 
+    pub(crate) fn http_client(&self) -> &ClientWithMiddleware {
+        &self.inner.client
+    }
+
+    pub(crate) fn no_redirect_client(&self) -> &ClientWithMiddleware {
+        &self.inner.no_redirect_client
+    }
+
+    pub(crate) fn endpoint(&self) -> &str {
+        &self.inner.endpoint
+    }
+
+    pub(crate) fn cache_dir(&self) -> &std::path::Path {
+        &self.inner.cache_dir
+    }
+
+    pub(crate) fn cache_enabled(&self) -> bool {
+        self.inner.cache_enabled
+    }
+
     /// Build authorization headers for requests
     pub(crate) fn auth_headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
-        if let Some(ref token) = self.inner.token {
-            if let Ok(val) = HeaderValue::from_str(&format!("Bearer {token}")) {
-                headers.insert(AUTHORIZATION, val);
-            }
+        if let Some(ref token) = self.inner.token
+            && let Ok(val) = HeaderValue::from_str(&format!("Bearer {token}"))
+        {
+            headers.insert(AUTHORIZATION, val);
         }
         headers
     }
@@ -223,7 +243,7 @@ impl HFClient {
     /// Build a URL for the API: {endpoint}/api/{segment}/{repo_id}
     pub(crate) fn api_url(&self, repo_type: Option<crate::types::RepoType>, repo_id: &str) -> String {
         let segment = constants::repo_type_api_segment(repo_type);
-        format!("{}/api/{}/{}", self.inner.endpoint, segment, repo_id)
+        format!("{}/api/{}/{}", self.endpoint(), segment, repo_id)
     }
 
     /// Build a download URL: {endpoint}/{prefix}{repo_id}/resolve/{revision}/{filename}
@@ -235,7 +255,7 @@ impl HFClient {
         filename: &str,
     ) -> String {
         let prefix = constants::repo_type_url_prefix(repo_type);
-        format!("{}/{}{}/resolve/{}/{}", self.inner.endpoint, prefix, repo_id, revision, filename)
+        format!("{}/{}{}/resolve/{}/{}", self.endpoint(), prefix, repo_id, revision, filename)
     }
 
     /// Check an HTTP response and map error status codes to HFError variants.
@@ -283,27 +303,27 @@ impl HFClient {
 /// Resolve token from environment or token file.
 /// Priority: HF_TOKEN env → HF_TOKEN_PATH file → $HF_HOME/token file.
 fn resolve_token() -> Option<String> {
-    if let Ok(val) = std::env::var(constants::HF_HUB_DISABLE_IMPLICIT_TOKEN) {
-        if !val.is_empty() {
-            debug!("implicit token disabled via HF_HUB_DISABLE_IMPLICIT_TOKEN");
-            return None;
-        }
+    if let Ok(val) = std::env::var(constants::HF_HUB_DISABLE_IMPLICIT_TOKEN)
+        && !val.is_empty()
+    {
+        debug!("implicit token disabled via HF_HUB_DISABLE_IMPLICIT_TOKEN");
+        return None;
     }
 
-    if let Ok(token) = std::env::var(constants::HF_TOKEN) {
+    if let Ok(token) = std::env::var(constants::HF_TOKEN)
+        && !token.is_empty()
+    {
+        debug!("resolved token from HF_TOKEN env var");
+        return Some(token);
+    }
+
+    if let Ok(path) = std::env::var(constants::HF_TOKEN_PATH)
+        && let Ok(token) = std::fs::read_to_string(&path)
+    {
+        let token = token.trim().to_string();
         if !token.is_empty() {
-            debug!("resolved token from HF_TOKEN env var");
+            debug!("resolved token from HF_TOKEN_PATH file");
             return Some(token);
-        }
-    }
-
-    if let Ok(path) = std::env::var(constants::HF_TOKEN_PATH) {
-        if let Ok(token) = std::fs::read_to_string(&path) {
-            let token = token.trim().to_string();
-            if !token.is_empty() {
-                debug!("resolved token from HF_TOKEN_PATH file");
-                return Some(token);
-            }
         }
     }
 
@@ -328,13 +348,13 @@ mod tests {
     #[test]
     fn test_builder_cache_dir_explicit() {
         let api = HFClientBuilder::new().cache_dir("/tmp/my-cache").build().unwrap();
-        assert_eq!(api.inner.cache_dir, std::path::PathBuf::from("/tmp/my-cache"));
+        assert_eq!(api.cache_dir(), std::path::Path::new("/tmp/my-cache"));
     }
 
     #[test]
     fn test_builder_cache_dir_default() {
         let api = HFClientBuilder::new().build().unwrap();
-        let path_str = api.inner.cache_dir.to_string_lossy();
+        let path_str = api.cache_dir().to_string_lossy();
         assert!(path_str.contains("huggingface") && path_str.ends_with("hub"));
     }
 }

@@ -13,11 +13,7 @@ fn env_or(name: &str) -> String {
 }
 
 fn env_set(name: &str) -> &'static str {
-    if std::env::var(name).is_ok() {
-        "set"
-    } else {
-        "not set"
-    }
+    if std::env::var(name).is_ok() { "set" } else { "not set" }
 }
 
 pub async fn execute(_args: Args) -> Result<CommandResult> {
