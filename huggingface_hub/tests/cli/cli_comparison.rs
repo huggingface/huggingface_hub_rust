@@ -2165,10 +2165,15 @@ fn signal_abort_during_xet_upload() {
 
     let pid = child.id();
 
-    // Give the upload time to start the xet transfer
-    std::thread::sleep(Duration::from_secs(2));
+    std::thread::sleep(Duration::from_millis(500));
 
-    // Send SIGINT to the child process
+    // Check if process already finished before we could signal it
+    if let Ok(Some(_status)) = child.try_wait() {
+        eprintln!("upload finished before SIGINT could be sent — skipping abort assertion");
+        let _ = hfrs.run_raw(&["repos", "delete", &full_repo]);
+        return;
+    }
+
     unsafe {
         libc::kill(pid as libc::pid_t, libc::SIGINT);
     }
@@ -2190,10 +2195,8 @@ fn signal_abort_during_xet_upload() {
         }
     };
 
-    // The process should have terminated (possibly with a signal exit)
     assert!(!status.success(), "CLI should exit non-zero after SIGINT, got: {status}");
 
-    // Cleanup
     let _ = hfrs.run_raw(&["repos", "delete", &full_repo]);
 }
 
@@ -2227,7 +2230,10 @@ fn signal_abort_during_xet_download() {
     }
     drop(tmp_upload);
 
-    // Now download and send SIGINT mid-transfer
+    // Now download and send SIGINT mid-transfer.
+    // Use a short delay so the process is still transferring when the signal
+    // arrives. If the download completes before we can signal, skip the
+    // assertion — we cannot test the abort path on very fast networks.
     let tmp_download = tempfile::tempdir().unwrap();
     let mut child = hfrs
         .spawn(&[
@@ -2240,7 +2246,14 @@ fn signal_abort_during_xet_download() {
 
     let pid = child.id();
 
-    std::thread::sleep(Duration::from_secs(2));
+    std::thread::sleep(Duration::from_millis(500));
+
+    // Check if process already finished before we could signal it
+    if let Ok(Some(_status)) = child.try_wait() {
+        eprintln!("download finished before SIGINT could be sent — skipping abort assertion");
+        let _ = hfrs.run_raw(&["repos", "delete", &full_repo]);
+        return;
+    }
 
     unsafe {
         libc::kill(pid as libc::pid_t, libc::SIGINT);
