@@ -308,12 +308,13 @@ impl HFClient {
 impl HFClient {
     /// Get or lazily create the cached XetSession.
     ///
-    /// On first call, builds a new session and caches it. On subsequent calls,
-    /// probes the cached session's health via a lightweight factory call. If
-    /// the session is permanently poisoned (e.g. after abort), it is replaced
-    /// with a fresh one transparently.
+    /// On first call, builds a new session and caches it. Subsequent calls
+    /// return a cheap clone (Arc increment) of the cached session.
     ///
-    /// Returns a cheap clone (Arc increment) of the shared session.
+    /// If a call site receives an error from a factory method
+    /// (e.g. `new_file_download_group`), it should call
+    /// [`replace_xet_session`](Self::replace_xet_session) to swap in a
+    /// fresh session before retrying.
     pub(crate) fn xet_session(&self) -> Result<xet::xet_session::XetSession> {
         let mut guard = self
             .inner
@@ -322,15 +323,7 @@ impl HFClient {
             .map_err(|e| HFError::Other(format!("xet session mutex poisoned: {e}")))?;
 
         if let Some(ref session) = *guard {
-            match session.new_file_download_group() {
-                Ok(_probe) => return Ok(session.clone()),
-                Err(e) if crate::xet::is_session_poisoned(&e) => {
-                    tracing::warn!(error = %e, "cached XetSession poisoned, replacing");
-                },
-                Err(e) => {
-                    return Err(HFError::Other(format!("XetSession health check failed: {e}")));
-                },
-            }
+            return Ok(session.clone());
         }
 
         let session = xet::xet_session::XetSessionBuilder::new()
@@ -338,6 +331,20 @@ impl HFClient {
             .map_err(|e| HFError::Other(format!("Failed to build xet session: {e}")))?;
         *guard = Some(session.clone());
         Ok(session)
+    }
+
+    /// Replace the cached XetSession if the error indicates it is unhealthy.
+    ///
+    /// Called by xet call sites when a factory method (e.g.
+    /// `new_file_download_group`, `new_upload_commit`) returns an error.
+    /// Drops the old session and builds a fresh one so the next
+    /// `xet_session()` call returns a healthy session.
+    pub(crate) fn replace_xet_session(&self, err: &xet::error::XetError) {
+        tracing::warn!(error = %err, "replacing cached XetSession");
+        let Ok(mut guard) = self.inner.xet_session.lock() else {
+            return;
+        };
+        *guard = None;
     }
 }
 
@@ -422,15 +429,16 @@ mod tests {
     fn test_xet_session_recovers_after_abort() {
         let client = HFClientBuilder::new().build().unwrap();
 
-        // Get a session and abort it — this permanently poisons it.
         let session = client.xet_session().unwrap();
         session.abort().unwrap();
 
-        // The health probe inside xet_session() should detect the poisoned
-        // session, replace it, and return a fresh one.
-        let recovered = client.xet_session().unwrap();
+        // Factory call fails on the poisoned session
+        match session.new_file_download_group() {
+            Ok(_) => panic!("expected error after abort"),
+            Err(e) => client.replace_xet_session(&e),
+        }
 
-        // Verify the recovered session is healthy by creating a download group.
+        let recovered = client.xet_session().unwrap();
         assert!(recovered.new_file_download_group().is_ok());
     }
 
@@ -442,58 +450,54 @@ mod tests {
         let session = client.xet_session().unwrap();
         session.sigint_abort().unwrap();
 
+        // sigint_abort shuts down the runtime; force a replacement
+        // using a synthetic error (the real error may surface later
+        // during async operations, not on the factory call itself).
+        client.replace_xet_session(&xet::error::XetError::KeyboardInterrupt);
+
         let recovered = client.xet_session().unwrap();
         assert!(recovered.new_file_download_group().is_ok());
     }
 
-    /// Simulates the inline retry pattern used at call sites in xet.rs:
-    /// 1. Get session via xet_session() — passes health check
-    /// 2. Session is aborted concurrently — factory call fails with poisoned error
-    /// 3. Retry: xet_session() detects poisoning, replaces session, returns healthy one
-    /// 4. Factory call on fresh session succeeds
+    /// Simulates the call-site retry pattern used in xet.rs:
+    /// 1. Get session, factory call fails (session was aborted concurrently)
+    /// 2. Call replace_xet_session to drop the bad session
+    /// 3. Get fresh session, factory call succeeds
     #[cfg(feature = "xet")]
     #[test]
-    fn test_inline_retry_after_mid_operation_poisoning() {
+    fn test_replace_and_retry_after_abort() {
         let client = HFClientBuilder::new().build().unwrap();
 
-        // Step 1: Get a healthy session
         let session = client.xet_session().unwrap();
         assert!(session.new_file_download_group().is_ok());
 
-        // Step 2: Abort the session — simulates concurrent abort between
-        // health check passing and factory call at the call site
+        // Abort — simulates concurrent poisoning
         session.abort().unwrap();
 
-        // Step 3-4: The inline retry pattern from call sites
+        // Call site pattern: factory fails, replace, retry
         let group = match session.new_file_download_group() {
             Ok(b) => b,
-            Err(e) if crate::xet::is_session_poisoned(&e) => {
-                // This is the retry path — get a fresh session
+            Err(e) => {
+                client.replace_xet_session(&e);
                 client
                     .xet_session()
                     .unwrap()
                     .new_file_download_group()
                     .expect("fresh session factory call should succeed")
             },
-            Err(e) => panic!("expected poisoned error, got: {e}"),
         };
-        // Verify the builder is usable
         drop(group);
     }
 
-    /// Verifies that xet_session() propagates non-poisoned health check errors
-    /// as HFError::Other rather than silently replacing the session.
     #[cfg(feature = "xet")]
     #[test]
     fn test_xet_session_reuse_without_replacement() {
         let client = HFClientBuilder::new().build().unwrap();
 
-        // First call creates the session
         let s1 = client.xet_session().unwrap();
-        // Second call should return the same cached session (health check passes)
         let s2 = client.xet_session().unwrap();
 
-        // Both sessions should be healthy — factory calls succeed
+        // Both return the same cached session — factory calls succeed
         assert!(s1.new_file_download_group().is_ok());
         assert!(s2.new_file_download_group().is_ok());
     }

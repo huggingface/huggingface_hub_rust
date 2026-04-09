@@ -7,7 +7,6 @@
 use std::path::PathBuf;
 
 use serde::Deserialize;
-use xet::error::XetError;
 use xet::xet_session::{Sha256Policy, XetFileInfo, XetFileMetadata};
 
 use crate::client::HFClient;
@@ -69,7 +68,9 @@ fn xet_token_url(
 
 /// Returns `true` if the error indicates the XetSession is permanently
 /// poisoned and must be replaced before retrying.
-pub(crate) fn is_session_poisoned(err: &XetError) -> bool {
+#[cfg(test)]
+fn is_session_poisoned(err: &xet::error::XetError) -> bool {
+    use xet::error::XetError;
     matches!(
         err,
         XetError::UserCancelled(_)
@@ -111,12 +112,13 @@ impl HFRepository {
         let session = self.hf_client.xet_session()?;
         let group = match session.new_file_download_group() {
             Ok(b) => b,
-            Err(e) if is_session_poisoned(&e) => self
-                .hf_client
-                .xet_session()?
-                .new_file_download_group()
-                .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?,
-            Err(e) => return Err(HFError::Other(format!("Xet download failed: {e}"))),
+            Err(e) => {
+                self.hf_client.replace_xet_session(&e);
+                self.hf_client
+                    .xet_session()?
+                    .new_file_download_group()
+                    .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?
+            },
         }
         .with_endpoint(conn.endpoint.clone())
         .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
@@ -163,12 +165,13 @@ impl HFRepository {
         let session = self.hf_client.xet_session()?;
         let group = match session.new_file_download_group() {
             Ok(b) => b,
-            Err(e) if is_session_poisoned(&e) => self
-                .hf_client
-                .xet_session()?
-                .new_file_download_group()
-                .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?,
-            Err(e) => return Err(HFError::Other(format!("Xet download failed: {e}"))),
+            Err(e) => {
+                self.hf_client.replace_xet_session(&e);
+                self.hf_client
+                    .xet_session()?
+                    .new_file_download_group()
+                    .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?
+            },
         }
         .with_endpoint(conn.endpoint.clone())
         .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
@@ -208,12 +211,13 @@ impl HFRepository {
         let session = self.hf_client.xet_session()?;
         let group = match session.new_file_download_group() {
             Ok(b) => b,
-            Err(e) if is_session_poisoned(&e) => self
-                .hf_client
-                .xet_session()?
-                .new_file_download_group()
-                .map_err(|e| HFError::Other(format!("Xet batch download failed: {e}")))?,
-            Err(e) => return Err(HFError::Other(format!("Xet batch download failed: {e}"))),
+            Err(e) => {
+                self.hf_client.replace_xet_session(&e);
+                self.hf_client
+                    .xet_session()?
+                    .new_file_download_group()
+                    .map_err(|e| HFError::Other(format!("Xet batch download failed: {e}")))?
+            },
         }
         .with_endpoint(conn.endpoint.clone())
         .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
@@ -272,12 +276,13 @@ impl HFRepository {
         let session = self.hf_client.xet_session()?;
         let group = match session.new_download_stream_group() {
             Ok(b) => b,
-            Err(e) if is_session_poisoned(&e) => self
-                .hf_client
-                .xet_session()?
-                .new_download_stream_group()
-                .map_err(|e| HFError::Other(format!("Xet stream download failed: {e}")))?,
-            Err(e) => return Err(HFError::Other(format!("Xet stream download failed: {e}"))),
+            Err(e) => {
+                self.hf_client.replace_xet_session(&e);
+                self.hf_client
+                    .xet_session()?
+                    .new_download_stream_group()
+                    .map_err(|e| HFError::Other(format!("Xet stream download failed: {e}")))?
+            },
         }
         .with_endpoint(conn.endpoint.clone())
         .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
@@ -321,12 +326,13 @@ impl HFRepository {
         let session = self.hf_client.xet_session()?;
         let commit = match session.new_upload_commit() {
             Ok(b) => b,
-            Err(e) if is_session_poisoned(&e) => self
-                .hf_client
-                .xet_session()?
-                .new_upload_commit()
-                .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?,
-            Err(e) => return Err(HFError::Other(format!("Xet upload failed: {e}"))),
+            Err(e) => {
+                self.hf_client.replace_xet_session(&e);
+                self.hf_client
+                    .xet_session()?
+                    .new_upload_commit()
+                    .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?
+            },
         }
         .with_endpoint(conn.endpoint.clone())
         .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
@@ -387,6 +393,8 @@ impl HFClient {
 
 #[cfg(test)]
 mod tests {
+    use xet::error::XetError;
+
     use super::*;
 
     #[test]
