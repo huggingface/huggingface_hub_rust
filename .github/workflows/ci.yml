@@ -8,8 +8,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  HF_ENDPOINT: https://hub-ci.huggingface.co
-  RUST_BACKTRACE: 1
 
 jobs:
   fmt:
