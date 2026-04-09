@@ -416,4 +416,33 @@ mod tests {
         let _s1 = client.xet_session().unwrap();
         assert!(clone.inner.xet_session.lock().unwrap().is_some());
     }
+
+    #[cfg(feature = "xet")]
+    #[test]
+    fn test_xet_session_recovers_after_abort() {
+        let client = HFClientBuilder::new().build().unwrap();
+
+        // Get a session and abort it — this permanently poisons it.
+        let session = client.xet_session().unwrap();
+        session.abort().unwrap();
+
+        // The health probe inside xet_session() should detect the poisoned
+        // session, replace it, and return a fresh one.
+        let recovered = client.xet_session().unwrap();
+
+        // Verify the recovered session is healthy by creating a download group.
+        assert!(recovered.new_file_download_group().is_ok());
+    }
+
+    #[cfg(feature = "xet")]
+    #[test]
+    fn test_xet_session_recovers_after_sigint_abort() {
+        let client = HFClientBuilder::new().build().unwrap();
+
+        let session = client.xet_session().unwrap();
+        session.sigint_abort().unwrap();
+
+        let recovered = client.xet_session().unwrap();
+        assert!(recovered.new_file_download_group().is_ok());
+    }
 }
