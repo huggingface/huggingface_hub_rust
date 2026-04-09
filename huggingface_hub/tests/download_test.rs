@@ -11,10 +11,15 @@ use huggingface_hub::{HFClient, HFClientBuilder, RepoDownloadFileParams, RepoDow
 use sha2::{Digest, Sha256};
 
 fn api() -> Option<HFClient> {
-    if std::env::var("HF_TOKEN").is_err() {
-        return None;
+    if is_hub_ci() {
+        let token = std::env::var("HF_CI_TOKEN").ok()?;
+        Some(HFClientBuilder::new().token(token).build().expect("Failed to create HFClient"))
+    } else {
+        if std::env::var("HF_TOKEN").is_err() {
+            return None;
+        }
+        Some(HFClientBuilder::new().build().expect("Failed to create HFClient"))
     }
-    Some(HFClientBuilder::new().build().expect("Failed to create HFClient"))
 }
 
 fn is_hub_ci() -> bool {
@@ -25,7 +30,7 @@ fn is_hub_ci() -> bool {
 
 fn test_model_parts() -> (&'static str, &'static str) {
     if is_hub_ci() {
-        ("huggingface-hub-rust-test-user", "gpt2")
+        ("__DUMMY_TRANSFORMERS_USER__", "gpt2")
     } else {
         ("openai-community", "gpt2")
     }
@@ -33,7 +38,7 @@ fn test_model_parts() -> (&'static str, &'static str) {
 
 fn test_dataset_parts() -> (&'static str, &'static str) {
     if is_hub_ci() {
-        ("huggingface-hub-rust-test-user", "hacker-news")
+        ("__DUMMY_TRANSFORMERS_USER__", "hacker-news")
     } else {
         ("rajpurkar", "squad")
     }

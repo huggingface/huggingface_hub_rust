@@ -21,10 +21,11 @@ impl CliRunner {
     }
 
     pub fn hfrs() -> Self {
+        let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).ok();
         Self {
             bin: "hfrs".to_string(),
             bin_path: Some(env!("CARGO_BIN_EXE_hfrs").to_string()),
-            token: std::env::var("HF_TOKEN").ok(),
+            token,
             extra_env: vec![
                 ("RUST_LOG".to_string(), "info".to_string()),
                 ("HF_LOG_LEVEL".to_string(), "info".to_string()),
@@ -186,8 +187,8 @@ pub fn require_cli(runner: &CliRunner) {
 }
 
 pub fn require_token() {
-    if std::env::var("HF_TOKEN").is_err() {
-        panic!("HF_TOKEN environment variable is required for integration tests.");
+    if std::env::var("HF_TOKEN").is_err() && std::env::var("HF_CI_TOKEN").is_err() {
+        panic!("HF_TOKEN or HF_CI_TOKEN environment variable is required for integration tests.");
     }
 }
 

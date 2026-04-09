@@ -12,7 +12,7 @@ fn is_hub_ci() -> bool {
 
 fn test_model_repo() -> &'static str {
     if is_hub_ci() {
-        "huggingface-hub-rust-test-user/gpt2"
+        "__DUMMY_TRANSFORMERS_USER__/gpt2"
     } else {
         "gpt2"
     }
@@ -20,7 +20,7 @@ fn test_model_repo() -> &'static str {
 
 fn test_dataset_repo() -> &'static str {
     if is_hub_ci() {
-        "huggingface-hub-rust-test-user/hacker-news"
+        "__DUMMY_TRANSFORMERS_USER__/hacker-news"
     } else {
         "squad"
     }
@@ -28,7 +28,7 @@ fn test_dataset_repo() -> &'static str {
 
 fn test_dataset_download_repo() -> &'static str {
     if is_hub_ci() {
-        "huggingface-hub-rust-test-user/hacker-news"
+        "__DUMMY_TRANSFORMERS_USER__/hacker-news"
     } else {
         "xet-team/xet-spec-reference-files"
     }
@@ -36,7 +36,7 @@ fn test_dataset_download_repo() -> &'static str {
 
 fn test_model_cache_fragment() -> &'static str {
     if is_hub_ci() {
-        "huggingface-hub-rust-test-user--gpt2"
+        "__DUMMY_TRANSFORMERS_USER__--gpt2"
     } else {
         "gpt2"
     }

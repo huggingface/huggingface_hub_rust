@@ -13,10 +13,52 @@ use huggingface_hub::{HFClient, HFClientBuilder, HFError, RepoDownloadFileParams
 use serial_test::serial;
 
 fn api() -> Option<HFClient> {
-    if std::env::var("HF_TOKEN").is_err() {
-        return None;
+    if is_hub_ci() {
+        let token = std::env::var("HF_CI_TOKEN").ok()?;
+        Some(HFClientBuilder::new().token(token).build().expect("Failed to create HFClient"))
+    } else {
+        if std::env::var("HF_TOKEN").is_err() {
+            return None;
+        }
+        Some(HFClientBuilder::new().build().expect("Failed to create HFClient"))
     }
-    Some(HFClientBuilder::new().build().expect("Failed to create HFClient"))
+}
+
+/// Build a client targeting production (huggingface.co) for tests that use
+/// hardcoded prod repos (e.g. mcpotato/42-xet-test-repo).
+/// In CI: uses HF_PROD_TOKEN against huggingface.co.
+/// Locally: falls back to the default HF_TOKEN / HF_ENDPOINT.
+fn prod_api() -> Option<HFClient> {
+    if is_hub_ci() {
+        let token = std::env::var("HF_PROD_TOKEN").ok()?;
+        Some(
+            HFClientBuilder::new()
+                .token(token)
+                .endpoint("https://huggingface.co")
+                .build()
+                .expect("Failed to create prod HFClient"),
+        )
+    } else {
+        api()
+    }
+}
+
+/// Like `prod_api()` but with a custom cache directory.
+fn prod_api_with_cache(cache_dir: &std::path::Path) -> HFClient {
+    if is_hub_ci() {
+        let token = std::env::var("HF_PROD_TOKEN").expect("HF_PROD_TOKEN required in CI for prod repo tests");
+        HFClientBuilder::new()
+            .token(token)
+            .endpoint("https://huggingface.co")
+            .cache_dir(cache_dir)
+            .build()
+            .expect("Failed to create prod HFClient")
+    } else {
+        HFClientBuilder::new()
+            .cache_dir(cache_dir)
+            .build()
+            .expect("Failed to create HFClient")
+    }
 }
 
 fn is_hub_ci() -> bool {
@@ -27,7 +69,7 @@ fn is_hub_ci() -> bool {
 
 fn test_model_parts() -> (&'static str, &'static str) {
     if is_hub_ci() {
-        ("huggingface-hub-rust-test-user", "gpt2")
+        ("__DUMMY_TRANSFORMERS_USER__", "gpt2")
     } else {
         ("", "gpt2")
     }
@@ -35,7 +77,7 @@ fn test_model_parts() -> (&'static str, &'static str) {
 
 fn test_model_repo_id() -> &'static str {
     if is_hub_ci() {
-        "huggingface-hub-rust-test-user/gpt2"
+        "__DUMMY_TRANSFORMERS_USER__/gpt2"
     } else {
         "gpt2"
     }
@@ -43,7 +85,7 @@ fn test_model_repo_id() -> &'static str {
 
 fn test_dataset_parts() -> (&'static str, &'static str) {
     if is_hub_ci() {
-        ("huggingface-hub-rust-test-user", "hacker-news")
+        ("__DUMMY_TRANSFORMERS_USER__", "hacker-news")
     } else {
         ("rajpurkar", "squad")
     }
@@ -51,7 +93,7 @@ fn test_dataset_parts() -> (&'static str, &'static str) {
 
 fn test_dataset_repo_id() -> &'static str {
     if is_hub_ci() {
-        "huggingface-hub-rust-test-user/hacker-news"
+        "__DUMMY_TRANSFORMERS_USER__/hacker-news"
     } else {
         "rajpurkar/squad"
     }
@@ -59,7 +101,7 @@ fn test_dataset_repo_id() -> &'static str {
 
 fn test_model_cache_fragment() -> &'static str {
     if is_hub_ci() {
-        "huggingface-hub-rust-test-user--gpt2"
+        "__DUMMY_TRANSFORMERS_USER__--gpt2"
     } else {
         "gpt2"
     }
@@ -67,7 +109,7 @@ fn test_model_cache_fragment() -> &'static str {
 
 fn test_dataset_cache_fragment() -> &'static str {
     if is_hub_ci() {
-        "datasets--huggingface-hub-rust-test-user--hacker-news"
+        "datasets--__DUMMY_TRANSFORMERS_USER__--hacker-news"
     } else {
         "datasets--rajpurkar--squad"
     }
@@ -1018,7 +1060,7 @@ async fn test_interop_python_downloads_first() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").unwrap();
+    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
 
     let script = format!(
         r#"
@@ -1066,7 +1108,7 @@ async fn test_interop_rust_downloads_first() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").unwrap();
+    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
 
     let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
     api.model(test_model_parts().0, test_model_parts().1)
@@ -1106,7 +1148,7 @@ async fn test_interop_mixed_partial_downloads() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").unwrap();
+    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
 
     let script = format!(
         r#"
@@ -1172,7 +1214,7 @@ async fn test_interop_python_snapshot_rust_snapshot() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").unwrap();
+    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
 
     let script = format!(
         r#"
@@ -1228,7 +1270,7 @@ async fn test_interop_rust_writes_python_validates_cache() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").unwrap();
+    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
 
     // Rust snapshot_download: multiple files into cache
     let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
@@ -1326,9 +1368,9 @@ print("ALL_CHECKS_PASSED")
 #[cfg(feature = "xet")]
 #[tokio::test]
 async fn test_xet_download_to_cache() {
-    let Some(_) = api() else { return };
+    let Some(_) = prod_api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = prod_api_with_cache(cache_dir.path());
 
     let path = match api
         .model("mcpotato", "42-xet-test-repo")
@@ -1403,9 +1445,9 @@ async fn test_xet_download_to_cache() {
 #[cfg(feature = "xet")]
 #[tokio::test]
 async fn test_xet_snapshot_download_to_cache() {
-    let Some(_) = api() else { return };
+    let Some(_) = prod_api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = prod_api_with_cache(cache_dir.path());
 
     let snapshot_dir = match api
         .model("mcpotato", "42-xet-test-repo")
@@ -1437,9 +1479,9 @@ async fn test_xet_snapshot_download_to_cache() {
 #[cfg(feature = "xet")]
 #[tokio::test]
 async fn test_xet_cache_hit_second_download() {
-    let Some(_) = api() else { return };
+    let Some(_) = prod_api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = prod_api_with_cache(cache_dir.path());
 
     let repo = api.model("mcpotato", "42-xet-test-repo");
 
@@ -1487,7 +1529,7 @@ async fn test_interop_rust_no_exist_python_reads() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").unwrap();
+    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
 
     // Rust: trigger a 404 to create a .no_exist marker
     let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
@@ -1542,7 +1584,7 @@ async fn test_interop_rust_ref_python_reads() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").unwrap();
+    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
 
     // Rust: download to create refs/main
     let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
@@ -1584,7 +1626,7 @@ async fn test_interop_python_no_exist_rust_reads() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").unwrap();
+    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
 
     // Python: trigger 404 to create .no_exist marker
     let script = format!(
@@ -1634,7 +1676,7 @@ async fn test_interop_python_ref_rust_local_files_only() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").unwrap();
+    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
 
     // Python downloads file (creates refs/main + blob + symlink)
     let script = format!(
@@ -1680,7 +1722,7 @@ async fn test_interop_rust_snapshot_python_snapshot_reuse() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").unwrap();
+    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
 
     // Rust snapshot_download first
     let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
@@ -1728,7 +1770,7 @@ async fn test_interop_dataset_repo_type() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").unwrap();
+    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
 
     // Rust downloads a dataset file
     let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
@@ -1772,7 +1814,7 @@ async fn test_interop_symlink_target_format() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").unwrap();
+    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
 
     // Python downloads file — creates the canonical symlink format
     let script = format!(
@@ -1819,7 +1861,7 @@ async fn test_interop_conditional_request_reuse() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").unwrap();
+    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
 
     // Python downloads file — creates blob + symlink + ref
     let script = format!(
@@ -1871,7 +1913,7 @@ async fn test_interop_scan_cache_counts_match() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").unwrap();
+    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
 
     // Download multiple files via both libraries to populate the cache
     let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();

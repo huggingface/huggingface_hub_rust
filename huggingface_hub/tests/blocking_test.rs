@@ -14,10 +14,15 @@ use huggingface_hub::types::*;
 use huggingface_hub::{HFClientBuilder, HFClientSync, RepoInfo, RepoInfoParams};
 
 fn sync_api() -> Option<HFClientSync> {
-    if std::env::var("HF_TOKEN").is_err() {
-        return None;
-    }
-    let api = HFClientBuilder::new().build().expect("Failed to create HFClient");
+    let api = if is_hub_ci() {
+        let token = std::env::var("HF_CI_TOKEN").ok()?;
+        HFClientBuilder::new().token(token).build().expect("Failed to create HFClient")
+    } else {
+        if std::env::var("HF_TOKEN").is_err() {
+            return None;
+        }
+        HFClientBuilder::new().build().expect("Failed to create HFClient")
+    };
     Some(HFClientSync::from_api(api).expect("Failed to create HFClientSync"))
 }
 
@@ -37,7 +42,7 @@ fn test_org() -> &'static str {
 
 fn test_user() -> &'static str {
     if is_hub_ci() {
-        "huggingface-hub-rust-test-user"
+        "__DUMMY_TRANSFORMERS_USER__"
     } else {
         "julien-c"
     }
@@ -49,7 +54,7 @@ fn test_model_author() -> &'static str {
 
 fn test_model_repo() -> &'static str {
     if is_hub_ci() {
-        "huggingface-hub-rust-test-user/gpt2"
+        "__DUMMY_TRANSFORMERS_USER__/gpt2"
     } else {
         "openai-community/gpt2"
     }
@@ -57,7 +62,7 @@ fn test_model_repo() -> &'static str {
 
 fn test_dataset_repo() -> &'static str {
     if is_hub_ci() {
-        "huggingface-hub-rust-test-user/hacker-news"
+        "__DUMMY_TRANSFORMERS_USER__/hacker-news"
     } else {
         "xet-team/xet-spec-reference-files"
     }

@@ -31,10 +31,9 @@ use tokio::sync::OnceCell;
 static WHOAMI_USERNAME: OnceCell<String> = OnceCell::const_new();
 
 fn api() -> Option<HFClient> {
-    if std::env::var("HF_TOKEN").is_err() {
-        return None;
-    }
-    Some(HFClientBuilder::new().build().expect("Failed to create HFClient"))
+    // In CI (HF_ENDPOINT=hub-ci), use HF_CI_TOKEN. Locally, use HF_TOKEN.
+    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).ok()?;
+    Some(HFClientBuilder::new().token(token).build().expect("Failed to create HFClient"))
 }
 
 fn write_enabled() -> bool {
