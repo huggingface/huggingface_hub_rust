@@ -832,7 +832,7 @@ async fn test_get_space_runtime() {
 #[cfg(feature = "spaces")]
 #[tokio::test]
 async fn test_duplicate_space() {
-    let Some(api) = api() else { return };
+    let Some(api) = prod_api() else { return };
     if !write_enabled() {
         return;
     }
