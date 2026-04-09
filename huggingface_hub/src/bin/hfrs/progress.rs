@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use huggingface_hub::{DownloadEvent, FileStatus, ProgressEvent, ProgressHandler, UploadEvent, UploadPhase};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
+/// Renders indicatif progress bars in the terminal for download and upload operations.
 pub struct CliProgressHandler {
     multi: MultiProgress,
     state: Mutex<ProgressState>,
@@ -44,6 +45,7 @@ fn truncate_filename(name: &str, max_len: usize) -> String {
 }
 
 impl CliProgressHandler {
+    /// Create a new handler with an empty `MultiProgress` group.
     pub fn new() -> Self {
         Self {
             multi: MultiProgress::new(),
@@ -244,6 +246,7 @@ impl ProgressHandler for CliProgressHandler {
     }
 }
 
+/// Returns `true` when the `HF_HUB_DISABLE_PROGRESS_BARS` env var is set.
 pub fn progress_disabled() -> bool {
     std::env::var("HF_HUB_DISABLE_PROGRESS_BARS").is_ok()
 }

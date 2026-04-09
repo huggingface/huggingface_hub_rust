@@ -3,6 +3,8 @@ use std::sync::Arc;
 /// Trait implemented by consumers to receive progress updates.
 /// Implementations must be fast — avoid blocking I/O in on_progress().
 pub trait ProgressHandler: Send + Sync {
+    /// Called by the library each time progress changes.
+    /// Receives a reference to avoid allocation; clone if you need to store it.
     fn on_progress(&self, event: &ProgressEvent);
 }
 
@@ -72,8 +74,11 @@ pub struct FileProgress {
 /// Lifecycle status of a single file within a transfer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileStatus {
+    /// File transfer has been queued but no bytes received yet.
     Started,
+    /// Bytes are actively being transferred.
     InProgress,
+    /// All bytes have been received and the file is written to disk.
     Complete,
 }
 
