@@ -45,6 +45,8 @@ pub(crate) struct HFClientInner {
     pub(crate) token: Option<String>,
     pub(crate) cache_dir: std::path::PathBuf,
     pub(crate) cache_enabled: bool,
+    #[cfg(feature = "xet")]
+    pub(crate) xet_session: std::sync::Mutex<Option<xet::xet_session::XetSession>>,
 }
 
 /// Builder for [`HFClient`].
@@ -182,6 +184,8 @@ impl HFClientBuilder {
                 token,
                 cache_dir,
                 cache_enabled: self.cache_enabled.unwrap_or(true),
+                #[cfg(feature = "xet")]
+                xet_session: std::sync::Mutex::new(None),
             }),
         })
     }
@@ -300,6 +304,43 @@ impl HFClient {
     }
 }
 
+#[cfg(feature = "xet")]
+impl HFClient {
+    /// Get or lazily create the cached XetSession.
+    ///
+    /// On first call, builds a new session and caches it. On subsequent calls,
+    /// probes the cached session's health via a lightweight factory call. If
+    /// the session is permanently poisoned (e.g. after abort), it is replaced
+    /// with a fresh one transparently.
+    ///
+    /// Returns a cheap clone (Arc increment) of the shared session.
+    pub(crate) fn xet_session(&self) -> Result<xet::xet_session::XetSession> {
+        let mut guard = self
+            .inner
+            .xet_session
+            .lock()
+            .map_err(|e| HFError::Other(format!("xet session mutex poisoned: {e}")))?;
+
+        if let Some(ref session) = *guard {
+            match session.new_file_download_group() {
+                Ok(_probe) => return Ok(session.clone()),
+                Err(e) if crate::xet::is_session_poisoned(&e) => {
+                    tracing::warn!(error = %e, "cached XetSession poisoned, replacing");
+                },
+                Err(e) => {
+                    return Err(HFError::Other(format!("XetSession health check failed: {e}")));
+                },
+            }
+        }
+
+        let session = xet::xet_session::XetSessionBuilder::new()
+            .build()
+            .map_err(|e| HFError::Other(format!("Failed to build xet session: {e}")))?;
+        *guard = Some(session.clone());
+        Ok(session)
+    }
+}
+
 /// Resolve token from environment or token file.
 /// Priority: HF_TOKEN env → HF_TOKEN_PATH file → $HF_HOME/token file.
 fn resolve_token() -> Option<String> {
@@ -356,5 +397,23 @@ mod tests {
         let api = HFClientBuilder::new().build().unwrap();
         let path_str = api.cache_dir().to_string_lossy();
         assert!(path_str.contains("huggingface") && path_str.ends_with("hub"));
+    }
+
+    #[cfg(feature = "xet")]
+    #[test]
+    fn test_xet_session_lazy_creation() {
+        let client = HFClientBuilder::new().build().unwrap();
+        assert!(client.inner.xet_session.lock().unwrap().is_none());
+        let _s1 = client.xet_session().unwrap();
+        assert!(client.inner.xet_session.lock().unwrap().is_some());
+    }
+
+    #[cfg(feature = "xet")]
+    #[test]
+    fn test_xet_session_shared_across_clones() {
+        let client = HFClientBuilder::new().build().unwrap();
+        let clone = client.clone();
+        let _s1 = client.xet_session().unwrap();
+        assert!(clone.inner.xet_session.lock().unwrap().is_some());
     }
 }
