@@ -13,6 +13,7 @@ use crate::client::HFClient;
 use crate::constants;
 use crate::error::{HFError, Result};
 use crate::repository::HFRepository;
+use crate::types::progress::Progress;
 use crate::types::{AddSource, GetXetTokenParams, RepoType};
 
 #[derive(Debug, Deserialize)]
@@ -279,7 +280,12 @@ impl HFRepository {
     /// Upload files using the xet protocol.
     /// Fetches a write token and uses xet-session's UploadCommit.
     /// Returns the XetFileInfo (hash + size) for each uploaded file.
-    pub(crate) async fn xet_upload(&self, files: &[(String, AddSource)], revision: &str) -> Result<Vec<XetFileInfo>> {
+    pub(crate) async fn xet_upload(
+        &self,
+        files: &[(String, AddSource)],
+        revision: &str,
+        progress: &Progress,
+    ) -> Result<Vec<XetFileInfo>> {
         let repo_path = self.repo_path();
         let repo_type = Some(self.repo_type);
         tracing::info!(repo = repo_path.as_str(), "fetching xet write token");
@@ -320,11 +326,31 @@ impl HFRepository {
         }
 
         tracing::info!(file_count = files.len(), "committing xet uploads");
+        if let Some(ref handler) = *progress {
+            use crate::types::progress::{ProgressEvent, UploadEvent, UploadPhase};
+            let report = commit.progress();
+            handler.on_progress(&ProgressEvent::Upload(UploadEvent::Progress {
+                phase: UploadPhase::Uploading,
+                bytes_completed: report.total_bytes_completed,
+                total_bytes: report.total_bytes,
+                bytes_per_sec: report.total_bytes_completion_rate,
+            }));
+        }
         let results = commit
             .commit()
             .await
             .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?;
         tracing::info!("xet upload commit complete");
+        if let Some(ref handler) = *progress {
+            use crate::types::progress::{ProgressEvent, UploadEvent, UploadPhase};
+            let report = commit.progress();
+            handler.on_progress(&ProgressEvent::Upload(UploadEvent::Progress {
+                phase: UploadPhase::Uploading,
+                bytes_completed: report.total_bytes_completed,
+                total_bytes: report.total_bytes,
+                bytes_per_sec: report.total_bytes_completion_rate,
+            }));
+        }
 
         let mut xet_file_infos = Vec::with_capacity(files.len());
         for task_id in &task_ids_in_order {

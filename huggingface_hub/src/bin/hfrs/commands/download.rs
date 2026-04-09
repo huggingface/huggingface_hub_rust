@@ -1,11 +1,13 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{HFClient, RepoDownloadFileParams, RepoSnapshotDownloadParams};
+use huggingface_hub::{HFClient, Progress, RepoDownloadFileParams, RepoSnapshotDownloadParams};
 
 use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
+use crate::progress::{self, CliProgressHandler};
 
 /// Download files from the Hub
 #[derive(ClapArgs)]
@@ -53,6 +55,12 @@ pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
     let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
 
+    let handler: Progress = if args.quiet || progress::progress_disabled() {
+        None
+    } else {
+        Some(Arc::new(CliProgressHandler::new()))
+    };
+
     let path = if args.filenames.len() == 1 && args.include.is_empty() && args.exclude.is_empty() {
         let params = RepoDownloadFileParams {
             filename: args.filenames.into_iter().next().unwrap(),
@@ -60,6 +68,7 @@ pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
             revision: args.revision,
             force_download: if args.force_download { Some(true) } else { None },
             local_files_only: None,
+            progress: handler.clone(),
         };
         repo.download_file(&params).await?
     } else {
@@ -83,6 +92,7 @@ pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
             force_download: if args.force_download { Some(true) } else { None },
             local_files_only: None,
             max_workers: None,
+            progress: handler.clone(),
         };
         repo.snapshot_download(&params).await?
     };

@@ -374,3 +374,128 @@ async fn test_download_stream_range_content_matches_full_download() {
 
     assert_eq!(streamed, &full_bytes[..range_end as usize]);
 }
+
+// --- Progress tracking tests ---
+
+use std::sync::{Arc, Mutex};
+
+use huggingface_hub::{DownloadEvent, FileStatus, ProgressEvent, ProgressHandler};
+
+struct RecordingHandler {
+    events: Mutex<Vec<ProgressEvent>>,
+}
+
+impl RecordingHandler {
+    fn new() -> Self {
+        Self {
+            events: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn events(&self) -> Vec<ProgressEvent> {
+        self.events.lock().unwrap().clone()
+    }
+}
+
+impl ProgressHandler for RecordingHandler {
+    fn on_progress(&self, event: &ProgressEvent) {
+        self.events.lock().unwrap().push(event.clone());
+    }
+}
+
+#[tokio::test]
+async fn test_download_file_with_progress_to_local_dir() {
+    let Some(api) = api() else { return };
+    let (owner, name) = test_model_parts();
+    let repo = model(&api, owner, name);
+
+    let handler = Arc::new(RecordingHandler::new());
+
+    let dir = tempfile::tempdir().unwrap();
+    let params = RepoDownloadFileParams::builder()
+        .filename("config.json")
+        .local_dir(dir.path().to_path_buf())
+        .progress(Some(handler.clone()))
+        .build();
+
+    let path = repo.download_file(&params).await.unwrap();
+    assert!(path.exists());
+
+    let events = handler.events();
+    assert!(!events.is_empty(), "should have received progress events");
+
+    // First event should be Download(Start)
+    assert!(
+        matches!(&events[0], ProgressEvent::Download(DownloadEvent::Start { total_files: 1, .. })),
+        "first event should be Download(Start), got {:?}",
+        &events[0]
+    );
+
+    // Last event should be Download(Complete)
+    assert!(
+        matches!(events.last().unwrap(), ProgressEvent::Download(DownloadEvent::Complete)),
+        "last event should be Download(Complete)"
+    );
+
+    // Should have at least one Progress event with InProgress or Complete
+    let has_progress = events
+        .iter()
+        .any(|e| matches!(e, ProgressEvent::Download(DownloadEvent::Progress { .. })));
+    assert!(has_progress, "should have at least one Progress event");
+
+    // Should have a Complete file status
+    let has_file_complete = events.iter().any(|e| {
+        if let ProgressEvent::Download(DownloadEvent::Progress { files }) = e {
+            files.iter().any(|f| f.status == FileStatus::Complete)
+        } else {
+            false
+        }
+    });
+    assert!(has_file_complete, "should have a file Complete status event");
+}
+
+#[tokio::test]
+async fn test_download_file_with_progress_to_cache() {
+    let Some(api) = api() else { return };
+    let (owner, name) = test_model_parts();
+    let repo = model(&api, owner, name);
+
+    let handler = Arc::new(RecordingHandler::new());
+
+    let params = RepoDownloadFileParams::builder()
+        .filename("config.json")
+        .force_download(true)
+        .progress(Some(handler.clone()))
+        .build();
+
+    let path = repo.download_file(&params).await.unwrap();
+    assert!(path.exists());
+
+    let events = handler.events();
+    assert!(!events.is_empty(), "should have received progress events");
+
+    assert!(
+        matches!(&events[0], ProgressEvent::Download(DownloadEvent::Start { total_files: 1, .. })),
+        "first event should be Download(Start)"
+    );
+    assert!(
+        matches!(events.last().unwrap(), ProgressEvent::Download(DownloadEvent::Complete)),
+        "last event should be Download(Complete)"
+    );
+}
+
+#[tokio::test]
+async fn test_download_with_no_progress_handler() {
+    let Some(api) = api() else { return };
+    let (owner, name) = test_model_parts();
+    let repo = model(&api, owner, name);
+
+    let dir = tempfile::tempdir().unwrap();
+    let params = RepoDownloadFileParams::builder()
+        .filename("config.json")
+        .local_dir(dir.path().to_path_buf())
+        .build();
+
+    let path = repo.download_file(&params).await.unwrap();
+    assert!(path.exists());
+}

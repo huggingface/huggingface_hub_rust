@@ -1,6 +1,7 @@
 mod cli;
 mod commands;
 mod output;
+mod progress;
 mod util;
 
 use std::io::IsTerminal;

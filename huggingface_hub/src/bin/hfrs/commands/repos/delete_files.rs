@@ -51,6 +51,7 @@ pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
         revision: args.revision,
         create_pr: if args.create_pr { Some(true) } else { None },
         parent_commit: None,
+        progress: None,
     };
     let result = repo.create_commit(&params).await?;
     let url = result.commit_url.or(result.pr_url).unwrap_or_default();
