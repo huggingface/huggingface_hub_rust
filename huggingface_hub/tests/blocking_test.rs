@@ -10,11 +10,6 @@
 //!
 //! Run: HF_TOKEN=hf_xxx cargo test -p huggingface-hub --features blocking --test blocking_test
 
-use huggingface_hub::repository::{
-    RepoCreateBranchParams, RepoCreateCommitParams, RepoDeleteBranchParams, RepoDownloadFileParams,
-    RepoFileExistsParams, RepoGetCommitDiffParams, RepoGetRawDiffParams, RepoListCommitsParams, RepoListFilesParams,
-    RepoListRefsParams, RepoListTreeParams, RepoRevisionExistsParams, RepoUploadFileParams, RepoUploadFolderParams,
-};
 use huggingface_hub::types::*;
 use huggingface_hub::{HFClientBuilder, HFClientSync, RepoInfo, RepoInfoParams};
 

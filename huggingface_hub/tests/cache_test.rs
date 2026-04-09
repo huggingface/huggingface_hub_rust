@@ -9,8 +9,7 @@
 
 use std::path::Path;
 
-use huggingface_hub::repository::{RepoDownloadFileParams, RepoSnapshotDownloadParams};
-use huggingface_hub::{HFClient, HFClientBuilder, HFError};
+use huggingface_hub::{HFClient, HFClientBuilder, HFError, RepoDownloadFileParams, RepoSnapshotDownloadParams};
 use serial_test::serial;
 
 fn api() -> Option<HFClient> {

@@ -5,11 +5,11 @@ use url::Url;
 use crate::constants;
 use crate::diff::HFFileDiff;
 use crate::error::Result;
-use crate::repository::{
-    HFRepository, RepoCreateBranchParams, RepoCreateTagParams, RepoDeleteBranchParams, RepoDeleteTagParams,
+use crate::repository::HFRepository;
+use crate::types::{
+    GitCommitInfo, GitRefs, RepoCreateBranchParams, RepoCreateTagParams, RepoDeleteBranchParams, RepoDeleteTagParams,
     RepoGetCommitDiffParams, RepoGetRawDiffParams, RepoListCommitsParams, RepoListRefsParams,
 };
-use crate::types::{GitCommitInfo, GitRefs};
 
 impl HFRepository {
     /// Stream commit history for the repository at a given revision.
