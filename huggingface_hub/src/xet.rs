@@ -13,7 +13,7 @@ use crate::client::HFClient;
 use crate::constants;
 use crate::error::{HFError, Result};
 use crate::repository::HFRepository;
-use crate::types::progress::{Progress, ProgressEvent, UploadEvent, UploadPhase};
+use crate::types::progress::{self, DownloadEvent, Progress, ProgressEvent, UploadEvent, UploadPhase};
 use crate::types::{AddSource, GetXetTokenParams, RepoType};
 
 #[derive(Debug, Deserialize)]
@@ -73,6 +73,25 @@ fn build_xet_session() -> Result<XetSession> {
         .map_err(|e| HFError::Other(format!("Failed to build xet session: {e}")))
 }
 
+fn spawn_download_progress_poller(
+    progress: &Progress,
+    group: &xet::xet_session::XetFileDownloadGroup,
+) -> Option<tokio::task::JoinHandle<()>> {
+    let handler = progress.as_ref()?.clone();
+    let group = group.clone();
+    Some(tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            let report = group.progress();
+            handler.on_progress(&ProgressEvent::Download(DownloadEvent::AggregateProgress {
+                bytes_completed: report.total_bytes_completed,
+                total_bytes: report.total_bytes,
+                bytes_per_sec: report.total_bytes_completion_rate,
+            }));
+        }
+    }))
+}
+
 pub(crate) struct XetBatchFile {
     pub hash: String,
     pub file_size: u64,
@@ -86,6 +105,7 @@ impl HFRepository {
         filename: &str,
         local_dir: &std::path::Path,
         head_response: &reqwest::Response,
+        progress: &Progress,
     ) -> Result<PathBuf> {
         let repo_path = self.repo_path();
         let repo_type = Some(self.repo_type);
@@ -123,10 +143,12 @@ impl HFRepository {
             .await
             .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?;
 
-        group
-            .finish()
-            .await
-            .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?;
+        let poll_handle = spawn_download_progress_poller(progress, &group);
+        let result = group.finish().await;
+        if let Some(h) = poll_handle {
+            h.abort();
+        }
+        result.map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?;
 
         Ok(dest_path)
     }
@@ -137,6 +159,7 @@ impl HFRepository {
         file_hash: &str,
         file_size: u64,
         path: &std::path::Path,
+        progress: &Progress,
     ) -> Result<()> {
         let repo_path = self.repo_path();
         let repo_type = Some(self.repo_type);
@@ -169,16 +192,23 @@ impl HFRepository {
             .await
             .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?;
 
-        group
-            .finish()
-            .await
-            .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?;
+        let poll_handle = spawn_download_progress_poller(progress, &group);
+        let result = group.finish().await;
+        if let Some(h) = poll_handle {
+            h.abort();
+        }
+        result.map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?;
 
         tokio::fs::rename(&incomplete_path, path).await?;
         Ok(())
     }
 
-    pub(crate) async fn xet_download_batch(&self, revision: &str, files: &[XetBatchFile]) -> Result<()> {
+    pub(crate) async fn xet_download_batch(
+        &self,
+        revision: &str,
+        files: &[XetBatchFile],
+        progress: &Progress,
+    ) -> Result<()> {
         if files.is_empty() {
             return Ok(());
         }
@@ -219,10 +249,12 @@ impl HFRepository {
             incomplete_paths.push((incomplete, file.path.clone()));
         }
 
-        group
-            .finish()
-            .await
-            .map_err(|e| HFError::Other(format!("Xet batch download failed: {e}")))?;
+        let poll_handle = spawn_download_progress_poller(progress, &group);
+        let result = group.finish().await;
+        if let Some(h) = poll_handle {
+            h.abort();
+        }
+        result.map_err(|e| HFError::Other(format!("Xet batch download failed: {e}")))?;
 
         for (incomplete, final_path) in &incomplete_paths {
             tokio::fs::rename(incomplete, final_path).await?;
@@ -326,29 +358,39 @@ impl HFRepository {
         }
 
         tracing::info!(file_count = files.len(), "committing xet uploads");
-        if let Some(ref handler) = *progress {
-            let report = commit.progress();
-            handler.on_progress(&ProgressEvent::Upload(UploadEvent::Progress {
-                phase: UploadPhase::Uploading,
-                bytes_completed: report.total_bytes_completed,
-                total_bytes: report.total_bytes,
-                bytes_per_sec: report.total_bytes_completion_rate,
-            }));
-        }
+        let poll_handle = progress.as_ref().map(|handler| {
+            let handler = handler.clone();
+            let commit = commit.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    let report = commit.progress();
+                    handler.on_progress(&ProgressEvent::Upload(UploadEvent::Progress {
+                        phase: UploadPhase::Uploading,
+                        bytes_completed: report.total_bytes_completed,
+                        total_bytes: report.total_bytes,
+                        bytes_per_sec: report.total_bytes_completion_rate,
+                    }));
+                }
+            })
+        });
         let results = commit
             .commit()
             .await
             .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?;
-        tracing::info!("xet upload commit complete");
-        if let Some(ref handler) = *progress {
-            let report = commit.progress();
-            handler.on_progress(&ProgressEvent::Upload(UploadEvent::Progress {
-                phase: UploadPhase::Uploading,
-                bytes_completed: report.total_bytes_completed,
-                total_bytes: report.total_bytes,
-                bytes_per_sec: report.total_bytes_completion_rate,
-            }));
+        if let Some(h) = poll_handle {
+            h.abort();
         }
+        tracing::info!("xet upload commit complete");
+        progress::emit(
+            progress,
+            ProgressEvent::Upload(UploadEvent::Progress {
+                phase: UploadPhase::Uploading,
+                bytes_completed: results.progress.total_bytes_completed,
+                total_bytes: results.progress.total_bytes,
+                bytes_per_sec: results.progress.total_bytes_completion_rate,
+            }),
+        );
 
         let mut xet_file_infos = Vec::with_capacity(files.len());
         for task_id in &task_ids_in_order {

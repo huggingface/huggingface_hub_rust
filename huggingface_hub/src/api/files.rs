@@ -108,6 +108,21 @@ impl HFRepository {
     ///
     /// Endpoint: GET {endpoint}/{prefix}{repo_id}/resolve/{revision}/{filename}
     pub async fn download_file(&self, params: &RepoDownloadFileParams) -> Result<PathBuf> {
+        progress::emit(
+            &params.progress,
+            ProgressEvent::Download(DownloadEvent::Start {
+                total_files: 1,
+                total_bytes: 0,
+            }),
+        );
+        let result = self.download_file_inner(params).await;
+        if result.is_ok() {
+            progress::emit(&params.progress, ProgressEvent::Download(DownloadEvent::Complete));
+        }
+        result
+    }
+
+    async fn download_file_inner(&self, params: &RepoDownloadFileParams) -> Result<PathBuf> {
         if params.local_dir.is_some() {
             self.download_file_to_local_dir(params).await
         } else {
@@ -261,20 +276,12 @@ impl HFRepository {
         let file_size = extract_file_size(&head_response).unwrap_or(0);
         let has_xet_hash = head_response.headers().get(constants::HEADER_X_XET_HASH).is_some();
 
-        progress::emit(
-            &params.progress,
-            ProgressEvent::Download(DownloadEvent::Start {
-                total_files: 1,
-                total_bytes: file_size,
-            }),
-        );
-
         #[cfg(feature = "xet")]
         {
             if has_xet_hash {
                 let local_dir = params.local_dir.as_ref().unwrap();
                 let result = self
-                    .xet_download_to_local_dir(revision, &params.filename, local_dir, &head_response)
+                    .xet_download_to_local_dir(revision, &params.filename, local_dir, &head_response, &params.progress)
                     .await;
                 if result.is_ok() {
                     progress::emit(
@@ -288,7 +295,6 @@ impl HFRepository {
                             }],
                         }),
                     );
-                    progress::emit(&params.progress, ProgressEvent::Download(DownloadEvent::Complete));
                 }
                 return result;
             }
@@ -336,7 +342,6 @@ impl HFRepository {
         )
         .await?;
 
-        progress::emit(&params.progress, ProgressEvent::Download(DownloadEvent::Complete));
         Ok(dest_path)
     }
 
@@ -490,14 +495,6 @@ impl HFRepository {
             0
         });
 
-        progress::emit(
-            &params.progress,
-            ProgressEvent::Download(DownloadEvent::Start {
-                total_files: 1,
-                total_bytes: file_size,
-            }),
-        );
-
         if !status.is_success() && !status.is_redirection() {
             self.hf_client
                 .check_response(
@@ -523,8 +520,20 @@ impl HFRepository {
                 }
                 let _lock = cache::acquire_lock(cache_dir, repo_folder, &etag).await?;
 
-                self.xet_download_to_blob(revision, &xet_hash, file_size, &blob).await?;
+                self.xet_download_to_blob(revision, &xet_hash, file_size, &blob, &params.progress)
+                    .await?;
             }
+            progress::emit(
+                &params.progress,
+                ProgressEvent::Download(DownloadEvent::Progress {
+                    files: vec![FileProgress {
+                        filename: params.filename.clone(),
+                        bytes_completed: file_size,
+                        total_bytes: file_size,
+                        status: FileStatus::Complete,
+                    }],
+                }),
+            );
 
             return finalize_cached_file(cache_dir, repo_folder, revision, &commit_hash, &params.filename, &etag).await;
         }
@@ -567,7 +576,6 @@ impl HFRepository {
         .await?;
         tokio::fs::rename(&incomplete_path, &blob).await?;
 
-        progress::emit(&params.progress, ProgressEvent::Download(DownloadEvent::Complete));
         finalize_cached_file(cache_dir, repo_folder, revision, &commit_hash, &params.filename, &etag).await
     }
 }
@@ -763,7 +771,21 @@ impl HFRepository {
                             path: local_dir.join(&m.filename),
                         })
                         .collect();
-                    self.xet_download_batch(&commit_hash, &batch_files).await
+                    self.xet_download_batch(&commit_hash, &batch_files, &params.progress).await?;
+                    for m in &xet_metas {
+                        progress::emit(
+                            &params.progress,
+                            ProgressEvent::Download(DownloadEvent::Progress {
+                                files: vec![FileProgress {
+                                    filename: m.filename.clone(),
+                                    bytes_completed: m.file_size,
+                                    total_bytes: m.file_size,
+                                    status: FileStatus::Complete,
+                                }],
+                            }),
+                        );
+                    }
+                    Ok(())
                 };
 
                 let non_xet_dl_params = build_download_params(
@@ -822,10 +844,21 @@ impl HFRepository {
                         path: cache::blob_path(cache_dir, &repo_folder, &m.etag),
                     })
                     .collect();
-                self.xet_download_batch(&commit_hash, &batch_files).await?;
+                self.xet_download_batch(&commit_hash, &batch_files, &params.progress).await?;
                 for m in &xet_metas {
                     cache::create_pointer_symlink(cache_dir, &repo_folder, &m.commit_hash, &m.filename, &m.etag)
                         .await?;
+                    progress::emit(
+                        &params.progress,
+                        ProgressEvent::Download(DownloadEvent::Progress {
+                            files: vec![FileProgress {
+                                filename: m.filename.clone(),
+                                bytes_completed: m.file_size,
+                                total_bytes: m.file_size,
+                                status: FileStatus::Complete,
+                            }],
+                        }),
+                    );
                 }
                 drop(locks);
                 Ok(())
@@ -988,7 +1021,7 @@ async fn download_concurrently(
     params: &[RepoDownloadFileParams],
     max_workers: usize,
 ) -> Result<Vec<PathBuf>> {
-    futures::stream::iter(params.iter().map(|p| api.download_file(p)))
+    futures::stream::iter(params.iter().map(|p| api.download_file_inner(p)))
         .buffer_unordered(max_workers)
         .try_collect()
         .await
