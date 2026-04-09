@@ -836,7 +836,10 @@ async fn test_duplicate_space() {
     if !write_enabled() {
         return;
     }
-    let username = cached_username().await;
+    // Must use prod_api because the source space only exists on production.
+    // Cannot reuse cached_username() here — it resolves via api() which targets
+    // hub-ci in CI, a different user than the prod token.
+    let username = api.whoami().await.expect("whoami failed").username;
     let to_id = format!("{}/hub-rust-test-dup-space-{}", username, uuid_v4_short());
 
     let params = DuplicateSpaceParams::builder()
