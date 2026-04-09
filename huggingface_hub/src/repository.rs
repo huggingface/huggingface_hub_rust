@@ -462,31 +462,10 @@ pub struct SpaceVariableDeleteParams {
     pub key: String,
 }
 
-/// Handle for operations on a single HuggingFace Storage Bucket.
-///
-/// Obtain via [`HFClient::bucket`]. Every method adds `Authorization: Bearer <token>`
-/// using the token configured on the client.
-#[derive(Clone)]
-pub struct HFBucket {
-    pub(crate) client: crate::HFClient,
-    pub namespace: String,
-    pub repo: String,
-}
-
 impl HFClient {
     /// Create an [`HFRepository`] handle for any repo type.
     pub fn repo(&self, repo_type: RepoType, owner: impl Into<String>, name: impl Into<String>) -> HFRepository {
         HFRepository::new(self.clone(), repo_type, owner, name)
-    }
-
-    /// Creates a handle for operations on a single Storage Bucket.
-    /// No I/O is performed.
-    pub fn bucket(&self, namespace: impl Into<String>, repo: impl Into<String>) -> crate::repository::HFBucket {
-        crate::repository::HFBucket {
-            client: self.clone(),
-            namespace: namespace.into(),
-            repo: repo.into(),
-        }
     }
 
     /// Create an [`HFRepository`] handle for a model repository.

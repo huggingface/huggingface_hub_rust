@@ -3,12 +3,12 @@ use std::collections::VecDeque;
 use futures::Stream;
 use url::Url;
 
+use crate::buckets::HFBucket;
 use crate::error::{HFError, NotFoundContext};
 use crate::pagination::parse_link_header_next;
-use crate::repository::HFBucket;
 use crate::types::{
-    BatchOp, BatchResult, BucketCreated, BucketOverview, CreateBucketParams, ListTreeParams, PathInfo, ResolvedFile,
-    TreeEntry, UpdateBucketParams, XetToken,
+    BatchOp, BatchResult, BucketCreated, BucketOverview, CreateBucketParams, ListTreeParams, ResolvedFile, TreeEntry,
+    UpdateBucketParams, XetToken,
 };
 use crate::{HFClient, Result};
 
@@ -54,7 +54,7 @@ impl HFBucket {
     }
 
     /// Returns metadata about this bucket.
-    pub async fn get(&self) -> Result<BucketOverview> {
+    pub async fn info(&self) -> Result<BucketOverview> {
         let resp = self
             .client
             .inner
@@ -65,20 +65,6 @@ impl HFBucket {
             .await?;
         let resp = check_bucket_response(resp, &self.repo_id(), NotFoundContext::Repo).await?;
         Ok(resp.json().await?)
-    }
-
-    /// Permanently deletes this bucket and all its files.
-    pub async fn delete(&self) -> Result<()> {
-        let resp = self
-            .client
-            .inner
-            .client
-            .delete(self.bucket_url())
-            .headers(self.client.auth_headers())
-            .send()
-            .await?;
-        check_bucket_response(resp, &self.repo_id(), NotFoundContext::Repo).await?;
-        Ok(())
     }
 
     /// Updates visibility or CDN configuration for this bucket.
@@ -183,7 +169,9 @@ impl HFBucket {
     }
 
     /// Returns metadata for a batch of file paths.
-    pub async fn get_paths_info(&self, paths: Vec<String>) -> Result<Vec<PathInfo>> {
+    ///
+    /// Paths that do not exist in the bucket are silently omitted from the result.
+    pub async fn get_paths_info(&self, paths: Vec<String>) -> Result<Vec<TreeEntry>> {
         #[derive(serde::Serialize)]
         struct Body {
             paths: Vec<String>,
@@ -332,6 +320,15 @@ impl HFBucket {
 }
 
 impl HFClient {
+    /// Permanently deletes a bucket and all of its files.
+    pub async fn delete_bucket(&self, namespace: &str, repo: &str) -> Result<()> {
+        let url = format!("{}/api/buckets/{}/{}", self.inner.endpoint, namespace, repo);
+        let repo_id = format!("{}/{}", namespace, repo);
+        let resp = self.inner.client.delete(&url).headers(self.auth_headers()).send().await?;
+        check_bucket_response(resp, &repo_id, NotFoundContext::Repo).await?;
+        Ok(())
+    }
+
     /// Creates a new bucket owned by `namespace`.
     pub async fn create_bucket(
         &self,
@@ -355,10 +352,47 @@ impl HFClient {
 
     /// Returns a paginated stream of all buckets owned by `namespace`.
     /// Pagination is driven by `Link` response headers.
-    pub fn list_buckets(&self, namespace: &str) -> impl Stream<Item = Result<BucketOverview>> + '_ {
-        let url = Url::parse(&format!("{}/api/buckets/{}", self.inner.endpoint, namespace))
-            .expect("endpoint is a valid base URL");
-        self.paginate(url, vec![], None)
+    pub fn list_buckets(&self, namespace: &str) -> Result<impl Stream<Item = Result<BucketOverview>> + '_> {
+        let url = Url::parse(&format!("{}/api/buckets/{}", self.inner.endpoint, namespace))?;
+        Ok(self.paginate(url, vec![], None))
+    }
+}
+
+sync_api! {
+    impl HFBucket -> HFBucketSync {
+        fn info(&self) -> Result<BucketOverview>;
+        fn update_settings(&self, params: UpdateBucketParams) -> Result<()>;
+        fn batch_files(&self, ops: Vec<BatchOp>) -> Result<BatchResult>;
+        fn get_paths_info(&self, paths: Vec<String>) -> Result<Vec<TreeEntry>>;
+        fn get_xet_write_token(&self) -> Result<XetToken>;
+        fn get_xet_read_token(&self) -> Result<XetToken>;
+        fn resolve_file(&self, path: &str) -> Result<ResolvedFile>;
+    }
+}
+
+sync_api_stream! {
+    impl HFBucket -> HFBucketSync {
+        fn list_tree(&self, path: &str, params: ListTreeParams) -> TreeEntry;
+    }
+}
+
+sync_api! {
+    #[cfg(feature = "xet")]
+    impl HFBucket -> HFBucketSync {
+        fn xet_resolve_file(&self, path: &str) -> Result<crate::types::XetFileInfo>;
+    }
+}
+
+sync_api! {
+    impl HFClient -> HFClientSync {
+        fn delete_bucket(&self, namespace: &str, repo: &str) -> Result<()>;
+        fn create_bucket(&self, namespace: &str, repo: &str, params: CreateBucketParams) -> Result<BucketCreated>;
+    }
+}
+
+sync_api_stream! {
+    impl HFClient -> HFClientSync {
+        fn list_buckets(&self, namespace: &str) -> BucketOverview;
     }
 }
 

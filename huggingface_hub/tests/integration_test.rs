@@ -902,13 +902,16 @@ fn test_bucket_name() -> String {
 async fn test_list_buckets() {
     let Some(api) = api() else { return };
     let username = cached_username().await;
-    let buckets: Vec<_> = api
-        .list_buckets(username)
-        .collect::<Vec<_>>()
-        .await
-        .into_iter()
-        .collect::<huggingface_hub::Result<Vec<_>>>()
-        .expect("list_buckets failed");
+    let stream = api.list_buckets(username).expect("list_buckets failed");
+    let buckets: Vec<_> = {
+        use futures::StreamExt;
+        futures::pin_mut!(stream);
+        let mut items = Vec::new();
+        while let Some(item) = stream.next().await {
+            items.push(item.expect("list_buckets item failed"));
+        }
+        items
+    };
     let _ = buckets;
 }
 
@@ -928,7 +931,7 @@ async fn test_create_and_delete_bucket() {
     assert!(created.name.contains(&name));
 
     let bucket = api.bucket(username, &name);
-    let info = bucket.get().await.expect("get failed");
+    let info = bucket.info().await.expect("info failed");
     assert_eq!(info.id, format!("{username}/{name}"));
     assert!(info.private.unwrap());
 
@@ -937,12 +940,12 @@ async fn test_create_and_delete_bucket() {
         .await
         .expect("update_settings failed");
 
-    let info = bucket.get().await.unwrap();
+    let info = bucket.info().await.unwrap();
     assert!(!info.private.unwrap());
 
-    bucket.delete().await.expect("delete failed");
+    api.delete_bucket(username, &name).await.expect("delete_bucket failed");
 
-    assert!(matches!(bucket.get().await, Err(huggingface_hub::HFError::RepoNotFound { .. })));
+    assert!(matches!(bucket.info().await, Err(huggingface_hub::HFError::RepoNotFound { .. })));
 }
 
 #[tokio::test]
@@ -971,7 +974,7 @@ async fn test_bucket_list_tree_empty() {
 
     assert!(entries.is_empty(), "new bucket should have no files");
 
-    bucket.delete().await.unwrap();
+    api.delete_bucket(username, &name).await.unwrap();
 }
 
 #[tokio::test]
@@ -996,5 +999,5 @@ async fn test_get_xet_write_and_read_token() {
     let read_tok = bucket.get_xet_read_token().await.expect("xet read token failed");
     assert!(!read_tok.access_token.is_empty());
 
-    bucket.delete().await.unwrap();
+    api.delete_bucket(username, &name).await.unwrap();
 }

@@ -53,7 +53,7 @@ pub struct HFSpaceSync {
 /// Obtain via [`HFClientSync::bucket`]. All methods block the current thread.
 #[derive(Clone)]
 pub struct HFBucketSync {
-    pub(crate) inner: crate::repository::HFBucket,
+    pub(crate) inner: crate::buckets::HFBucket,
     pub(crate) runtime: Arc<tokio::runtime::Runtime>,
 }
 
@@ -137,19 +137,6 @@ impl HFClientSync {
             runtime: self.runtime.clone(),
         }
     }
-
-    pub fn create_bucket(
-        &self,
-        namespace: &str,
-        repo: &str,
-        params: crate::types::CreateBucketParams,
-    ) -> Result<crate::types::BucketCreated> {
-        self.runtime.block_on(self.inner.create_bucket(namespace, repo, params))
-    }
-
-    pub fn list_buckets(&self, namespace: &str) -> Result<Vec<crate::types::BucketOverview>> {
-        collect_stream(self.runtime.as_ref(), self.inner.list_buckets(namespace))
-    }
 }
 
 impl Deref for HFClientSync {
@@ -180,49 +167,6 @@ impl Deref for HFRepositorySync {
 
     fn deref(&self) -> &Self::Target {
         &self.inner
-    }
-}
-
-impl HFBucketSync {
-    pub fn get(&self) -> Result<crate::types::BucketOverview> {
-        self.runtime.block_on(self.inner.get())
-    }
-
-    pub fn delete(&self) -> Result<()> {
-        self.runtime.block_on(self.inner.delete())
-    }
-
-    pub fn update_settings(&self, params: crate::types::UpdateBucketParams) -> Result<()> {
-        self.runtime.block_on(self.inner.update_settings(params))
-    }
-
-    pub fn batch_files(&self, ops: Vec<crate::types::BatchOp>) -> Result<crate::types::BatchResult> {
-        self.runtime.block_on(self.inner.batch_files(ops))
-    }
-
-    pub fn list_tree(&self, path: &str, params: crate::types::ListTreeParams) -> Result<Vec<crate::types::TreeEntry>> {
-        collect_stream(self.runtime.as_ref(), self.inner.list_tree(path, params)?)
-    }
-
-    pub fn get_paths_info(&self, paths: Vec<String>) -> Result<Vec<crate::types::PathInfo>> {
-        self.runtime.block_on(self.inner.get_paths_info(paths))
-    }
-
-    pub fn get_xet_write_token(&self) -> Result<crate::types::XetToken> {
-        self.runtime.block_on(self.inner.get_xet_write_token())
-    }
-
-    pub fn get_xet_read_token(&self) -> Result<crate::types::XetToken> {
-        self.runtime.block_on(self.inner.get_xet_read_token())
-    }
-
-    pub fn resolve_file(&self, path: &str) -> Result<crate::types::ResolvedFile> {
-        self.runtime.block_on(self.inner.resolve_file(path))
-    }
-
-    #[cfg(feature = "xet")]
-    pub fn xet_resolve_file(&self, path: &str) -> Result<crate::types::XetFileInfo> {
-        self.runtime.block_on(self.inner.xet_resolve_file(path))
     }
 }
 
