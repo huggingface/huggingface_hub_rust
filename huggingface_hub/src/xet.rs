@@ -390,15 +390,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_session_poisoned_classification() {
+    fn test_session_poisoned_positive() {
         assert!(is_session_poisoned(&XetError::UserCancelled("test".into())));
         assert!(is_session_poisoned(&XetError::AlreadyCompleted));
         assert!(is_session_poisoned(&XetError::PreviousTaskError("err".into())));
         assert!(is_session_poisoned(&XetError::KeyboardInterrupt));
+    }
 
-        assert!(!is_session_poisoned(&XetError::Network("timeout".into())));
-        assert!(!is_session_poisoned(&XetError::Authentication("bad token".into())));
-        assert!(!is_session_poisoned(&XetError::Io("disk full".into())));
-        assert!(!is_session_poisoned(&XetError::Internal("bug".into())));
+    #[test]
+    fn test_session_poisoned_negative() {
+        let non_poisoned = [
+            XetError::Network("timeout".into()),
+            XetError::Authentication("bad token".into()),
+            XetError::Io("disk full".into()),
+            XetError::Internal("bug".into()),
+            XetError::Timeout("slow".into()),
+            XetError::NotFound("missing".into()),
+            XetError::DataIntegrity("corrupt".into()),
+            XetError::Configuration("bad config".into()),
+            XetError::Cancelled("cancelled".into()),
+            XetError::WrongRuntimeMode("wrong mode".into()),
+            XetError::TaskError("task failed".into()),
+        ];
+        for err in &non_poisoned {
+            assert!(!is_session_poisoned(err), "{err:?} should NOT be classified as poisoned");
+        }
+    }
+
+    #[test]
+    fn test_xet_error_message_preserved_in_hferror() {
+        let xet_err = XetError::Network("connection reset by peer".into());
+        let hf_err = HFError::Other(format!("Xet download failed: {xet_err}"));
+        let msg = hf_err.to_string();
+        assert!(msg.contains("Xet download failed"), "missing prefix: {msg}");
+        assert!(msg.contains("connection reset by peer"), "missing original message: {msg}");
     }
 }

@@ -166,6 +166,17 @@ impl CliRunner {
         let stderr = String::from_utf8(output.stderr)?;
         Ok((code, stdout, stderr))
     }
+
+    /// Spawn the command as a child process, returning the handle.
+    /// The caller is responsible for waiting/killing.
+    pub fn spawn(&self, args: &[&str]) -> anyhow::Result<std::process::Child> {
+        let mut cmd = self.build_command(args, &[]);
+        let child = cmd
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+        Ok(child)
+    }
 }
 
 pub fn require_cli(runner: &CliRunner) {

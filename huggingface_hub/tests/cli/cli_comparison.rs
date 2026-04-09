@@ -2157,3 +2157,139 @@ fn exit_codes() {
     let (code, _, _) = hfrs.run_full(&["models", "info", "nonexistent-xyz-12345"]).unwrap();
     assert_ne!(code, 0, "failed command should exit non-zero");
 }
+
+// =============================================================================
+// Signal handling tests (xet upload/download abort via SIGINT)
+// =============================================================================
+
+#[cfg(unix)]
+#[test]
+fn signal_abort_during_xet_upload() {
+    use std::time::{Duration, Instant};
+
+    require_token();
+    require_write();
+    let hfrs = CliRunner::hfrs();
+
+    let repo_name = unique_repo_name("hfrs-signal-upload");
+    let full_repo = full_repo(&repo_name);
+
+    hfrs.run_raw(&["repos", "create", &repo_name]).expect("repo creation");
+
+    let tmp = tempfile::tempdir().unwrap();
+    let file_path = tmp.path().join("large_signal_test.bin");
+
+    // 50MB random file — large enough that upload takes a few seconds
+    let mut data = vec![0u8; 50 * 1024 * 1024];
+    rand::Fill::fill(&mut data[..], &mut rand::rng());
+    std::fs::write(&file_path, &data).unwrap();
+    drop(data);
+
+    let mut child = hfrs
+        .spawn(&["upload", &full_repo, file_path.to_str().unwrap()])
+        .expect("failed to spawn upload");
+
+    let pid = child.id();
+
+    // Give the upload time to start the xet transfer
+    std::thread::sleep(Duration::from_secs(2));
+
+    // Send SIGINT to the child process
+    unsafe {
+        libc::kill(pid as libc::pid_t, libc::SIGINT);
+    }
+
+    let start = Instant::now();
+    let timeout = Duration::from_secs(30);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                if start.elapsed() > timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    panic!("CLI did not exit within {timeout:?} after SIGINT");
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            },
+            Err(e) => panic!("error waiting for child: {e}"),
+        }
+    };
+
+    // The process should have terminated (possibly with a signal exit)
+    assert!(!status.success(), "CLI should exit non-zero after SIGINT, got: {status}");
+
+    // Cleanup
+    let _ = hfrs.run_raw(&["repos", "delete", &full_repo]);
+}
+
+#[cfg(unix)]
+#[test]
+fn signal_abort_during_xet_download() {
+    use std::time::{Duration, Instant};
+
+    require_token();
+    require_write();
+    let hfrs = CliRunner::hfrs();
+
+    // First: create a repo with a large xet file
+    let repo_name = unique_repo_name("hfrs-signal-download");
+    let full_repo = full_repo(&repo_name);
+
+    hfrs.run_raw(&["repos", "create", &repo_name]).expect("repo creation");
+
+    let tmp_upload = tempfile::tempdir().unwrap();
+    let upload_path = tmp_upload.path().join("large_for_download.bin");
+
+    let mut data = vec![0u8; 50 * 1024 * 1024];
+    rand::Fill::fill(&mut data[..], &mut rand::rng());
+    std::fs::write(&upload_path, &data).unwrap();
+    drop(data);
+
+    let upload_result = hfrs.run_raw(&["upload", &full_repo, upload_path.to_str().unwrap()]);
+    if upload_result.is_err() {
+        let _ = hfrs.run_raw(&["repos", "delete", &full_repo]);
+        panic!("upload failed, cannot test download abort: {:?}", upload_result.err());
+    }
+    drop(tmp_upload);
+
+    // Now download and send SIGINT mid-transfer
+    let tmp_download = tempfile::tempdir().unwrap();
+    let mut child = hfrs
+        .spawn(&[
+            "download",
+            &full_repo,
+            "--local-dir",
+            tmp_download.path().to_str().unwrap(),
+        ])
+        .expect("failed to spawn download");
+
+    let pid = child.id();
+
+    std::thread::sleep(Duration::from_secs(2));
+
+    unsafe {
+        libc::kill(pid as libc::pid_t, libc::SIGINT);
+    }
+
+    let start = Instant::now();
+    let timeout = Duration::from_secs(30);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                if start.elapsed() > timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    panic!("CLI did not exit within {timeout:?} after SIGINT");
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            },
+            Err(e) => panic!("error waiting for child: {e}"),
+        }
+    };
+
+    assert!(!status.success(), "CLI should exit non-zero after SIGINT during download, got: {status}");
+
+    let _ = hfrs.run_raw(&["repos", "delete", &full_repo]);
+}
