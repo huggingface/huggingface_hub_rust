@@ -9,7 +9,10 @@
 //! Feature-gated tests: enable with --features, e.g.:
 //!   HF_TOKEN=hf_xxx cargo test -p huggingface-hub --all-features --test integration_test
 
-use futures::StreamExt;
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use futures::{StreamExt, TryStreamExt};
 use huggingface_hub::repository::{
     HFRepository, RepoCreateBranchParams, RepoCreateCommitParams, RepoCreateTagParams, RepoDeleteBranchParams,
     RepoDeleteFileParams, RepoDeleteFolderParams, RepoDeleteTagParams, RepoDownloadFileParams, RepoFileExistsParams,
@@ -21,6 +24,8 @@ use huggingface_hub::types::*;
 use huggingface_hub::{HFClient, HFClientBuilder};
 #[cfg(feature = "spaces")]
 use huggingface_hub::{SpaceSecretDeleteParams, SpaceSecretParams, SpaceVariableDeleteParams, SpaceVariableParams};
+#[cfg(feature = "xet")]
+use xet::xet_session::Sha256Policy;
 
 fn api() -> Option<HFClient> {
     if std::env::var("HF_TOKEN").is_err() {
@@ -890,4 +895,114 @@ async fn test_space_secrets_and_variables() {
         .repo_type(RepoType::Space)
         .build();
     let _ = api.delete_repo(&delete_params).await;
+}
+
+// ---- HFBucket integration tests ----
+
+fn test_bucket_name() -> String {
+    format!("test-bucket-{}", uuid_v4_short())
+}
+
+#[tokio::test]
+async fn test_list_buckets() {
+    let Some(api) = api() else { return };
+    let username = cached_username().await;
+    let stream = api.list_buckets(username).expect("list_buckets failed");
+    let buckets: Vec<_> = {
+        use futures::StreamExt;
+        futures::pin_mut!(stream);
+        let mut items = Vec::new();
+        while let Some(item) = stream.next().await {
+            items.push(item.expect("list_buckets item failed"));
+        }
+        items
+    };
+    let _ = buckets;
+}
+
+#[tokio::test]
+async fn test_create_and_delete_bucket() {
+    let Some(api) = api() else { return };
+    if !write_enabled() {
+        return;
+    }
+    let username = cached_username().await;
+    let name = test_bucket_name();
+
+    let created = api
+        .create_bucket(username, &name, &CreateBucketParams::builder().private(true).build())
+        .await
+        .expect("create_bucket failed");
+    assert!(created.name.contains(&name));
+
+    let bucket = api.bucket(username, &name);
+    let info = bucket.info().await.expect("info failed");
+    assert_eq!(info.id, format!("{username}/{name}"));
+    assert!(info.private.unwrap());
+
+    bucket
+        .update_settings(&UpdateBucketParams::builder().private(false).build())
+        .await
+        .expect("update_settings failed");
+
+    let info = bucket.info().await.unwrap();
+    assert!(!info.private.unwrap());
+
+    api.delete_bucket(username, &name).await.expect("delete_bucket failed");
+
+    assert!(matches!(bucket.info().await, Err(huggingface_hub::HFError::RepoNotFound { .. })));
+}
+
+#[tokio::test]
+async fn test_bucket_list_tree_empty() {
+    let Some(api) = api() else { return };
+    if !write_enabled() {
+        return;
+    }
+    let username = cached_username().await;
+    let name = test_bucket_name();
+
+    api.create_bucket(username, &name, &CreateBucketParams::builder().build())
+        .await
+        .expect("create_bucket failed");
+
+    let bucket = api.bucket(username, &name);
+
+    let entries: Vec<_> = bucket
+        .list_tree("", &ListTreeParams::builder().build())
+        .unwrap()
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<huggingface_hub::Result<Vec<_>>>()
+        .expect("list_tree failed");
+
+    assert!(entries.is_empty(), "new bucket should have no files");
+
+    api.delete_bucket(username, &name).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_get_xet_write_and_read_token() {
+    let Some(api) = api() else { return };
+    if !write_enabled() {
+        return;
+    }
+    let username = cached_username().await;
+    let name = test_bucket_name();
+
+    api.create_bucket(username, &name, &CreateBucketParams::builder().build())
+        .await
+        .unwrap();
+
+    let bucket = api.bucket(username, &name);
+
+    let write_tok = bucket.get_xet_write_token().await.expect("xet write token failed");
+    assert!(!write_tok.access_token.is_empty());
+    assert!(!write_tok.cas_url.is_empty());
+
+    let read_tok = bucket.get_xet_read_token().await.expect("xet read token failed");
+    assert!(!read_tok.access_token.is_empty());
+
+    api.delete_bucket(username, &name).await.unwrap();
 }

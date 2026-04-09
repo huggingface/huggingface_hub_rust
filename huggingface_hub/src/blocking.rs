@@ -48,6 +48,15 @@ pub struct HFSpaceSync {
     pub(crate) inner: Arc<repo::HFSpace>,
 }
 
+/// Synchronous handle for Storage Bucket operations.
+///
+/// Obtain via [`HFClientSync::bucket`]. All methods block the current thread.
+#[derive(Clone)]
+pub struct HFBucketSync {
+    pub(crate) inner: crate::buckets::HFBucket,
+    pub(crate) runtime: Arc<tokio::runtime::Runtime>,
+}
+
 impl fmt::Debug for HFClientSync {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HFClientSync").finish()
@@ -119,6 +128,14 @@ impl HFClientSync {
     /// Creates a blocking handle for a space repository.
     pub fn space(&self, owner: impl Into<String>, name: impl Into<String>) -> HFSpaceSync {
         HFSpaceSync::new(self.clone(), owner, name)
+    }
+
+    /// Creates a synchronous bucket handle.
+    pub fn bucket(&self, namespace: impl Into<String>, repo: impl Into<String>) -> HFBucketSync {
+        HFBucketSync {
+            inner: self.inner.bucket(namespace, repo),
+            runtime: self.runtime.clone(),
+        }
     }
 }
 
@@ -205,6 +222,18 @@ impl From<HFSpaceSync> for Arc<HFRepositorySync> {
 
 /// Alias for [`HFRepositorySync`].
 pub type HFRepoSync = HFRepositorySync;
+
+#[cfg(test)]
+mod bucket_tests {
+    #[test]
+    fn bucket_sync_constructor() {
+        use crate::HFClientBuilder;
+        let client = crate::blocking::HFClientSync::from_api(HFClientBuilder::new().build().unwrap()).unwrap();
+        let bucket = client.bucket("myuser", "my-bucket");
+        assert_eq!(bucket.inner.namespace, "myuser");
+        assert_eq!(bucket.inner.repo, "my-bucket");
+    }
+}
 
 #[cfg(test)]
 mod tests {
