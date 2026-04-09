@@ -1990,6 +1990,10 @@ fn write_upload_dataset_type() {
 
 #[test]
 fn write_upload_large_file() {
+    if is_hub_ci() {
+        eprintln!("skipping: xet transfers not supported on hub-ci");
+        return;
+    }
     require_token();
     require_write();
     let hfrs = CliRunner::hfrs();
@@ -2167,6 +2171,10 @@ fn exit_codes() {
 fn signal_abort_during_xet_upload() {
     use std::time::{Duration, Instant};
 
+    if is_hub_ci() {
+        eprintln!("skipping: xet transfers not supported on hub-ci");
+        return;
+    }
     require_token();
     require_write();
     let hfrs = CliRunner::hfrs();
@@ -2228,6 +2236,10 @@ fn signal_abort_during_xet_upload() {
 fn signal_abort_during_xet_download() {
     use std::time::{Duration, Instant};
 
+    if is_hub_ci() {
+        eprintln!("skipping: xet transfers not supported on hub-ci");
+        return;
+    }
     require_token();
     require_write();
     let hfrs = CliRunner::hfrs();
