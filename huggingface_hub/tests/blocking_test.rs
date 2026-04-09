@@ -3,27 +3,25 @@
 //! Integration tests for the synchronous HFClientSync wrapper.
 //!
 //! Read-only tests use hardcoded prod repos via `prod_sync_api()`.
-//! Write tests use hub-ci via `ci_sync_api()` (require HF_TEST_WRITE=1).
+//! Write tests using hub-ci via `ci_sync_api()` (require HF_TEST_WRITE=1).
 //!
 //! Local: HF_TOKEN=hf_xxx cargo test -p huggingface-hub --features blocking --test blocking_test
-//! CI: HF_CI_TOKEN + HF_PROD_TOKEN are set by the workflow.
+//! CI: The workflow sets HF_CI_TOKEN + HF_PROD_TOKEN.
 
+use huggingface_hub::test_utils::*;
 use huggingface_hub::types::*;
 use huggingface_hub::{HFClientBuilder, HFClientSync, RepoInfo, RepoInfoParams};
 
-/// Client for read-only tests against production (hardcoded repos).
-/// CI: uses HF_PROD_TOKEN against huggingface.co.
-/// Local: uses HF_TOKEN with default endpoint.
 fn prod_sync_api() -> Option<HFClientSync> {
     let api = if is_ci() {
-        let token = std::env::var("HF_PROD_TOKEN").ok()?;
+        let token = resolve_prod_token()?;
         HFClientBuilder::new()
             .token(token)
-            .endpoint("https://huggingface.co")
+            .endpoint(PROD_ENDPOINT)
             .build()
             .expect("Failed to create HFClient")
     } else {
-        if std::env::var("HF_TOKEN").is_err() {
+        if std::env::var(HF_TOKEN).is_err() {
             return None;
         }
         HFClientBuilder::new().build().expect("Failed to create HFClient")
@@ -31,28 +29,21 @@ fn prod_sync_api() -> Option<HFClientSync> {
     Some(HFClientSync::from_api(api).expect("Failed to create HFClientSync"))
 }
 
-/// Client for write tests against hub-ci.
-/// CI: uses HF_CI_TOKEN (HF_ENDPOINT is already hub-ci).
-/// Local: uses HF_TOKEN with default endpoint.
 fn ci_sync_api() -> Option<HFClientSync> {
     let api = if is_ci() {
-        let token = std::env::var("HF_CI_TOKEN").ok()?;
-        HFClientBuilder::new().token(token).build().expect("Failed to create HFClient")
+        let token = std::env::var(HF_CI_TOKEN).ok()?;
+        HFClientBuilder::new()
+            .token(token)
+            .endpoint(HUB_CI_ENDPOINT)
+            .build()
+            .expect("Failed to create HFClient")
     } else {
-        if std::env::var("HF_TOKEN").is_err() {
+        if std::env::var(HF_TOKEN).is_err() {
             return None;
         }
         HFClientBuilder::new().build().expect("Failed to create HFClient")
     };
     Some(HFClientSync::from_api(api).expect("Failed to create HFClientSync"))
-}
-
-fn write_enabled() -> bool {
-    std::env::var("HF_TEST_WRITE").ok().is_some_and(|v| v == "1")
-}
-
-fn is_ci() -> bool {
-    std::env::var("GITHUB_ACTIONS").is_ok()
 }
 
 fn test_org() -> &'static str {

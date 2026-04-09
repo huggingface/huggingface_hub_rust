@@ -19,6 +19,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures::StreamExt;
+use huggingface_hub::test_utils::*;
 use huggingface_hub::types::{AddSource, CreateRepoParams, DeleteRepoParams};
 use huggingface_hub::{
     HFClient, HFClientBuilder, HFRepository, RepoDownloadFileParams, RepoDownloadFileStreamParams,
@@ -31,13 +32,8 @@ use tokio::sync::OnceCell;
 static WHOAMI_USERNAME: OnceCell<String> = OnceCell::const_new();
 
 fn api() -> Option<HFClient> {
-    // In CI (HF_ENDPOINT=hub-ci), use HF_CI_TOKEN. Locally, use HF_TOKEN.
-    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).ok()?;
+    let token = resolve_ci_token()?;
     Some(HFClientBuilder::new().token(token).build().expect("Failed to create HFClient"))
-}
-
-fn write_enabled() -> bool {
-    std::env::var("HF_TEST_WRITE").ok().is_some_and(|v| v == "1")
 }
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);

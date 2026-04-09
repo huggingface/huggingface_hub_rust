@@ -16,41 +16,35 @@
 //! Feature-gated tests: enable with --features, e.g.:
 //!   HF_TOKEN=hf_xxx cargo test -p huggingface-hub --all-features --test integration_test
 
-use std::sync::OnceLock;
-
 use futures::StreamExt;
 use huggingface_hub::repository::HFRepository;
+use huggingface_hub::test_utils::*;
 use huggingface_hub::types::*;
 use huggingface_hub::{HFClient, HFClientBuilder};
 #[cfg(feature = "spaces")]
 use huggingface_hub::{SpaceSecretDeleteParams, SpaceSecretParams, SpaceVariableDeleteParams, SpaceVariableParams};
 
-/// Build a client for write operations (create/modify/delete repos).
-/// In CI: uses HF_CI_TOKEN against hub-ci. Locally: uses HF_TOKEN with default/env endpoint.
 fn api() -> Option<HFClient> {
     if is_ci() {
-        let token = std::env::var("HF_CI_TOKEN").ok()?;
-        Some(build_client(&token, "https://hub-ci.huggingface.co"))
+        let token = std::env::var(HF_CI_TOKEN).ok()?;
+        Some(build_client(&token, HUB_CI_ENDPOINT))
     } else {
         default_api()
     }
 }
 
-/// Build a client for read-only operations against hardcoded prod repos.
-/// In CI: uses HF_PROD_TOKEN against huggingface.co. Locally: uses HF_TOKEN with default/env endpoint.
 fn prod_api() -> Option<HFClient> {
     if is_ci() {
-        let token = std::env::var("HF_PROD_TOKEN").ok()?;
-        Some(build_client(&token, "https://huggingface.co"))
+        let token = resolve_prod_token()?;
+        Some(build_client(&token, PROD_ENDPOINT))
     } else {
         default_api()
     }
 }
 
-/// Build a client for local development using HF_TOKEN and optional HF_ENDPOINT.
 fn default_api() -> Option<HFClient> {
-    let token = std::env::var("HF_TOKEN").ok()?;
-    let endpoint = std::env::var("HF_ENDPOINT").unwrap_or_else(|_| "https://huggingface.co".to_string());
+    let token = std::env::var(HF_TOKEN).ok()?;
+    let endpoint = std::env::var(HF_ENDPOINT).unwrap_or_else(|_| PROD_ENDPOINT.to_string());
     Some(build_client(&token, &endpoint))
 }
 
@@ -60,15 +54,6 @@ fn build_client(token: &str, endpoint: &str) -> HFClient {
         .endpoint(endpoint)
         .build()
         .expect("Failed to create HFClient")
-}
-
-fn write_enabled() -> bool {
-    std::env::var("HF_TEST_WRITE").ok().is_some_and(|v| v == "1")
-}
-
-fn is_ci() -> bool {
-    static IS_CI: OnceLock<bool> = OnceLock::new();
-    *IS_CI.get_or_init(|| std::env::var("GITHUB_ACTIONS").is_ok())
 }
 
 fn test_org() -> &'static str {

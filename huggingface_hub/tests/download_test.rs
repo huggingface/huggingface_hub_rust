@@ -7,29 +7,26 @@
 
 use futures::StreamExt;
 use huggingface_hub::repository::HFRepository;
+use huggingface_hub::test_utils::*;
 use huggingface_hub::{HFClient, HFClientBuilder, RepoDownloadFileParams, RepoDownloadFileStreamParams};
 use sha2::{Digest, Sha256};
 
 fn api() -> Option<HFClient> {
     if is_ci() {
-        let token = std::env::var("HF_PROD_TOKEN").ok()?;
+        let token = resolve_prod_token()?;
         Some(
             HFClientBuilder::new()
                 .token(token)
-                .endpoint("https://huggingface.co")
+                .endpoint(PROD_ENDPOINT)
                 .build()
                 .expect("Failed to create HFClient"),
         )
     } else {
-        if std::env::var("HF_TOKEN").is_err() {
+        if std::env::var(HF_TOKEN).is_err() {
             return None;
         }
         Some(HFClientBuilder::new().build().expect("Failed to create HFClient"))
     }
-}
-
-fn is_ci() -> bool {
-    std::env::var("GITHUB_ACTIONS").is_ok()
 }
 
 fn test_model_parts() -> (&'static str, &'static str) {

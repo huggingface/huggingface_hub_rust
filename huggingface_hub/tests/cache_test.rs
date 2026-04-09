@@ -9,37 +9,34 @@
 
 use std::path::Path;
 
+use huggingface_hub::test_utils::*;
 use huggingface_hub::{HFClient, HFClientBuilder, HFError, RepoDownloadFileParams, RepoSnapshotDownloadParams};
 use serial_test::serial;
 
-/// All cache tests are read-only against hardcoded prod repos.
-/// CI: uses HF_PROD_TOKEN against huggingface.co.
-/// Local: uses HF_TOKEN with default endpoint.
 fn api() -> Option<HFClient> {
     if is_ci() {
-        let token = std::env::var("HF_PROD_TOKEN").ok()?;
+        let token = resolve_prod_token()?;
         Some(
             HFClientBuilder::new()
                 .token(token)
-                .endpoint("https://huggingface.co")
+                .endpoint(PROD_ENDPOINT)
                 .build()
                 .expect("Failed to create HFClient"),
         )
     } else {
-        if std::env::var("HF_TOKEN").is_err() {
+        if std::env::var(HF_TOKEN).is_err() {
             return None;
         }
         Some(HFClientBuilder::new().build().expect("Failed to create HFClient"))
     }
 }
 
-/// Like `api()` but with a custom cache directory.
 fn api_with_cache(cache_dir: &std::path::Path) -> HFClient {
     if is_ci() {
-        let token = std::env::var("HF_PROD_TOKEN").expect("HF_PROD_TOKEN required in CI for prod repo tests");
+        let token = std::env::var(HF_PROD_TOKEN).expect("HF_PROD_TOKEN required in CI for prod repo tests");
         HFClientBuilder::new()
             .token(token)
-            .endpoint("https://huggingface.co")
+            .endpoint(PROD_ENDPOINT)
             .cache_dir(cache_dir)
             .build()
             .expect("Failed to create HFClient")
@@ -49,10 +46,6 @@ fn api_with_cache(cache_dir: &std::path::Path) -> HFClient {
             .build()
             .expect("Failed to create HFClient")
     }
-}
-
-fn is_ci() -> bool {
-    std::env::var("GITHUB_ACTIONS").is_ok()
 }
 
 fn test_model_parts() -> (&'static str, &'static str) {
@@ -911,9 +904,9 @@ async fn test_concurrent_downloads_same_file() {
 fn test_hf_hub_cache_env_var() {
     let dir = tempfile::tempdir().unwrap();
     // Save and set env
-    let old_val = std::env::var("HF_HUB_CACHE").ok();
+    let old_val = std::env::var(HF_HUB_CACHE).ok();
     // SAFETY: test runs serially (#[serial]) so no concurrent env access
-    unsafe { std::env::set_var("HF_HUB_CACHE", dir.path()) };
+    unsafe { std::env::set_var(HF_HUB_CACHE, dir.path()) };
 
     let api = HFClientBuilder::new().build().unwrap();
     // Verify through a download attempt that would use the cache dir
@@ -926,8 +919,8 @@ fn test_hf_hub_cache_env_var() {
 
     // Restore env
     match old_val {
-        Some(v) => unsafe { std::env::set_var("HF_HUB_CACHE", v) },
-        None => unsafe { std::env::remove_var("HF_HUB_CACHE") },
+        Some(v) => unsafe { std::env::set_var(HF_HUB_CACHE, v) },
+        None => unsafe { std::env::remove_var(HF_HUB_CACHE) },
     }
 }
 
@@ -936,15 +929,15 @@ fn test_hf_hub_cache_env_var() {
 fn test_xdg_cache_home_env_var() {
     let dir = tempfile::tempdir().unwrap();
     // Save existing env vars
-    let old_hub_cache = std::env::var("HF_HUB_CACHE").ok();
-    let old_hf_home = std::env::var("HF_HOME").ok();
-    let old_xdg = std::env::var("XDG_CACHE_HOME").ok();
+    let old_hub_cache = std::env::var(HF_HUB_CACHE).ok();
+    let old_hf_home = std::env::var(HF_HOME).ok();
+    let old_xdg = std::env::var(XDG_CACHE_HOME).ok();
 
     // SAFETY: test runs serially (#[serial]) so no concurrent env access
     unsafe {
-        std::env::remove_var("HF_HUB_CACHE");
-        std::env::remove_var("HF_HOME");
-        std::env::set_var("XDG_CACHE_HOME", dir.path());
+        std::env::remove_var(HF_HUB_CACHE);
+        std::env::remove_var(HF_HOME);
+        std::env::set_var(XDG_CACHE_HOME, dir.path());
     }
 
     let api = HFClientBuilder::new().build().unwrap();
@@ -954,16 +947,16 @@ fn test_xdg_cache_home_env_var() {
     // SAFETY: test runs serially (#[serial]) so no concurrent env access
     unsafe {
         match old_hub_cache {
-            Some(v) => std::env::set_var("HF_HUB_CACHE", v),
-            None => std::env::remove_var("HF_HUB_CACHE"),
+            Some(v) => std::env::set_var(HF_HUB_CACHE, v),
+            None => std::env::remove_var(HF_HUB_CACHE),
         }
         match old_hf_home {
-            Some(v) => std::env::set_var("HF_HOME", v),
-            None => std::env::remove_var("HF_HOME"),
+            Some(v) => std::env::set_var(HF_HOME, v),
+            None => std::env::remove_var(HF_HOME),
         }
         match old_xdg {
-            Some(v) => std::env::set_var("XDG_CACHE_HOME", v),
-            None => std::env::remove_var("XDG_CACHE_HOME"),
+            Some(v) => std::env::set_var(XDG_CACHE_HOME, v),
+            None => std::env::remove_var(XDG_CACHE_HOME),
         }
     }
 }
@@ -1024,7 +1017,7 @@ async fn test_interop_python_downloads_first() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
+    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
 
     let script = format!(
         r#"
@@ -1072,7 +1065,7 @@ async fn test_interop_rust_downloads_first() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
+    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
 
     let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
     api.model(test_model_parts().0, test_model_parts().1)
@@ -1112,7 +1105,7 @@ async fn test_interop_mixed_partial_downloads() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
+    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
 
     let script = format!(
         r#"
@@ -1178,7 +1171,7 @@ async fn test_interop_python_snapshot_rust_snapshot() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
+    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
 
     let script = format!(
         r#"
@@ -1234,7 +1227,7 @@ async fn test_interop_rust_writes_python_validates_cache() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
+    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
 
     // Rust snapshot_download: multiple files into cache
     let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
@@ -1493,7 +1486,7 @@ async fn test_interop_rust_no_exist_python_reads() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
+    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
 
     // Rust: trigger a 404 to create a .no_exist marker
     let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
@@ -1548,7 +1541,7 @@ async fn test_interop_rust_ref_python_reads() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
+    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
 
     // Rust: download to create refs/main
     let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
@@ -1590,7 +1583,7 @@ async fn test_interop_python_no_exist_rust_reads() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
+    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
 
     // Python: trigger 404 to create .no_exist marker
     let script = format!(
@@ -1640,7 +1633,7 @@ async fn test_interop_python_ref_rust_local_files_only() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
+    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
 
     // Python downloads file (creates refs/main + blob + symlink)
     let script = format!(
@@ -1686,7 +1679,7 @@ async fn test_interop_rust_snapshot_python_snapshot_reuse() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
+    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
 
     // Rust snapshot_download first
     let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
@@ -1734,7 +1727,7 @@ async fn test_interop_dataset_repo_type() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
+    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
 
     // Rust downloads a dataset file
     let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
@@ -1778,7 +1771,7 @@ async fn test_interop_symlink_target_format() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
+    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
 
     // Python downloads file — creates the canonical symlink format
     let script = format!(
@@ -1825,7 +1818,7 @@ async fn test_interop_conditional_request_reuse() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
+    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
 
     // Python downloads file — creates blob + symlink + ref
     let script = format!(
@@ -1877,7 +1870,7 @@ async fn test_interop_scan_cache_counts_match() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).unwrap();
+    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
 
     // Download multiple files via both libraries to populate the cache
     let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();

@@ -1,6 +1,8 @@
 use std::process::Command;
 use std::time::Duration;
 
+use huggingface_hub::test_utils;
+
 pub struct CliRunner {
     bin: String,
     bin_path: Option<String>,
@@ -24,18 +26,18 @@ impl CliRunner {
     /// In CI: uses HF_PROD_TOKEN and overrides HF_ENDPOINT to huggingface.co.
     /// Locally: uses HF_TOKEN with default endpoint.
     pub fn hfrs() -> Self {
-        let is_ci = std::env::var("GITHUB_ACTIONS").is_ok();
+        let is_ci = test_utils::is_ci();
         let token = if is_ci {
-            std::env::var("HF_PROD_TOKEN").ok()
+            std::env::var(test_utils::HF_PROD_TOKEN).ok()
         } else {
-            std::env::var("HF_TOKEN").ok()
+            std::env::var(test_utils::HF_TOKEN).ok()
         };
         let mut extra_env = vec![
             ("RUST_LOG".to_string(), "info".to_string()),
             ("HF_LOG_LEVEL".to_string(), "info".to_string()),
         ];
         if is_ci {
-            extra_env.push(("HF_ENDPOINT".to_string(), "https://huggingface.co".to_string()));
+            extra_env.push((test_utils::HF_ENDPOINT.to_string(), test_utils::PROD_ENDPOINT.to_string()));
         }
         Self {
             bin: "hfrs".to_string(),
@@ -48,7 +50,7 @@ impl CliRunner {
 
     /// Runner for write tests (hub-ci in CI, default endpoint locally).
     pub fn hfrs_ci() -> Self {
-        let token = std::env::var("HF_TOKEN").or_else(|_| std::env::var("HF_CI_TOKEN")).ok();
+        let token = test_utils::resolve_ci_token();
         Self {
             bin: "hfrs".to_string(),
             bin_path: Some(env!("CARGO_BIN_EXE_hfrs").to_string()),
@@ -214,13 +216,13 @@ pub fn require_cli(runner: &CliRunner) {
 }
 
 pub fn require_token() {
-    if std::env::var("HF_TOKEN").is_err() && std::env::var("HF_CI_TOKEN").is_err() {
+    if std::env::var(test_utils::HF_TOKEN).is_err() && std::env::var(test_utils::HF_CI_TOKEN).is_err() {
         panic!("HF_TOKEN or HF_CI_TOKEN environment variable is required for integration tests.");
     }
 }
 
 pub fn require_write() {
-    if std::env::var("HF_TEST_WRITE").is_err() {
+    if !test_utils::write_enabled() {
         panic!("HF_TEST_WRITE=1 is required for write operation tests.");
     }
 }
