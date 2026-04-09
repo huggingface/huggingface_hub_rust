@@ -136,7 +136,7 @@ fn list_files_recursive(dir: &Path) -> Vec<String> {
 async fn test_download_file_to_cache() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     let path = api
         .model(test_model_parts().0, test_model_parts().1)
@@ -165,7 +165,7 @@ async fn test_download_file_to_cache() {
 async fn test_download_file_cache_hit() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     let repo = api.model(test_model_parts().0, test_model_parts().1);
     let path1 = repo
@@ -182,7 +182,7 @@ async fn test_download_file_cache_hit() {
 #[tokio::test]
 async fn test_download_file_local_files_only_miss() {
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     let result = api
         .model(test_model_parts().0, test_model_parts().1)
@@ -200,7 +200,7 @@ async fn test_download_file_local_files_only_miss() {
 async fn test_download_file_local_files_only_hit() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     let repo = api.model(test_model_parts().0, test_model_parts().1);
     let path1 = repo
@@ -225,7 +225,7 @@ async fn test_download_file_local_files_only_hit() {
 async fn test_download_file_cache_symlink_structure() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     let path = api
         .model(test_model_parts().0, test_model_parts().1)
@@ -243,7 +243,7 @@ async fn test_download_file_cache_symlink_structure() {
 async fn test_snapshot_download() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     let snapshot_dir = api
         .model(test_model_parts().0, test_model_parts().1)
@@ -269,7 +269,7 @@ async fn test_snapshot_download() {
 async fn test_cache_hit_no_redownload() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     let repo = api.model(test_model_parts().0, test_model_parts().1);
     repo.download_file(&RepoDownloadFileParams::builder().filename("config.json").build())
@@ -291,7 +291,7 @@ async fn test_cache_hit_no_redownload() {
 async fn test_force_download_bypasses_cache() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     let repo = api.model(test_model_parts().0, test_model_parts().1);
     repo.download_file(&RepoDownloadFileParams::builder().filename("config.json").build())
@@ -321,7 +321,7 @@ async fn test_force_download_bypasses_cache() {
 async fn test_force_download_ignores_no_exist() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     // Create a stale .no_exist marker — network download should succeed
     // regardless since .no_exist is only consulted via resolve_from_cache_only
@@ -355,7 +355,7 @@ async fn test_force_download_ignores_no_exist() {
 async fn test_no_exist_marker_on_404() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     let result = api
         .model(test_model_parts().0, test_model_parts().1)
@@ -381,7 +381,7 @@ async fn test_no_exist_marker_on_404() {
 async fn test_no_exist_marker_prevents_request() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     let repo = api.model(test_model_parts().0, test_model_parts().1);
 
@@ -414,7 +414,7 @@ async fn test_no_exist_marker_prevents_request() {
 async fn test_no_exist_writes_ref_on_404() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     let _ = api
         .model(test_model_parts().0, test_model_parts().1)
@@ -439,7 +439,7 @@ async fn test_no_exist_writes_ref_on_404() {
 async fn test_ref_written_for_branch_download() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     api.model(test_model_parts().0, test_model_parts().1)
         .download_file(&RepoDownloadFileParams::builder().filename("config.json").build())
@@ -459,7 +459,7 @@ async fn test_ref_written_for_branch_download() {
 async fn test_no_ref_for_commit_hash_download() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     // First get the commit hash via a normal download
     api.model(test_model_parts().0, test_model_parts().1)
@@ -475,7 +475,7 @@ async fn test_no_ref_for_commit_hash_download() {
 
     // Now download in a fresh cache using the commit hash directly
     let cache_dir2 = tempfile::tempdir().unwrap();
-    let api2 = HFClientBuilder::new().cache_dir(cache_dir2.path()).build().unwrap();
+    let api2 = api_with_cache(cache_dir2.path());
 
     api2.model(test_model_parts().0, test_model_parts().1)
         .download_file(
@@ -500,7 +500,7 @@ async fn test_no_ref_for_commit_hash_download() {
 async fn test_download_by_commit_hash() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     // Get commit hash from a normal download
     api.model(test_model_parts().0, test_model_parts().1)
@@ -515,7 +515,7 @@ async fn test_download_by_commit_hash() {
 
     // Download by commit hash in fresh cache
     let cache_dir2 = tempfile::tempdir().unwrap();
-    let api2 = HFClientBuilder::new().cache_dir(cache_dir2.path()).build().unwrap();
+    let api2 = api_with_cache(cache_dir2.path());
     let path = api2
         .model(test_model_parts().0, test_model_parts().1)
         .download_file(
@@ -543,7 +543,7 @@ async fn test_download_by_commit_hash() {
 async fn test_offline_fallback_with_cached_file() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     // Populate cache
     let original_path = api
@@ -595,7 +595,7 @@ async fn test_offline_fallback_without_cache_propagates_error() {
 async fn test_snapshot_download_ignore_patterns() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     let snapshot_dir = api
         .model(test_model_parts().0, test_model_parts().1)
@@ -617,7 +617,7 @@ async fn test_snapshot_download_ignore_patterns() {
 #[tokio::test]
 async fn test_snapshot_download_local_files_only_miss() {
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     let result = api
         .model(test_model_parts().0, test_model_parts().1)
@@ -630,7 +630,7 @@ async fn test_snapshot_download_local_files_only_miss() {
 async fn test_snapshot_download_local_files_only_hit() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     let repo = api.model(test_model_parts().0, test_model_parts().1);
     let dir1 = repo
@@ -653,7 +653,7 @@ async fn test_snapshot_download_local_files_only_hit() {
 async fn test_snapshot_download_by_commit_hash() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     // First get the commit hash
     api.model(test_model_parts().0, test_model_parts().1)
@@ -668,7 +668,7 @@ async fn test_snapshot_download_by_commit_hash() {
 
     // Snapshot download in fresh cache by commit hash
     let cache_dir2 = tempfile::tempdir().unwrap();
-    let api2 = HFClientBuilder::new().cache_dir(cache_dir2.path()).build().unwrap();
+    let api2 = api_with_cache(cache_dir2.path());
     let snapshot_dir = api2
         .model(test_model_parts().0, test_model_parts().1)
         .snapshot_download(
@@ -696,7 +696,7 @@ async fn test_snapshot_download_by_commit_hash() {
 async fn test_snapshot_download_force_download() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     let repo = api.model(test_model_parts().0, test_model_parts().1);
     repo.snapshot_download(
@@ -729,7 +729,7 @@ async fn test_snapshot_download_force_download() {
 async fn test_snapshot_download_returns_correct_path() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     let snapshot_dir = api
         .model(test_model_parts().0, test_model_parts().1)
@@ -755,7 +755,7 @@ async fn test_snapshot_download_returns_correct_path() {
 async fn test_cache_directory_layout() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     api.model(test_model_parts().0, test_model_parts().1)
         .download_file(&RepoDownloadFileParams::builder().filename("config.json").build())
@@ -782,7 +782,7 @@ async fn test_cache_directory_layout() {
 async fn test_blob_deduplication_across_downloads() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     let repo = api.model(test_model_parts().0, test_model_parts().1);
 
@@ -811,7 +811,7 @@ async fn test_blob_deduplication_across_downloads() {
 async fn test_dataset_repo_type_cache_folder() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     let path = api
         .dataset(test_dataset_parts().0, test_dataset_parts().1)
@@ -829,7 +829,7 @@ async fn test_download_to_local_dir_no_cache() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
     let local_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     let path = api
         .model(test_model_parts().0, test_model_parts().1)
@@ -862,7 +862,7 @@ async fn test_download_to_local_dir_no_cache() {
 async fn test_concurrent_downloads_same_file() {
     let Some(_) = api() else { return };
     let cache_dir = tempfile::tempdir().unwrap();
-    let api = HFClientBuilder::new().cache_dir(cache_dir.path()).build().unwrap();
+    let api = api_with_cache(cache_dir.path());
 
     let mut handles = Vec::new();
     for _ in 0..4 {
@@ -912,7 +912,7 @@ fn test_hf_hub_cache_env_var() {
     // Verify through a download attempt that would use the cache dir
     // We can't easily inspect the private field, but we can check the
     // builder override works by using an explicit cache_dir
-    let api2 = HFClientBuilder::new().cache_dir(dir.path()).build().unwrap();
+    let api2 = api_with_cache(dir.path());
     // Both should work without error
     drop(api);
     drop(api2);
@@ -1017,7 +1017,7 @@ async fn test_interop_python_downloads_first() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
+    let token = resolve_prod_token().expect("HF_TOKEN or HF_PROD_TOKEN required");
 
     let script = format!(
         r#"
@@ -1042,7 +1042,7 @@ print(path)
         .unwrap();
     let blob_count_before = std::fs::read_dir(repo_folder.path().join("blobs")).unwrap().count();
 
-    let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
+    let api = api_with_cache(&cache_dir);
     let path = api
         .model(test_model_parts().0, test_model_parts().1)
         .download_file(&RepoDownloadFileParams::builder().filename("config.json").build())
@@ -1065,9 +1065,9 @@ async fn test_interop_rust_downloads_first() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
+    let token = resolve_prod_token().expect("HF_TOKEN or HF_PROD_TOKEN required");
 
-    let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
+    let api = api_with_cache(&cache_dir);
     api.model(test_model_parts().0, test_model_parts().1)
         .download_file(&RepoDownloadFileParams::builder().filename("config.json").build())
         .await
@@ -1105,7 +1105,7 @@ async fn test_interop_mixed_partial_downloads() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
+    let token = resolve_prod_token().expect("HF_TOKEN or HF_PROD_TOKEN required");
 
     let script = format!(
         r#"
@@ -1122,7 +1122,7 @@ hf_hub_download("{repo_id}", "README.md")
     let output = std::process::Command::new(&python).args(["-c", &script]).output().unwrap();
     assert!(output.status.success());
 
-    let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
+    let api = api_with_cache(&cache_dir);
     let repo = api.model(test_model_parts().0, test_model_parts().1);
     repo.download_file(&RepoDownloadFileParams::builder().filename("config.json").build())
         .await
@@ -1171,7 +1171,7 @@ async fn test_interop_python_snapshot_rust_snapshot() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
+    let token = resolve_prod_token().expect("HF_TOKEN or HF_PROD_TOKEN required");
 
     let script = format!(
         r#"
@@ -1200,7 +1200,7 @@ print(path)
         .unwrap();
     let blob_count_before = std::fs::read_dir(repo_folder.path().join("blobs")).unwrap().count();
 
-    let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
+    let api = api_with_cache(&cache_dir);
     let snapshot_dir = api
         .model(test_model_parts().0, test_model_parts().1)
         .snapshot_download(
@@ -1227,10 +1227,10 @@ async fn test_interop_rust_writes_python_validates_cache() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
+    let token = resolve_prod_token().expect("HF_TOKEN or HF_PROD_TOKEN required");
 
     // Rust snapshot_download: multiple files into cache
-    let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
+    let api = api_with_cache(&cache_dir);
     let snapshot_dir = api
         .model(test_model_parts().0, test_model_parts().1)
         .snapshot_download(
@@ -1486,10 +1486,10 @@ async fn test_interop_rust_no_exist_python_reads() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
+    let token = resolve_prod_token().expect("HF_TOKEN or HF_PROD_TOKEN required");
 
     // Rust: trigger a 404 to create a .no_exist marker
-    let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
+    let api = api_with_cache(&cache_dir);
     let _ = api
         .model(test_model_parts().0, test_model_parts().1)
         .download_file(
@@ -1541,10 +1541,10 @@ async fn test_interop_rust_ref_python_reads() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
+    let token = resolve_prod_token().expect("HF_TOKEN or HF_PROD_TOKEN required");
 
     // Rust: download to create refs/main
-    let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
+    let api = api_with_cache(&cache_dir);
     api.model(test_model_parts().0, test_model_parts().1)
         .download_file(&RepoDownloadFileParams::builder().filename("config.json").build())
         .await
@@ -1583,7 +1583,7 @@ async fn test_interop_python_no_exist_rust_reads() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
+    let token = resolve_prod_token().expect("HF_TOKEN or HF_PROD_TOKEN required");
 
     // Python: trigger 404 to create .no_exist marker
     let script = format!(
@@ -1606,7 +1606,7 @@ print("DONE")
     assert!(output.status.success(), "Python failed: {}", String::from_utf8_lossy(&output.stderr));
 
     // Rust: local_files_only should find the .no_exist marker via resolve_from_cache_only
-    let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
+    let api = api_with_cache(&cache_dir);
     let result = api
         .model(test_model_parts().0, test_model_parts().1)
         .download_file(
@@ -1633,7 +1633,7 @@ async fn test_interop_python_ref_rust_local_files_only() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
+    let token = resolve_prod_token().expect("HF_TOKEN or HF_PROD_TOKEN required");
 
     // Python downloads file (creates refs/main + blob + symlink)
     let script = format!(
@@ -1652,7 +1652,7 @@ hf_hub_download("{repo_id}", "config.json")
     assert!(output.status.success(), "Python failed: {}", String::from_utf8_lossy(&output.stderr));
 
     // Rust: local_files_only should find the file via Python's ref
-    let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
+    let api = api_with_cache(&cache_dir);
     let path = api
         .model(test_model_parts().0, test_model_parts().1)
         .download_file(
@@ -1679,10 +1679,10 @@ async fn test_interop_rust_snapshot_python_snapshot_reuse() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
+    let token = resolve_prod_token().expect("HF_TOKEN or HF_PROD_TOKEN required");
 
     // Rust snapshot_download first
-    let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
+    let api = api_with_cache(&cache_dir);
     api.model(test_model_parts().0, test_model_parts().1)
         .snapshot_download(
             &RepoSnapshotDownloadParams::builder()
@@ -1727,10 +1727,10 @@ async fn test_interop_dataset_repo_type() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
+    let token = resolve_prod_token().expect("HF_TOKEN or HF_PROD_TOKEN required");
 
     // Rust downloads a dataset file
-    let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
+    let api = api_with_cache(&cache_dir);
     api.dataset(test_dataset_parts().0, test_dataset_parts().1)
         .download_file(&RepoDownloadFileParams::builder().filename("README.md").build())
         .await
@@ -1771,7 +1771,7 @@ async fn test_interop_symlink_target_format() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
+    let token = resolve_prod_token().expect("HF_TOKEN or HF_PROD_TOKEN required");
 
     // Python downloads file — creates the canonical symlink format
     let script = format!(
@@ -1795,7 +1795,7 @@ print(link)
     // Rust downloads same file into a fresh cache
     let cache_dir2 = base_dir.path().join("cache2");
     std::fs::create_dir_all(&cache_dir2).unwrap();
-    let api = HFClientBuilder::new().cache_dir(&cache_dir2).build().unwrap();
+    let api = api_with_cache(&cache_dir2);
     let rust_path = api
         .model(test_model_parts().0, test_model_parts().1)
         .download_file(&RepoDownloadFileParams::builder().filename("config.json").build())
@@ -1818,7 +1818,7 @@ async fn test_interop_conditional_request_reuse() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
+    let token = resolve_prod_token().expect("HF_TOKEN or HF_PROD_TOKEN required");
 
     // Python downloads file — creates blob + symlink + ref
     let script = format!(
@@ -1849,7 +1849,7 @@ hf_hub_download("{repo_id}", "config.json")
 
     // Rust downloads same file — should read etag from Python's symlink,
     // send If-None-Match, get 304, and NOT rewrite the blob
-    let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
+    let api = api_with_cache(&cache_dir);
     api.model(test_model_parts().0, test_model_parts().1)
         .download_file(&RepoDownloadFileParams::builder().filename("config.json").build())
         .await
@@ -1870,10 +1870,10 @@ async fn test_interop_scan_cache_counts_match() {
         return;
     };
     let python = python_bin(&venv_dir);
-    let token = resolve_ci_token().expect("HF_TOKEN or HF_CI_TOKEN required");
+    let token = resolve_prod_token().expect("HF_TOKEN or HF_PROD_TOKEN required");
 
     // Download multiple files via both libraries to populate the cache
-    let api = HFClientBuilder::new().cache_dir(&cache_dir).build().unwrap();
+    let api = api_with_cache(&cache_dir);
     api.model(test_model_parts().0, test_model_parts().1)
         .snapshot_download(
             &RepoSnapshotDownloadParams::builder()
