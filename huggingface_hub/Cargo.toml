@@ -108,6 +108,10 @@ name = "download_upload"
 path = "examples/download_upload.rs"
 
 [[example]]
+name = "progress"
+path = "examples/progress.rs"
+
+[[example]]
 name = "blocking_read"
 path = "examples/blocking_read.rs"
 required-features = ["blocking"]

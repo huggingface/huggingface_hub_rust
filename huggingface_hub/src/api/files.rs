@@ -658,6 +658,14 @@ impl HFRepository {
             filenames.retain(|f| !cache::snapshot_path(cache_dir, &repo_folder, &commit_hash, f).exists());
         }
 
+        progress::emit(
+            &params.progress,
+            ProgressEvent::Download(DownloadEvent::Start {
+                total_files: filenames.len(),
+                total_bytes: 0,
+            }),
+        );
+
         #[cfg(feature = "xet")]
         {
             struct FileMetadataInfo {
@@ -765,6 +773,7 @@ impl HFRepository {
                     &commit_hash,
                     params.force_download,
                     Some(local_dir.clone()),
+                    &params.progress,
                 );
                 let non_xet_fut = async {
                     download_concurrently(self, &non_xet_dl_params, max_workers).await?;
@@ -772,6 +781,7 @@ impl HFRepository {
                 };
 
                 tokio::try_join!(xet_batch_fut, non_xet_fut)?;
+                progress::emit(&params.progress, ProgressEvent::Download(DownloadEvent::Complete));
                 return Ok(local_dir.clone());
             }
 
@@ -828,6 +838,7 @@ impl HFRepository {
                 &commit_hash,
                 params.force_download,
                 None,
+                &params.progress,
             );
             let non_xet_fut = async {
                 download_concurrently(self, &non_xet_dl_params, max_workers).await?;
@@ -848,8 +859,10 @@ impl HFRepository {
                     &commit_hash,
                     params.force_download,
                     Some(local_dir.clone()),
+                    &params.progress,
                 );
                 download_concurrently(self, &dl_params, max_workers).await?;
+                progress::emit(&params.progress, ProgressEvent::Download(DownloadEvent::Complete));
                 return Ok(local_dir.clone());
             }
 
@@ -860,6 +873,7 @@ impl HFRepository {
                 &commit_hash,
                 params.force_download,
                 None,
+                &params.progress,
             );
             download_concurrently(self, &dl_params, max_workers).await?;
         }
@@ -868,6 +882,7 @@ impl HFRepository {
             cache::write_ref(cache_dir, &repo_folder, revision, &commit_hash).await?;
         }
 
+        progress::emit(&params.progress, ProgressEvent::Download(DownloadEvent::Complete));
         Ok(cache_dir.join(&repo_folder).join("snapshots").join(&commit_hash))
     }
 }
@@ -953,6 +968,7 @@ fn build_download_params(
     commit_hash: &str,
     force_download: Option<bool>,
     local_dir: Option<PathBuf>,
+    progress: &Progress,
 ) -> Vec<RepoDownloadFileParams> {
     filenames
         .iter()
@@ -962,7 +978,7 @@ fn build_download_params(
             revision: Some(commit_hash.to_string()),
             force_download,
             local_files_only: None,
-            progress: None,
+            progress: progress.clone(),
         })
         .collect()
 }

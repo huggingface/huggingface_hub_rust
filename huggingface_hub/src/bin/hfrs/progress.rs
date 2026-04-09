@@ -21,18 +21,18 @@ fn bytes_style() -> ProgressStyle {
     ProgressStyle::with_template(
         "{msg}: {percent}%|{wide_bar:.cyan/blue}| {bytes}/{total_bytes} [{elapsed}<{eta}, {bytes_per_sec}]",
     )
-    .unwrap()
+    .expect("hardcoded template")
     .progress_chars("##-")
 }
 
 fn files_style() -> ProgressStyle {
     ProgressStyle::with_template("{msg}: {percent}%|{wide_bar:.green/blue}| {pos}/{len} [{elapsed}<{eta}]")
-        .unwrap()
+        .expect("hardcoded template")
         .progress_chars("##-")
 }
 
 fn spinner_style() -> ProgressStyle {
-    ProgressStyle::with_template("{spinner:.green} {msg}").unwrap()
+    ProgressStyle::with_template("{spinner:.green} {msg}").expect("hardcoded template")
 }
 
 fn truncate_filename(name: &str, max_len: usize) -> String {
@@ -58,7 +58,7 @@ impl CliProgressHandler {
     }
 
     fn handle_download(&self, event: &DownloadEvent) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         match event {
             DownloadEvent::Start {
                 total_files,
@@ -139,7 +139,7 @@ impl CliProgressHandler {
     }
 
     fn handle_upload(&self, event: &UploadEvent) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         match event {
             UploadEvent::Start {
                 total_files,

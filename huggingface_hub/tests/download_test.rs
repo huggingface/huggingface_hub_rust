@@ -5,9 +5,14 @@
 //!
 //! Run: source ~/hf/prod_token && cargo test -p huggingface-hub --test download_test
 
+use std::sync::{Arc, Mutex};
+
 use futures::StreamExt;
 use huggingface_hub::repository::HFRepository;
-use huggingface_hub::{HFClient, HFClientBuilder, RepoDownloadFileParams, RepoDownloadFileStreamParams};
+use huggingface_hub::{
+    DownloadEvent, FileStatus, HFClient, HFClientBuilder, ProgressEvent, ProgressHandler, RepoDownloadFileParams,
+    RepoDownloadFileStreamParams,
+};
 use sha2::{Digest, Sha256};
 
 fn api() -> Option<HFClient> {
@@ -376,10 +381,6 @@ async fn test_download_stream_range_content_matches_full_download() {
 }
 
 // --- Progress tracking tests ---
-
-use std::sync::{Arc, Mutex};
-
-use huggingface_hub::{DownloadEvent, FileStatus, ProgressEvent, ProgressHandler};
 
 struct RecordingHandler {
     events: Mutex<Vec<ProgressEvent>>,

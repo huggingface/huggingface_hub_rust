@@ -9,47 +9,47 @@ pub trait ProgressHandler: Send + Sync {
 /// A clonable, optional handle to a progress handler.
 pub type Progress = Option<Arc<dyn ProgressHandler>>;
 
-/// Top-level progress event — either an upload or download event.
 #[derive(Debug, Clone)]
 pub enum ProgressEvent {
     Upload(UploadEvent),
     Download(DownloadEvent),
 }
 
-/// Progress events for upload operations.
-///
 /// Every variant that represents an in-progress state carries the current
 /// `UploadPhase`, so consumers always know the phase from any single event
 /// without tracking state across events.
 #[derive(Debug, Clone)]
 pub enum UploadEvent {
-    /// Upload operation has started; total file count and bytes are known.
-    Start { total_files: usize, total_bytes: u64 },
-    /// Aggregate byte-level progress (xet/LFS upload).
-    /// Phase is included so consumers always know the current phase.
+    Start {
+        total_files: usize,
+        total_bytes: u64,
+    },
     Progress {
         phase: UploadPhase,
         bytes_completed: u64,
         total_bytes: u64,
         bytes_per_sec: Option<f64>,
     },
-    /// One or more individual files completed. Batched for efficiency
-    /// during multi-file uploads (upload_folder).
-    FileComplete { files: Vec<String>, phase: UploadPhase },
-    /// Entire upload operation finished (all files, commit created).
+    /// Batched for efficiency during multi-file uploads (upload_folder).
+    FileComplete {
+        files: Vec<String>,
+        phase: UploadPhase,
+    },
     Complete,
 }
 
-/// Progress events for download operations.
 #[derive(Debug, Clone)]
 pub enum DownloadEvent {
-    /// Download operation has started; file count and total bytes known.
-    Start { total_files: usize, total_bytes: u64 },
-    /// Per-file progress update. Only includes files whose state changed
-    /// since the last event (delta, not full snapshot). Batched for
-    /// efficiency during multi-file downloads (snapshot_download).
-    Progress { files: Vec<FileProgress> },
-    /// Aggregate byte-level progress for xet batch transfers.
+    Start {
+        total_files: usize,
+        total_bytes: u64,
+    },
+    /// Only includes files whose state changed since the last event
+    /// (delta, not full snapshot). Batched for efficiency during
+    /// multi-file downloads (snapshot_download).
+    Progress {
+        files: Vec<FileProgress>,
+    },
     /// Separate from per-file Progress because xet provides aggregate
     /// stats, not per-file byte counts.
     AggregateProgress {
@@ -57,11 +57,9 @@ pub enum DownloadEvent {
         total_bytes: u64,
         bytes_per_sec: Option<f64>,
     },
-    /// All downloads finished.
     Complete,
 }
 
-/// Per-file progress info, used inside `DownloadEvent::Progress`.
 #[derive(Debug, Clone)]
 pub struct FileProgress {
     pub filename: String,
@@ -70,7 +68,6 @@ pub struct FileProgress {
     pub status: FileStatus,
 }
 
-/// Lifecycle status of a single file within a transfer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileStatus {
     Started,
@@ -78,20 +75,14 @@ pub enum FileStatus {
     Complete,
 }
 
-/// Phases of an upload operation, in order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UploadPhase {
-    /// Scanning local files and computing sizes.
     Preparing,
-    /// Calling preupload API to classify files as LFS vs regular.
     CheckingUploadMode,
-    /// Transferring file data (xet or inline).
     Uploading,
-    /// Creating the commit on the Hub.
     Committing,
 }
 
-/// Emit a progress event if a handler is present.
 pub(crate) fn emit(handler: &Progress, event: ProgressEvent) {
     if let Some(h) = handler {
         h.on_progress(&event);

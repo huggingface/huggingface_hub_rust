@@ -13,7 +13,7 @@ use crate::client::HFClient;
 use crate::constants;
 use crate::error::{HFError, Result};
 use crate::repository::HFRepository;
-use crate::types::progress::Progress;
+use crate::types::progress::{Progress, ProgressEvent, UploadEvent, UploadPhase};
 use crate::types::{AddSource, GetXetTokenParams, RepoType};
 
 #[derive(Debug, Deserialize)]
@@ -327,7 +327,6 @@ impl HFRepository {
 
         tracing::info!(file_count = files.len(), "committing xet uploads");
         if let Some(ref handler) = *progress {
-            use crate::types::progress::{ProgressEvent, UploadEvent, UploadPhase};
             let report = commit.progress();
             handler.on_progress(&ProgressEvent::Upload(UploadEvent::Progress {
                 phase: UploadPhase::Uploading,
@@ -342,7 +341,6 @@ impl HFRepository {
             .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?;
         tracing::info!("xet upload commit complete");
         if let Some(ref handler) = *progress {
-            use crate::types::progress::{ProgressEvent, UploadEvent, UploadPhase};
             let report = commit.progress();
             handler.on_progress(&ProgressEvent::Upload(UploadEvent::Progress {
                 phase: UploadPhase::Uploading,
