@@ -139,6 +139,9 @@ fn format_hf_error(err: &HFError) -> String {
         HFError::RepoNotFound { repo_id } => {
             format!("Repository '{repo_id}' not found. If the repo is private, make sure you are authenticated.")
         },
+        HFError::BucketNotFound { bucket_name } => {
+            format!("Bucket '{bucket_name}' not found. If the bucket is private, make sure you are authenticated.")
+        },
         HFError::EntryNotFound { path, repo_id } => {
             format!("File '{path}' not found in repository '{repo_id}'.")
         },

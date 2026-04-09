@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use futures::Stream;
+use reqwest::header::CONTENT_TYPE;
 use url::Url;
 
 use crate::buckets::HFBucket;
@@ -13,10 +14,10 @@ use crate::types::{
 use crate::{HFClient, Result};
 
 /// Maps HTTP status codes to `HFError` variants for bucket API responses.
-/// Bucket-level 404s map to `RepoNotFound`; file-level 404s map to `EntryNotFound`.
+/// Bucket-level 404s map to `BucketNotFound`; file-level 404s map to `EntryNotFound`.
 pub(crate) async fn check_bucket_response(
     response: reqwest::Response,
-    repo_id: &str,
+    bucket_name: &str,
     not_found_ctx: NotFoundContext,
 ) -> Result<reqwest::Response> {
     if response.status().is_success() {
@@ -29,12 +30,12 @@ pub(crate) async fn check_bucket_response(
         401 => HFError::AuthRequired,
         403 => HFError::Forbidden,
         404 => match not_found_ctx {
-            NotFoundContext::Repo => HFError::RepoNotFound {
-                repo_id: repo_id.to_string(),
+            NotFoundContext::Bucket => HFError::BucketNotFound {
+                bucket_name: bucket_name.to_string(),
             },
             NotFoundContext::Entry { path } => HFError::EntryNotFound {
                 path,
-                repo_id: repo_id.to_string(),
+                repo_id: bucket_name.to_string(),
             },
             _ => HFError::Http { status, url, body },
         },
@@ -45,12 +46,12 @@ pub(crate) async fn check_bucket_response(
 }
 
 impl HFBucket {
-    fn repo_id(&self) -> String {
-        format!("{}/{}", self.namespace, self.repo)
+    fn bucket_name(&self) -> String {
+        format!("{}/{}", self.namespace, self.bucket)
     }
 
     fn bucket_url(&self) -> String {
-        format!("{}/api/buckets/{}/{}", self.client.inner.endpoint, self.namespace, self.repo)
+        format!("{}/api/buckets/{}/{}", self.client.inner.endpoint, self.namespace, self.bucket)
     }
 
     /// Returns metadata about this bucket.
@@ -63,22 +64,22 @@ impl HFBucket {
             .headers(self.client.auth_headers())
             .send()
             .await?;
-        let resp = check_bucket_response(resp, &self.repo_id(), NotFoundContext::Repo).await?;
+        let resp = check_bucket_response(resp, &self.bucket_name(), NotFoundContext::Bucket).await?;
         Ok(resp.json().await?)
     }
 
     /// Updates visibility or CDN configuration for this bucket.
-    pub async fn update_settings(&self, params: UpdateBucketParams) -> Result<()> {
+    pub async fn update_settings(&self, params: &UpdateBucketParams) -> Result<()> {
         let resp = self
             .client
             .inner
             .client
             .put(format!("{}/settings", self.bucket_url()))
             .headers(self.client.auth_headers())
-            .json(&params)
+            .json(params)
             .send()
             .await?;
-        check_bucket_response(resp, &self.repo_id(), NotFoundContext::Repo).await?;
+        check_bucket_response(resp, &self.bucket_name(), NotFoundContext::Bucket).await?;
         Ok(())
     }
 
@@ -86,8 +87,8 @@ impl HFBucket {
     ///
     /// All `AddFile` operations are sent before `DeleteFile` operations, as required
     /// by the batch protocol. The input order within each group is preserved.
-    pub async fn batch_files(&self, ops: Vec<BatchOp>) -> Result<BatchResult> {
-        let (adds, deletes): (Vec<_>, Vec<_>) = ops.into_iter().partition(|op| matches!(op, BatchOp::AddFile(_)));
+    pub async fn batch_files(&self, ops: &[BatchOp]) -> Result<BatchResult> {
+        let (adds, deletes): (Vec<_>, Vec<_>) = ops.iter().partition(|op| matches!(op, BatchOp::AddFile(_)));
 
         let ndjson = adds
             .iter()
@@ -101,12 +102,12 @@ impl HFBucket {
             .client
             .post(format!("{}/batch", self.bucket_url()))
             .headers(self.client.auth_headers())
-            .header("content-type", "application/x-ndjson")
+            .header(CONTENT_TYPE, "application/x-ndjson")
             .body(ndjson)
             .send()
             .await?;
 
-        let resp = check_bucket_response(resp, &self.repo_id(), NotFoundContext::Repo).await?;
+        let resp = check_bucket_response(resp, &self.bucket_name(), NotFoundContext::Bucket).await?;
         Ok(resp.json().await?)
     }
 
@@ -115,13 +116,13 @@ impl HFBucket {
     /// Uses cursor-in-body pagination: the stream fetches the next page automatically
     /// when the current page's entries are exhausted. No request is made until the
     /// first item is polled.
-    pub fn list_tree(&self, path: &str, params: ListTreeParams) -> Result<impl Stream<Item = Result<TreeEntry>> + '_> {
+    pub fn list_tree(&self, path: &str, params: &ListTreeParams) -> Result<impl Stream<Item = Result<TreeEntry>> + '_> {
         let base_url = if path.is_empty() {
-            format!("{}/api/buckets/{}/{}/tree", self.client.inner.endpoint, self.namespace, self.repo)
+            format!("{}/api/buckets/{}/{}/tree", self.client.inner.endpoint, self.namespace, self.bucket)
         } else {
-            format!("{}/api/buckets/{}/{}/tree/{}", self.client.inner.endpoint, self.namespace, self.repo, path)
+            format!("{}/api/buckets/{}/{}/tree/{}", self.client.inner.endpoint, self.namespace, self.bucket, path)
         };
-        let repo_id = self.repo_id();
+        let bucket_name = self.bucket_name();
         let mut initial_url = Url::parse(&base_url)?;
         {
             let mut qp = initial_url.query_pairs_mut();
@@ -138,7 +139,7 @@ impl HFBucket {
             (VecDeque::<TreeEntry>::new(), Some(initial_url), false),
             move |(mut pending, next_url, fetched)| {
                 let client = self.client.clone();
-                let repo_id = repo_id.clone();
+                let bucket_name = bucket_name.clone();
                 async move {
                     if let Some(entry) = pending.pop_front() {
                         return Ok(Some((entry, (pending, next_url, fetched))));
@@ -153,7 +154,7 @@ impl HFBucket {
                     };
                     let req = client.inner.client.get(url).headers(client.auth_headers());
                     let resp = req.send().await?;
-                    let resp = check_bucket_response(resp, &repo_id, NotFoundContext::Repo).await?;
+                    let resp = check_bucket_response(resp, &bucket_name, NotFoundContext::Bucket).await?;
                     let next_cursor = parse_link_header_next(resp.headers());
                     let entries: Vec<TreeEntry> = resp.json().await?;
 
@@ -171,10 +172,10 @@ impl HFBucket {
     /// Returns metadata for a batch of file paths.
     ///
     /// Paths that do not exist in the bucket are silently omitted from the result.
-    pub async fn get_paths_info(&self, paths: Vec<String>) -> Result<Vec<TreeEntry>> {
+    pub async fn get_paths_info(&self, paths: &[String]) -> Result<Vec<TreeEntry>> {
         #[derive(serde::Serialize)]
-        struct Body {
-            paths: Vec<String>,
+        struct Body<'a> {
+            paths: &'a [String],
         }
 
         let resp = self
@@ -187,7 +188,7 @@ impl HFBucket {
             .send()
             .await?;
 
-        let resp = check_bucket_response(resp, &self.repo_id(), NotFoundContext::Entry { path: String::new() }).await?;
+        let resp = check_bucket_response(resp, &self.bucket_name(), NotFoundContext::Bucket).await?;
         Ok(resp.json().await?)
     }
 
@@ -202,7 +203,7 @@ impl HFBucket {
             .headers(self.client.auth_headers())
             .send()
             .await?;
-        let resp = check_bucket_response(resp, &self.repo_id(), NotFoundContext::Repo).await?;
+        let resp = check_bucket_response(resp, &self.bucket_name(), NotFoundContext::Bucket).await?;
         Ok(resp.json().await?)
     }
 
@@ -216,7 +217,7 @@ impl HFBucket {
             .headers(self.client.auth_headers())
             .send()
             .await?;
-        let resp = check_bucket_response(resp, &self.repo_id(), NotFoundContext::Repo).await?;
+        let resp = check_bucket_response(resp, &self.bucket_name(), NotFoundContext::Bucket).await?;
         Ok(resp.json().await?)
     }
 
@@ -226,7 +227,7 @@ impl HFBucket {
     /// following it. Metadata is extracted from response headers:
     /// `X-Linked-Size`, `X-XET-Hash`, `X-Linked-ETag`, `Last-Modified`, and `Link`.
     pub async fn resolve_file(&self, path: &str) -> Result<ResolvedFile> {
-        let url = format!("{}/buckets/{}/{}/resolve/{}", self.client.inner.endpoint, self.namespace, self.repo, path);
+        let url = format!("{}/buckets/{}/{}/resolve/{}", self.client.inner.endpoint, self.namespace, self.bucket, path);
         let resp = self
             .client
             .inner
@@ -239,7 +240,7 @@ impl HFBucket {
         if !resp.status().is_redirection() {
             return Err(check_bucket_response(
                 resp,
-                &self.repo_id(),
+                &self.bucket_name(),
                 NotFoundContext::Entry { path: path.to_string() },
             )
             .await
@@ -303,7 +304,7 @@ impl HFBucket {
     /// from the Xet CAS directly.
     #[cfg(feature = "xet")]
     pub async fn xet_resolve_file(&self, path: &str) -> Result<crate::types::XetFileInfo> {
-        let url = format!("{}/buckets/{}/{}/resolve/{}", self.client.inner.endpoint, self.namespace, self.repo, path);
+        let url = format!("{}/buckets/{}/{}/resolve/{}", self.client.inner.endpoint, self.namespace, self.bucket, path);
         let resp = self
             .client
             .inner
@@ -314,18 +315,18 @@ impl HFBucket {
             .send()
             .await?;
         let resp =
-            check_bucket_response(resp, &self.repo_id(), NotFoundContext::Entry { path: path.to_string() }).await?;
+            check_bucket_response(resp, &self.bucket_name(), NotFoundContext::Entry { path: path.to_string() }).await?;
         Ok(resp.json().await?)
     }
 }
 
 impl HFClient {
     /// Permanently deletes a bucket and all of its files.
-    pub async fn delete_bucket(&self, namespace: &str, repo: &str) -> Result<()> {
-        let url = format!("{}/api/buckets/{}/{}", self.inner.endpoint, namespace, repo);
-        let repo_id = format!("{}/{}", namespace, repo);
+    pub async fn delete_bucket(&self, namespace: &str, bucket: &str) -> Result<()> {
+        let url = format!("{}/api/buckets/{}/{}", self.inner.endpoint, namespace, bucket);
+        let bucket_id = format!("{}/{}", namespace, bucket);
         let resp = self.inner.client.delete(&url).headers(self.auth_headers()).send().await?;
-        check_bucket_response(resp, &repo_id, NotFoundContext::Repo).await?;
+        check_bucket_response(resp, &bucket_id, NotFoundContext::Bucket).await?;
         Ok(())
     }
 
@@ -333,20 +334,20 @@ impl HFClient {
     pub async fn create_bucket(
         &self,
         namespace: &str,
-        repo: &str,
-        params: CreateBucketParams,
+        bucket: &str,
+        params: &CreateBucketParams,
     ) -> Result<BucketCreated> {
-        let url = format!("{}/api/buckets/{}/{}", self.inner.endpoint, namespace, repo);
+        let url = format!("{}/api/buckets/{}/{}", self.inner.endpoint, namespace, bucket);
         let resp = self
             .inner
             .client
             .post(&url)
             .headers(self.auth_headers())
-            .json(&params)
+            .json(params)
             .send()
             .await?;
-        let repo_id = format!("{}/{}", namespace, repo);
-        let resp = check_bucket_response(resp, &repo_id, NotFoundContext::Repo).await?;
+        let bucket_id = format!("{}/{}", namespace, bucket);
+        let resp = check_bucket_response(resp, &bucket_id, NotFoundContext::Bucket).await?;
         Ok(resp.json().await?)
     }
 
@@ -361,9 +362,9 @@ impl HFClient {
 sync_api! {
     impl HFBucket -> HFBucketSync {
         fn info(&self) -> Result<BucketOverview>;
-        fn update_settings(&self, params: UpdateBucketParams) -> Result<()>;
-        fn batch_files(&self, ops: Vec<BatchOp>) -> Result<BatchResult>;
-        fn get_paths_info(&self, paths: Vec<String>) -> Result<Vec<TreeEntry>>;
+        fn update_settings(&self, params: &UpdateBucketParams) -> Result<()>;
+        fn batch_files(&self, ops: &[BatchOp]) -> Result<BatchResult>;
+        fn get_paths_info(&self, paths: &[String]) -> Result<Vec<TreeEntry>>;
         fn get_xet_write_token(&self) -> Result<XetToken>;
         fn get_xet_read_token(&self) -> Result<XetToken>;
         fn resolve_file(&self, path: &str) -> Result<ResolvedFile>;
@@ -372,7 +373,7 @@ sync_api! {
 
 sync_api_stream! {
     impl HFBucket -> HFBucketSync {
-        fn list_tree(&self, path: &str, params: ListTreeParams) -> TreeEntry;
+        fn list_tree(&self, path: &str, params: &ListTreeParams) -> TreeEntry;
     }
 }
 
@@ -385,8 +386,8 @@ sync_api! {
 
 sync_api! {
     impl HFClient -> HFClientSync {
-        fn delete_bucket(&self, namespace: &str, repo: &str) -> Result<()>;
-        fn create_bucket(&self, namespace: &str, repo: &str, params: CreateBucketParams) -> Result<BucketCreated>;
+        fn delete_bucket(&self, namespace: &str, bucket: &str) -> Result<()>;
+        fn create_bucket(&self, namespace: &str, bucket: &str, params: &CreateBucketParams) -> Result<BucketCreated>;
     }
 }
 
@@ -401,18 +402,18 @@ mod tests {
     use crate::HFClientBuilder;
 
     #[test]
-    fn bucket_constructor_sets_namespace_and_repo() {
+    fn bucket_constructor_sets_namespace_and_bucket() {
         let client = HFClientBuilder::new().build().unwrap();
         let bucket = client.bucket("myuser", "my-bucket");
         assert_eq!(bucket.namespace, "myuser");
-        assert_eq!(bucket.repo, "my-bucket");
+        assert_eq!(bucket.bucket, "my-bucket");
     }
 
     #[test]
     fn get_bucket_url() {
         let client = HFClientBuilder::new().build().unwrap();
         let bucket = client.bucket("myuser", "my-bucket");
-        let url = format!("{}/api/buckets/{}/{}", bucket.client.inner.endpoint, bucket.namespace, bucket.repo);
+        let url = format!("{}/api/buckets/{}/{}", bucket.client.inner.endpoint, bucket.namespace, bucket.bucket);
         assert!(url.ends_with("/api/buckets/myuser/my-bucket"));
     }
 
@@ -420,7 +421,8 @@ mod tests {
     fn update_settings_url() {
         let client = HFClientBuilder::new().build().unwrap();
         let bucket = client.bucket("myuser", "my-bucket");
-        let url = format!("{}/api/buckets/{}/{}/settings", bucket.client.inner.endpoint, bucket.namespace, bucket.repo);
+        let url =
+            format!("{}/api/buckets/{}/{}/settings", bucket.client.inner.endpoint, bucket.namespace, bucket.bucket);
         assert!(url.ends_with("/api/buckets/myuser/my-bucket/settings"));
     }
 
@@ -490,11 +492,11 @@ mod tests {
         let client = HFClientBuilder::new().build().unwrap();
         let bucket = client.bucket("myuser", "my-bucket");
         let url = if "".is_empty() {
-            format!("{}/api/buckets/{}/{}/tree", bucket.client.inner.endpoint, bucket.namespace, bucket.repo)
+            format!("{}/api/buckets/{}/{}/tree", bucket.client.inner.endpoint, bucket.namespace, bucket.bucket)
         } else {
             format!(
                 "{}/api/buckets/{}/{}/tree/{}",
-                bucket.client.inner.endpoint, bucket.namespace, bucket.repo, "some/path"
+                bucket.client.inner.endpoint, bucket.namespace, bucket.bucket, "some/path"
             )
         };
         assert!(url.ends_with("/api/buckets/myuser/my-bucket/tree"));
@@ -505,8 +507,10 @@ mod tests {
         let client = HFClientBuilder::new().build().unwrap();
         let bucket = client.bucket("myuser", "my-bucket");
         let path = "data/sub";
-        let url =
-            format!("{}/api/buckets/{}/{}/tree/{}", bucket.client.inner.endpoint, bucket.namespace, bucket.repo, path);
+        let url = format!(
+            "{}/api/buckets/{}/{}/tree/{}",
+            bucket.client.inner.endpoint, bucket.namespace, bucket.bucket, path
+        );
         assert!(url.ends_with("/api/buckets/myuser/my-bucket/tree/data/sub"));
     }
 
@@ -516,10 +520,12 @@ mod tests {
         let bucket = client.bucket("myuser", "my-bucket");
         let write_url = format!(
             "{}/api/buckets/{}/{}/xet-write-token",
-            bucket.client.inner.endpoint, bucket.namespace, bucket.repo
+            bucket.client.inner.endpoint, bucket.namespace, bucket.bucket
         );
-        let read_url =
-            format!("{}/api/buckets/{}/{}/xet-read-token", bucket.client.inner.endpoint, bucket.namespace, bucket.repo);
+        let read_url = format!(
+            "{}/api/buckets/{}/{}/xet-read-token",
+            bucket.client.inner.endpoint, bucket.namespace, bucket.bucket
+        );
         assert!(write_url.ends_with("/xet-write-token"));
         assert!(read_url.ends_with("/xet-read-token"));
     }
@@ -529,7 +535,7 @@ mod tests {
         let client = HFClientBuilder::new().build().unwrap();
         let bucket = client.bucket("myuser", "my-bucket");
         let url =
-            format!("{}/api/buckets/{}/{}/paths-info", bucket.client.inner.endpoint, bucket.namespace, bucket.repo);
+            format!("{}/api/buckets/{}/{}/paths-info", bucket.client.inner.endpoint, bucket.namespace, bucket.bucket);
         assert!(url.ends_with("/paths-info"));
     }
 
@@ -560,7 +566,7 @@ mod tests {
         let bucket = client.bucket("myuser", "my-bucket");
         let url = format!(
             "{}/buckets/{}/{}/resolve/{}",
-            bucket.client.inner.endpoint, bucket.namespace, bucket.repo, "data/train.parquet"
+            bucket.client.inner.endpoint, bucket.namespace, bucket.bucket, "data/train.parquet"
         );
         assert!(url.contains("/buckets/myuser/my-bucket/resolve/data/train.parquet"));
         assert!(!url.contains("/api/"));
@@ -573,7 +579,7 @@ mod tests {
         let bucket = client.bucket("myuser", "my-bucket");
         let url = format!(
             "{}/buckets/{}/{}/resolve/{}",
-            bucket.client.inner.endpoint, bucket.namespace, bucket.repo, "data/train.parquet"
+            bucket.client.inner.endpoint, bucket.namespace, bucket.bucket, "data/train.parquet"
         );
         assert!(url.contains("/buckets/myuser/my-bucket/resolve/data/train.parquet"));
     }

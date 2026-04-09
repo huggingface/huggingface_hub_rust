@@ -23,7 +23,7 @@ pub struct HFBucket {
     /// The namespace (user or organization) that owns the bucket.
     pub namespace: String,
     /// The bucket name within the namespace.
-    pub repo: String,
+    pub bucket: String,
 }
 
 impl HFClient {
@@ -34,7 +34,7 @@ impl HFClient {
         HFBucket {
             client: self.clone(),
             namespace: namespace.into(),
-            repo: repo.into(),
+            bucket: repo.into(),
         }
     }
 }

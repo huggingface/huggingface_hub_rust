@@ -9,7 +9,10 @@
 //! Feature-gated tests: enable with --features, e.g.:
 //!   HF_TOKEN=hf_xxx cargo test -p huggingface-hub --all-features --test integration_test
 
-use futures::StreamExt;
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use futures::{StreamExt, TryStreamExt};
 use huggingface_hub::repository::{
     HFRepository, RepoCreateBranchParams, RepoCreateCommitParams, RepoCreateTagParams, RepoDeleteBranchParams,
     RepoDeleteFileParams, RepoDeleteFolderParams, RepoDeleteTagParams, RepoDownloadFileParams, RepoFileExistsParams,
@@ -21,6 +24,8 @@ use huggingface_hub::types::*;
 use huggingface_hub::{HFClient, HFClientBuilder};
 #[cfg(feature = "spaces")]
 use huggingface_hub::{SpaceSecretDeleteParams, SpaceSecretParams, SpaceVariableDeleteParams, SpaceVariableParams};
+#[cfg(feature = "xet")]
+use xet::xet_session::Sha256Policy;
 
 fn api() -> Option<HFClient> {
     if std::env::var("HF_TOKEN").is_err() {
@@ -925,7 +930,7 @@ async fn test_create_and_delete_bucket() {
     let name = test_bucket_name();
 
     let created = api
-        .create_bucket(username, &name, CreateBucketParams::builder().private(true).build())
+        .create_bucket(username, &name, &CreateBucketParams::builder().private(true).build())
         .await
         .expect("create_bucket failed");
     assert!(created.name.contains(&name));
@@ -936,7 +941,7 @@ async fn test_create_and_delete_bucket() {
     assert!(info.private.unwrap());
 
     bucket
-        .update_settings(UpdateBucketParams::builder().private(false).build())
+        .update_settings(&UpdateBucketParams::builder().private(false).build())
         .await
         .expect("update_settings failed");
 
@@ -957,14 +962,14 @@ async fn test_bucket_list_tree_empty() {
     let username = cached_username().await;
     let name = test_bucket_name();
 
-    api.create_bucket(username, &name, CreateBucketParams::builder().build())
+    api.create_bucket(username, &name, &CreateBucketParams::builder().build())
         .await
         .expect("create_bucket failed");
 
     let bucket = api.bucket(username, &name);
 
     let entries: Vec<_> = bucket
-        .list_tree("", ListTreeParams::builder().build())
+        .list_tree("", &ListTreeParams::builder().build())
         .unwrap()
         .collect::<Vec<_>>()
         .await
@@ -986,7 +991,7 @@ async fn test_get_xet_write_and_read_token() {
     let username = cached_username().await;
     let name = test_bucket_name();
 
-    api.create_bucket(username, &name, CreateBucketParams::builder().build())
+    api.create_bucket(username, &name, &CreateBucketParams::builder().build())
         .await
         .unwrap();
 

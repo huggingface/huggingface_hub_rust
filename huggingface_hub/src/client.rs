@@ -293,7 +293,7 @@ impl HFClient {
                     revision,
                     repo_id: repo_id_str,
                 }),
-                crate::error::NotFoundContext::Generic => Err(HFError::Http { status, url, body }),
+                _ => Err(HFError::Http { status, url, body }),
             },
             _ => Err(HFError::Http { status, url, body }),
         }

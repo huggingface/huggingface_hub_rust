@@ -15,6 +15,9 @@ pub enum HFError {
     #[error("Repository not found: {repo_id}")]
     RepoNotFound { repo_id: String },
 
+    #[error("Repository not found: {bucket_name}")]
+    BucketNotFound { bucket_name: String },
+
     #[error("Revision not found: {revision} in {repo_id}")]
     RevisionNotFound { repo_id: String, revision: String },
 
@@ -115,6 +118,8 @@ pub type Result<T> = std::result::Result<T, HFError>;
 pub(crate) enum NotFoundContext {
     /// 404 means the repository does not exist
     Repo,
+    /// 404 means the bucket does not exist
+    Bucket,
     /// 404 means a file/path does not exist within the repo
     Entry { path: String },
     /// 404 means the revision does not exist
