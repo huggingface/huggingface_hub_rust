@@ -23,6 +23,12 @@ struct XetTokenResponse {
     cas_url: String,
 }
 
+#[derive(Default)]
+pub(crate) struct XetState {
+    pub(crate) session: Option<xet::xet_session::XetSession>,
+    pub(crate) generation: u64,
+}
+
 pub struct XetConnectionInfo {
     pub endpoint: String,
     pub access_token: String,
@@ -109,13 +115,14 @@ impl HFRepository {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        let session = self.hf_client.xet_session()?;
+        let (session, generation) = self.hf_client.xet_session()?;
         let group = match session.new_file_download_group() {
             Ok(b) => b,
             Err(e) => {
-                self.hf_client.replace_xet_session(&e);
+                self.hf_client.replace_xet_session(generation, &e);
                 self.hf_client
                     .xet_session()?
+                    .0
                     .new_file_download_group()
                     .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?
             },
@@ -162,13 +169,14 @@ impl HFRepository {
 
         let incomplete_path = PathBuf::from(format!("{}.incomplete", path.display()));
 
-        let session = self.hf_client.xet_session()?;
+        let (session, generation) = self.hf_client.xet_session()?;
         let group = match session.new_file_download_group() {
             Ok(b) => b,
             Err(e) => {
-                self.hf_client.replace_xet_session(&e);
+                self.hf_client.replace_xet_session(generation, &e);
                 self.hf_client
                     .xet_session()?
+                    .0
                     .new_file_download_group()
                     .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?
             },
@@ -208,13 +216,14 @@ impl HFRepository {
         let repo_type = Some(self.repo_type);
         let conn = fetch_xet_connection_info(&self.hf_client, "read", &repo_path, repo_type, revision).await?;
 
-        let session = self.hf_client.xet_session()?;
+        let (session, generation) = self.hf_client.xet_session()?;
         let group = match session.new_file_download_group() {
             Ok(b) => b,
             Err(e) => {
-                self.hf_client.replace_xet_session(&e);
+                self.hf_client.replace_xet_session(generation, &e);
                 self.hf_client
                     .xet_session()?
+                    .0
                     .new_file_download_group()
                     .map_err(|e| HFError::Other(format!("Xet batch download failed: {e}")))?
             },
@@ -273,13 +282,14 @@ impl HFRepository {
         let repo_type = Some(self.repo_type);
         let conn = fetch_xet_connection_info(&self.hf_client, "read", &repo_path, repo_type, revision).await?;
 
-        let session = self.hf_client.xet_session()?;
+        let (session, generation) = self.hf_client.xet_session()?;
         let group = match session.new_download_stream_group() {
             Ok(b) => b,
             Err(e) => {
-                self.hf_client.replace_xet_session(&e);
+                self.hf_client.replace_xet_session(generation, &e);
                 self.hf_client
                     .xet_session()?
+                    .0
                     .new_download_stream_group()
                     .map_err(|e| HFError::Other(format!("Xet stream download failed: {e}")))?
             },
@@ -323,13 +333,14 @@ impl HFRepository {
         tracing::info!(endpoint = conn.endpoint.as_str(), "xet write token obtained, building session");
 
         tracing::info!("building xet upload commit");
-        let session = self.hf_client.xet_session()?;
+        let (session, generation) = self.hf_client.xet_session()?;
         let commit = match session.new_upload_commit() {
             Ok(b) => b,
             Err(e) => {
-                self.hf_client.replace_xet_session(&e);
+                self.hf_client.replace_xet_session(generation, &e);
                 self.hf_client
                     .xet_session()?
+                    .0
                     .new_upload_commit()
                     .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?
             },
