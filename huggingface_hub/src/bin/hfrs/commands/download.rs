@@ -7,7 +7,7 @@ use huggingface_hub::{HFClient, Progress, RepoDownloadFileParams, RepoSnapshotDo
 
 use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
-use crate::progress::{self, CliProgressHandler};
+use crate::progress::CliProgressHandler;
 
 /// Download files from the Hub
 #[derive(ClapArgs)]
@@ -51,14 +51,16 @@ pub struct Args {
     pub quiet: bool,
 }
 
-pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args, multi: Option<indicatif::MultiProgress>) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
     let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
 
-    let handler: Progress = if args.quiet || progress::progress_disabled() {
+    let handler: Progress = if args.quiet {
         None
+    } else if let Some(multi) = multi {
+        Some(Arc::new(CliProgressHandler::new(multi)))
     } else {
-        Some(Arc::new(CliProgressHandler::new()))
+        None
     };
 
     let path = if args.filenames.len() == 1 && args.include.is_empty() && args.exclude.is_empty() {

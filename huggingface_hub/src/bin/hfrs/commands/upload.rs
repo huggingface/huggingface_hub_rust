@@ -8,7 +8,7 @@ use tracing::info;
 
 use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
-use crate::progress::{self, CliProgressHandler};
+use crate::progress::CliProgressHandler;
 
 /// Upload files to the Hub
 #[derive(ClapArgs)]
@@ -63,7 +63,7 @@ pub struct Args {
     pub quiet: bool,
 }
 
-pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args, multi: Option<indicatif::MultiProgress>) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
     let local_path = args.local_path.unwrap_or_else(|| PathBuf::from("."));
     let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
@@ -81,10 +81,12 @@ pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
         api.create_repo(&create_params).await?;
     }
 
-    let handler: Progress = if args.quiet || progress::progress_disabled() {
+    let handler: Progress = if args.quiet {
         None
+    } else if let Some(multi) = multi {
+        Some(Arc::new(CliProgressHandler::new(multi)))
     } else {
-        Some(Arc::new(CliProgressHandler::new()))
+        None
     };
 
     let commit_info = if local_path.is_file() {

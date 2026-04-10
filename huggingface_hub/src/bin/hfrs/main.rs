@@ -20,7 +20,13 @@ async fn main() -> ExitCode {
     let cli = Cli::parse();
 
     let color = should_use_color(cli.no_color);
-    init_logging(color);
+    let progress_disabled = cli.disable_progress_bars || progress::progress_disabled_by_env();
+    let multi = if progress_disabled {
+        None
+    } else {
+        Some(indicatif::MultiProgress::new())
+    };
+    init_logging(color, multi.as_ref());
 
     let mut builder = HFClientBuilder::new();
     if let Some(t) = cli.token {
@@ -51,11 +57,11 @@ async fn main() -> ExitCode {
         Command::Auth(args) => commands::auth::execute(&api, args).await,
         Command::Cache(args) => commands::cache::execute(&api, args).await,
         Command::Datasets(args) => commands::datasets::execute(&api, args).await,
-        Command::Download(args) => commands::download::execute(&api, args).await,
+        Command::Download(args) => commands::download::execute(&api, args, multi.clone()).await,
         Command::Models(args) => commands::models::execute(&api, args).await,
         Command::Repos(args) => commands::repos::execute(&api, args).await,
         Command::Spaces(args) => commands::spaces::execute(&api, args).await,
-        Command::Upload(args) => commands::upload::execute(&api, args).await,
+        Command::Upload(args) => commands::upload::execute(&api, args, multi.clone()).await,
         Command::Env(args) => commands::env::execute(args).await,
         Command::Version(args) => commands::version::execute(args).await,
     };
@@ -245,7 +251,7 @@ fn format_hf_error(err: &HFError) -> String {
 
 const XET_CRATES: &[&str] = &["hf_xet", "xet_client", "xet_core_structures", "xet_data", "xet_runtime"];
 
-fn init_logging(color: bool) {
+fn init_logging(color: bool, multi: Option<&indicatif::MultiProgress>) {
     let mut filter_str = if let Ok(level) = std::env::var("HF_LOG_LEVEL") {
         level
     } else if std::env::var("HF_DEBUG").is_ok() {
@@ -265,10 +271,20 @@ fn init_logging(color: bool) {
         EnvFilter::new("off")
     });
 
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_target(true)
-        .with_ansi(color)
-        .with_writer(std::io::stderr)
-        .init();
+    if let Some(multi) = multi {
+        let writer = progress::MultiProgressWriter::new(multi.clone());
+        tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_target(true)
+            .with_ansi(color)
+            .with_writer(move || writer.clone())
+            .init();
+    } else {
+        tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_target(true)
+            .with_ansi(color)
+            .with_writer(std::io::stderr)
+            .init();
+    }
 }
