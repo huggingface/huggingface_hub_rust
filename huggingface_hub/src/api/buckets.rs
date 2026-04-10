@@ -319,11 +319,7 @@ impl HFBucket {
             .zip(xet_infos.iter())
             .map(|((local_path, remote_path), xet_info)| {
                 let metadata = std::fs::metadata(local_path).ok();
-                let size = metadata
-                    .as_ref()
-                    .map(|m| m.len())
-                    .or(xet_info.file_size)
-                    .unwrap_or(0);
+                let size = metadata.as_ref().map(|m| m.len()).or(xet_info.file_size).unwrap_or(0);
                 let mtime = metadata
                     .as_ref()
                     .and_then(|m| m.modified().ok())
@@ -389,5 +385,37 @@ impl HFBucket {
     #[cfg(not(feature = "xet"))]
     pub async fn download_files(&self, _params: &crate::types::BucketDownloadFilesParams) -> Result<()> {
         Err(HFError::XetNotEnabled)
+    }
+}
+
+sync_api! {
+    impl HFClient -> HFClientSync {
+        fn create_bucket(&self, params: &CreateBucketParams) -> Result<BucketUrl>;
+        fn delete_bucket(&self, bucket_id: &str, missing_ok: bool) -> Result<()>;
+        fn move_bucket(&self, from_id: &str, to_id: &str) -> Result<()>;
+    }
+}
+
+sync_api_stream! {
+    impl HFClient -> HFClientSync {
+        fn list_buckets(&self, namespace: &str) -> BucketInfo;
+    }
+}
+
+sync_api! {
+    impl HFBucket -> HFBucketSync {
+        fn info(&self) -> Result<BucketInfo>;
+        fn get_file_metadata(&self, remote_path: &str) -> Result<BucketFileMetadata>;
+        fn get_paths_info(&self, paths: &[String]) -> Result<Vec<BucketTreeEntry>>;
+        fn batch(&self, params: &BatchBucketFilesParams) -> Result<()>;
+        fn upload_files(&self, files: &[(std::path::PathBuf, String)]) -> Result<()>;
+        fn download_files(&self, params: &crate::types::BucketDownloadFilesParams) -> Result<()>;
+        fn delete_files(&self, paths: &[String]) -> Result<()>;
+    }
+}
+
+sync_api_stream! {
+    impl HFBucket -> HFBucketSync {
+        fn list_tree(&self, params: &ListBucketTreeParams) -> BucketTreeEntry;
     }
 }

@@ -36,7 +36,7 @@ pub mod xet;
 pub mod test_utils;
 
 #[cfg(feature = "blocking")]
-pub use blocking::{HFClientSync, HFRepoSync, HFRepositorySync, HFSpaceSync};
+pub use blocking::{HFBucketSync, HFClientSync, HFRepoSync, HFRepositorySync, HFSpaceSync};
 pub use bucket::*;
 pub use client::{HFClient, HFClientBuilder};
 #[cfg(feature = "cli")]

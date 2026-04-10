@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::client::HFClient;
 use crate::error::{HFError, Result};
-use crate::{repository as repo, types};
+use crate::{bucket, repository as repo, types};
 
 fn build_runtime() -> Result<Arc<tokio::runtime::Runtime>> {
     tokio::runtime::Builder::new_current_thread()
@@ -48,6 +48,16 @@ pub struct HFSpaceSync {
     pub(crate) inner: Arc<repo::HFSpace>,
 }
 
+/// Synchronous/blocking counterpart to [`bucket::HFBucket`].
+///
+/// Holds a reference to the underlying async handle and the shared tokio runtime.
+/// Blocking API methods are defined via the `sync_api!` macro in `api/buckets.rs`.
+#[derive(Clone)]
+pub struct HFBucketSync {
+    pub(crate) inner: Arc<bucket::HFBucket>,
+    pub(crate) runtime: Arc<tokio::runtime::Runtime>,
+}
+
 impl fmt::Debug for HFClientSync {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HFClientSync").finish()
@@ -66,6 +76,12 @@ impl fmt::Debug for HFSpaceSync {
             .field("inner", &self.inner)
             .field("repo_sync", &self.repo_sync)
             .finish()
+    }
+}
+
+impl fmt::Debug for HFBucketSync {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HFBucketSync").field("inner", &self.inner).finish()
     }
 }
 
@@ -119,6 +135,11 @@ impl HFClientSync {
     /// Creates a blocking handle for a space repository.
     pub fn space(&self, owner: impl Into<String>, name: impl Into<String>) -> HFSpaceSync {
         HFSpaceSync::new(self.clone(), owner, name)
+    }
+
+    /// Creates a blocking handle for a bucket.
+    pub fn bucket(&self, owner: impl Into<String>, name: impl Into<String>) -> HFBucketSync {
+        HFBucketSync::new(self.clone(), owner, name)
     }
 }
 
@@ -174,6 +195,24 @@ impl Deref for HFSpaceSync {
 
     fn deref(&self) -> &Self::Target {
         &self.repo_sync
+    }
+}
+
+impl HFBucketSync {
+    /// Creates a blocking bucket handle from a client, owner, and name.
+    pub fn new(client: HFClientSync, owner: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            inner: Arc::new(bucket::HFBucket::new(client.inner.clone(), owner, name)),
+            runtime: client.runtime.clone(),
+        }
+    }
+}
+
+impl Deref for HFBucketSync {
+    type Target = bucket::HFBucket;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
 }
 
