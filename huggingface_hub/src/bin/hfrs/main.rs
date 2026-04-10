@@ -20,7 +20,8 @@ async fn main() -> ExitCode {
     let cli = Cli::parse();
 
     let color = should_use_color(cli.no_color);
-    let progress_disabled = cli.disable_progress_bars || progress::progress_disabled_by_env();
+    let progress_disabled =
+        cli.disable_progress_bars || progress::progress_disabled_by_env() || !std::io::stderr().is_terminal();
     let multi = if progress_disabled {
         None
     } else {
