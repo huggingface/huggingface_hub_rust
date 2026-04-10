@@ -27,12 +27,15 @@ pub enum ProgressEvent {
 pub enum UploadEvent {
     /// Upload operation has started; total file count and bytes are known.
     Start { total_files: usize, total_bytes: u64 },
-    /// Aggregate byte-level progress during xet/LFS upload.
+    /// Byte-level progress during xet/LFS upload.
+    /// `files` contains per-file progress for xet uploads (may be empty
+    /// for phases without per-file granularity).
     Progress {
         phase: UploadPhase,
         bytes_completed: u64,
         total_bytes: u64,
         bytes_per_sec: Option<f64>,
+        files: Vec<FileProgress>,
     },
     /// One or more individual files completed. Batched for efficiency
     /// during multi-file uploads (upload_folder).
@@ -160,6 +163,7 @@ mod tests {
                 bytes_completed: 512,
                 total_bytes: 1024,
                 bytes_per_sec: Some(100.0),
+                files: vec![],
             }),
         );
         emit(&progress, ProgressEvent::Upload(UploadEvent::Complete));
@@ -242,6 +246,7 @@ mod tests {
                     bytes_completed: 0,
                     total_bytes: 100,
                     bytes_per_sec: None,
+                    files: vec![],
                 }),
             );
         }
@@ -254,6 +259,46 @@ mod tests {
             } else {
                 panic!("expected Upload(Progress) at index {i}");
             }
+        }
+    }
+
+    #[test]
+    fn upload_progress_with_per_file_data() {
+        let handler = Arc::new(RecordingHandler::new());
+        let progress: Progress = Some(handler.clone());
+
+        emit(
+            &progress,
+            ProgressEvent::Upload(UploadEvent::Progress {
+                phase: UploadPhase::Uploading,
+                bytes_completed: 500,
+                total_bytes: 1000,
+                bytes_per_sec: Some(100.0),
+                files: vec![
+                    FileProgress {
+                        filename: "model/weights.bin".to_string(),
+                        bytes_completed: 300,
+                        total_bytes: 600,
+                        status: FileStatus::InProgress,
+                    },
+                    FileProgress {
+                        filename: "config.json".to_string(),
+                        bytes_completed: 200,
+                        total_bytes: 400,
+                        status: FileStatus::InProgress,
+                    },
+                ],
+            }),
+        );
+
+        let events = handler.events();
+        assert_eq!(events.len(), 1);
+        if let ProgressEvent::Upload(UploadEvent::Progress { files, .. }) = &events[0] {
+            assert_eq!(files.len(), 2);
+            assert_eq!(files[0].filename, "model/weights.bin");
+            assert_eq!(files[1].filename, "config.json");
+        } else {
+            panic!("expected Upload(Progress)");
         }
     }
 

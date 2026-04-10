@@ -342,6 +342,17 @@ impl HFRepository {
             file_size,
         )
         .await?;
+        progress::emit(
+            &params.progress,
+            ProgressEvent::Download(DownloadEvent::Progress {
+                files: vec![FileProgress {
+                    filename: params.filename.clone(),
+                    bytes_completed: file_size,
+                    total_bytes: file_size,
+                    status: FileStatus::Complete,
+                }],
+            }),
+        );
 
         Ok(dest_path)
     }
@@ -551,6 +562,17 @@ impl HFRepository {
         let blob = cache::blob_path(cache_dir, repo_folder, &etag);
 
         if blob.exists() && !force_download {
+            progress::emit(
+                &params.progress,
+                ProgressEvent::Download(DownloadEvent::Progress {
+                    files: vec![FileProgress {
+                        filename: params.filename.clone(),
+                        bytes_completed: file_size,
+                        total_bytes: file_size,
+                        status: FileStatus::Complete,
+                    }],
+                }),
+            );
             return finalize_cached_file(cache_dir, repo_folder, revision, &commit_hash, &params.filename, &etag).await;
         }
 
@@ -675,8 +697,16 @@ impl HFRepository {
         let total_files = filenames.len();
         let force = params.force_download == Some(true);
 
+        let mut cached_filenames = Vec::new();
         if !force && params.local_dir.is_none() {
-            filenames.retain(|f| !cache::snapshot_path(cache_dir, &repo_folder, &commit_hash, f).exists());
+            filenames.retain(|f| {
+                if cache::snapshot_path(cache_dir, &repo_folder, &commit_hash, f).exists() {
+                    cached_filenames.push(f.clone());
+                    false
+                } else {
+                    true
+                }
+            });
         }
 
         progress::emit(
@@ -686,6 +716,19 @@ impl HFRepository {
                 total_bytes: 0,
             }),
         );
+        for f in &cached_filenames {
+            progress::emit(
+                &params.progress,
+                ProgressEvent::Download(DownloadEvent::Progress {
+                    files: vec![FileProgress {
+                        filename: f.clone(),
+                        bytes_completed: 0,
+                        total_bytes: 0,
+                        status: FileStatus::Complete,
+                    }],
+                }),
+            );
+        }
 
         #[cfg(feature = "xet")]
         {
@@ -832,6 +875,17 @@ impl HFRepository {
                         &meta.etag,
                     )
                     .await?;
+                    progress::emit(
+                        &params.progress,
+                        ProgressEvent::Download(DownloadEvent::Progress {
+                            files: vec![FileProgress {
+                                filename: meta.filename.clone(),
+                                bytes_completed: meta.file_size,
+                                total_bytes: meta.file_size,
+                                status: FileStatus::Complete,
+                            }],
+                        }),
+                    );
                     continue;
                 }
                 if meta.xet_hash.is_some() {
@@ -1068,17 +1122,12 @@ async fn stream_response_to_file_with_progress(
         bytes_read += chunk.len() as u64;
 
         if let (Some(h), Some(fname)) = (handler, filename) {
-            let status = if bytes_read >= total_bytes && total_bytes > 0 {
-                FileStatus::Complete
-            } else {
-                FileStatus::InProgress
-            };
             h.on_progress(&ProgressEvent::Download(DownloadEvent::Progress {
                 files: vec![FileProgress {
                     filename: fname.to_string(),
                     bytes_completed: bytes_read,
                     total_bytes,
-                    status,
+                    status: FileStatus::InProgress,
                 }],
             }));
         }
@@ -1135,6 +1184,7 @@ impl HFRepository {
                 bytes_completed: 0,
                 total_bytes,
                 bytes_per_sec: None,
+                files: vec![],
             }),
         );
 
@@ -1148,6 +1198,7 @@ impl HFRepository {
                 bytes_completed: 0,
                 total_bytes,
                 bytes_per_sec: None,
+                files: vec![],
             }),
         );
         let lfs_uploaded: HashMap<String, (String, u64)> =
@@ -1214,6 +1265,7 @@ impl HFRepository {
                 bytes_completed: total_bytes,
                 total_bytes,
                 bytes_per_sec: None,
+                files: vec![],
             }),
         );
 
