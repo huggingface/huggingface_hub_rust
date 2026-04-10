@@ -4,10 +4,10 @@ use url::Url;
 use crate::client::HFClient;
 use crate::constants;
 use crate::error::{HFError, Result};
-use crate::repository::{HFRepository, RepoFileExistsParams, RepoRevisionExistsParams, RepoUpdateSettingsParams};
+use crate::repository::HFRepository;
 use crate::types::{
     CreateRepoParams, DatasetInfo, DeleteRepoParams, ListDatasetsParams, ListModelsParams, ListSpacesParams, ModelInfo,
-    MoveRepoParams, RepoUrl, SpaceInfo,
+    MoveRepoParams, RepoFileExistsParams, RepoRevisionExistsParams, RepoUpdateSettingsParams, RepoUrl, SpaceInfo,
 };
 
 impl HFRepository {
@@ -471,7 +471,7 @@ sync_api_stream! {
 
 sync_api! {
     impl HFRepository -> HFRepositorySync {
-        fn info(&self, params: &crate::repository::RepoInfoParams) -> Result<crate::types::RepoInfo>;
+        fn info(&self, params: &crate::types::RepoInfoParams) -> Result<crate::types::RepoInfo>;
         fn exists(&self) -> Result<bool>;
         fn revision_exists(&self, params: &RepoRevisionExistsParams) -> Result<bool>;
         fn file_exists(&self, params: &RepoFileExistsParams) -> Result<bool>;

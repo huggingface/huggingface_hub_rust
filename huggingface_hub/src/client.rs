@@ -45,6 +45,8 @@ pub(crate) struct HFClientInner {
     pub(crate) token: Option<String>,
     pub(crate) cache_dir: std::path::PathBuf,
     pub(crate) cache_enabled: bool,
+    #[cfg(feature = "xet")]
+    pub(crate) xet_state: std::sync::Mutex<crate::xet::XetState>,
 }
 
 /// Builder for [`HFClient`].
@@ -182,6 +184,8 @@ impl HFClientBuilder {
                 token,
                 cache_dir,
                 cache_enabled: self.cache_enabled.unwrap_or(true),
+                #[cfg(feature = "xet")]
+                xet_state: std::sync::Mutex::new(crate::xet::XetState::default()),
             }),
         })
     }
@@ -300,6 +304,50 @@ impl HFClient {
     }
 }
 
+#[cfg(feature = "xet")]
+impl HFClient {
+    /// Get or lazily create the cached XetSession.
+    ///
+    /// Returns `(session, generation)`. The generation is an opaque counter
+    /// that identifies which session instance this is. Pass it to
+    /// [`replace_xet_session`](Self::replace_xet_session) so that only the
+    /// caller that observed the error triggers a replacement — concurrent
+    /// callers that already obtained a fresh session won't clobber it.
+    pub(crate) fn xet_session(&self) -> Result<(xet::xet_session::XetSession, u64)> {
+        let mut guard = self
+            .inner
+            .xet_state
+            .lock()
+            .map_err(|e| HFError::Other(format!("xet session mutex poisoned: {e}")))?;
+
+        if let Some(ref session) = guard.session {
+            return Ok((session.clone(), guard.generation));
+        }
+
+        let session = xet::xet_session::XetSessionBuilder::new()
+            .build()
+            .map_err(|e| HFError::Other(format!("Failed to build xet session: {e}")))?;
+        guard.session = Some(session.clone());
+        guard.generation += 1;
+        Ok((session, guard.generation))
+    }
+
+    /// Replace the cached XetSession only if the generation matches.
+    ///
+    /// Called by xet call sites when a factory method returns an error.
+    /// The generation check ensures that if another thread already replaced
+    /// the session, this call is a no-op rather than discarding the fresh one.
+    pub(crate) fn replace_xet_session(&self, generation: u64, err: &xet::error::XetError) {
+        tracing::warn!(error = %err, generation, "replacing cached XetSession");
+        let Ok(mut guard) = self.inner.xet_state.lock() else {
+            return;
+        };
+        if guard.generation == generation {
+            guard.session = None;
+        }
+    }
+}
+
 /// Resolve token from environment or token file.
 /// Priority: HF_TOKEN env → HF_TOKEN_PATH file → $HF_HOME/token file.
 fn resolve_token() -> Option<String> {
@@ -356,5 +404,121 @@ mod tests {
         let api = HFClientBuilder::new().build().unwrap();
         let path_str = api.cache_dir().to_string_lossy();
         assert!(path_str.contains("huggingface") && path_str.ends_with("hub"));
+    }
+
+    #[cfg(feature = "xet")]
+    #[test]
+    fn test_xet_session_lazy_creation() {
+        let client = HFClientBuilder::new().build().unwrap();
+        assert!(client.inner.xet_state.lock().unwrap().session.is_none());
+        let (_s1, _gen) = client.xet_session().unwrap();
+        assert!(client.inner.xet_state.lock().unwrap().session.is_some());
+    }
+
+    #[cfg(feature = "xet")]
+    #[test]
+    fn test_xet_session_shared_across_clones() {
+        let client = HFClientBuilder::new().build().unwrap();
+        let clone = client.clone();
+        let (_s1, _gen) = client.xet_session().unwrap();
+        assert!(clone.inner.xet_state.lock().unwrap().session.is_some());
+    }
+
+    #[cfg(feature = "xet")]
+    #[test]
+    fn test_xet_session_recovers_after_abort() {
+        let client = HFClientBuilder::new().build().unwrap();
+
+        let (session, generation) = client.xet_session().unwrap();
+        session.abort().unwrap();
+
+        match session.new_file_download_group() {
+            Ok(_) => panic!("expected error after abort"),
+            Err(e) => client.replace_xet_session(generation, &e),
+        }
+
+        let (recovered, _) = client.xet_session().unwrap();
+        assert!(recovered.new_file_download_group().is_ok());
+    }
+
+    #[cfg(feature = "xet")]
+    #[test]
+    fn test_xet_session_recovers_after_sigint_abort() {
+        let client = HFClientBuilder::new().build().unwrap();
+
+        let (session, generation) = client.xet_session().unwrap();
+        session.sigint_abort().unwrap();
+
+        client.replace_xet_session(generation, &xet::error::XetError::KeyboardInterrupt);
+
+        let (recovered, _) = client.xet_session().unwrap();
+        assert!(recovered.new_file_download_group().is_ok());
+    }
+
+    /// Simulates the call-site retry pattern used in xet.rs:
+    /// 1. Get session + generation, factory call fails
+    /// 2. Call replace_xet_session(generation) to drop the bad session
+    /// 3. Get fresh session, factory call succeeds
+    #[cfg(feature = "xet")]
+    #[test]
+    fn test_replace_and_retry_after_abort() {
+        let client = HFClientBuilder::new().build().unwrap();
+
+        let (session, generation) = client.xet_session().unwrap();
+        assert!(session.new_file_download_group().is_ok());
+
+        session.abort().unwrap();
+
+        let group = match session.new_file_download_group() {
+            Ok(b) => b,
+            Err(e) => {
+                client.replace_xet_session(generation, &e);
+                client
+                    .xet_session()
+                    .unwrap()
+                    .0
+                    .new_file_download_group()
+                    .expect("fresh session factory call should succeed")
+            },
+        };
+        drop(group);
+    }
+
+    /// Verifies that replace_xet_session with a stale generation is a no-op.
+    #[cfg(feature = "xet")]
+    #[test]
+    fn test_replace_with_stale_generation_is_noop() {
+        let client = HFClientBuilder::new().build().unwrap();
+
+        let (session, gen1) = client.xet_session().unwrap();
+        session.abort().unwrap();
+
+        // First replace succeeds
+        client.replace_xet_session(gen1, &xet::error::XetError::KeyboardInterrupt);
+
+        // Get the fresh session with a new generation
+        let (_fresh, gen2) = client.xet_session().unwrap();
+        assert_ne!(gen1, gen2);
+
+        // Attempting to replace with the old generation is a no-op
+        client.replace_xet_session(gen1, &xet::error::XetError::KeyboardInterrupt);
+
+        // The fresh session is still cached
+        let (still_fresh, gen3) = client.xet_session().unwrap();
+        assert_eq!(gen2, gen3);
+        assert!(still_fresh.new_file_download_group().is_ok());
+    }
+
+    #[cfg(feature = "xet")]
+    #[test]
+    fn test_xet_session_reuse_without_replacement() {
+        let client = HFClientBuilder::new().build().unwrap();
+
+        let (s1, g1) = client.xet_session().unwrap();
+        let (s2, g2) = client.xet_session().unwrap();
+
+        assert_eq!(g1, g2);
+        assert!(s1.new_file_download_group().is_ok());
+        assert!(s2.new_file_download_group().is_ok());
     }
 }

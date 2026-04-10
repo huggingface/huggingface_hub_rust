@@ -32,6 +32,8 @@ pub mod types;
 #[cfg(feature = "xet")]
 pub mod xet;
 
+pub mod test_utils;
+
 #[cfg(feature = "blocking")]
 pub use blocking::{HFClientSync, HFRepoSync, HFRepositorySync, HFSpaceSync};
 pub use client::{HFClient, HFClientBuilder};

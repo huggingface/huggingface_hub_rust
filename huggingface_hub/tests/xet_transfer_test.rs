@@ -19,6 +19,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures::StreamExt;
+use huggingface_hub::test_utils::*;
 use huggingface_hub::types::{AddSource, CreateRepoParams, DeleteRepoParams};
 use huggingface_hub::{
     HFClient, HFClientBuilder, HFRepository, RepoDownloadFileParams, RepoDownloadFileStreamParams,
@@ -30,15 +31,38 @@ use tokio::sync::OnceCell;
 
 static WHOAMI_USERNAME: OnceCell<String> = OnceCell::const_new();
 
+/// Client for write tests — hub-ci in CI, default endpoint locally.
 fn api() -> Option<HFClient> {
-    if std::env::var("HF_TOKEN").is_err() {
-        return None;
+    if is_ci() {
+        let token = std::env::var(HF_CI_TOKEN).ok()?;
+        Some(
+            HFClientBuilder::new()
+                .token(token)
+                .endpoint(HUB_CI_ENDPOINT)
+                .build()
+                .expect("Failed to create HFClient"),
+        )
+    } else {
+        let token = std::env::var(HF_TOKEN).ok()?;
+        Some(HFClientBuilder::new().token(token).build().expect("Failed to create HFClient"))
     }
-    Some(HFClientBuilder::new().build().expect("Failed to create HFClient"))
 }
 
-fn write_enabled() -> bool {
-    std::env::var("HF_TEST_WRITE").ok().is_some_and(|v| v == "1")
+/// Client for read-only tests against hardcoded production repos.
+fn prod_api() -> Option<HFClient> {
+    if is_ci() {
+        let token = resolve_prod_token()?;
+        Some(
+            HFClientBuilder::new()
+                .token(token)
+                .endpoint(PROD_ENDPOINT)
+                .build()
+                .expect("Failed to create HFClient"),
+        )
+    } else {
+        let token = std::env::var(HF_TOKEN).ok()?;
+        Some(HFClientBuilder::new().token(token).build().expect("Failed to create HFClient"))
+    }
 }
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
@@ -295,7 +319,7 @@ async fn test_upload_from_file_path() {
 
 #[tokio::test]
 async fn test_download_from_known_xet_repo() {
-    let Some(api) = api() else { return };
+    let Some(api) = prod_api() else { return };
 
     let dir = tempfile::tempdir().unwrap();
     let result = repo_handle(&api, "mcpotato", "42-xet-test-repo")
@@ -382,7 +406,7 @@ async fn test_upload_200mb_random_data_and_verify() {
 
 #[tokio::test]
 async fn test_xet_download_stream_full() {
-    let Some(api) = api() else { return };
+    let Some(api) = prod_api() else { return };
 
     let repo = repo_handle(&api, "mcpotato", "42-xet-test-repo");
 
@@ -415,7 +439,7 @@ async fn test_xet_download_stream_full() {
 
 #[tokio::test]
 async fn test_xet_download_stream_range() {
-    let Some(api) = api() else { return };
+    let Some(api) = prod_api() else { return };
 
     let repo = repo_handle(&api, "mcpotato", "42-xet-test-repo");
 
@@ -452,7 +476,7 @@ async fn test_xet_download_stream_range() {
 
 #[tokio::test]
 async fn test_xet_download_stream_range_middle() {
-    let Some(api) = api() else { return };
+    let Some(api) = prod_api() else { return };
 
     let repo = repo_handle(&api, "mcpotato", "42-xet-test-repo");
 

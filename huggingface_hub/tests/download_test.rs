@@ -7,36 +7,34 @@
 
 use futures::StreamExt;
 use huggingface_hub::repository::HFRepository;
+use huggingface_hub::test_utils::*;
 use huggingface_hub::{HFClient, HFClientBuilder, RepoDownloadFileParams, RepoDownloadFileStreamParams};
 use sha2::{Digest, Sha256};
 
 fn api() -> Option<HFClient> {
-    if std::env::var("HF_TOKEN").is_err() {
-        return None;
+    if is_ci() {
+        let token = resolve_prod_token()?;
+        Some(
+            HFClientBuilder::new()
+                .token(token)
+                .endpoint(PROD_ENDPOINT)
+                .build()
+                .expect("Failed to create HFClient"),
+        )
+    } else {
+        if std::env::var(HF_TOKEN).is_err() {
+            return None;
+        }
+        Some(HFClientBuilder::new().build().expect("Failed to create HFClient"))
     }
-    Some(HFClientBuilder::new().build().expect("Failed to create HFClient"))
-}
-
-fn is_hub_ci() -> bool {
-    std::env::var("HF_ENDPOINT")
-        .ok()
-        .is_some_and(|v| v.contains("hub-ci.huggingface.co"))
 }
 
 fn test_model_parts() -> (&'static str, &'static str) {
-    if is_hub_ci() {
-        ("huggingface-hub-rust-test-user", "gpt2")
-    } else {
-        ("openai-community", "gpt2")
-    }
+    ("openai-community", "gpt2")
 }
 
 fn test_dataset_parts() -> (&'static str, &'static str) {
-    if is_hub_ci() {
-        ("huggingface-hub-rust-test-user", "hacker-news")
-    } else {
-        ("rajpurkar", "squad")
-    }
+    ("rajpurkar", "squad")
 }
 
 fn model(api: &HFClient, owner: &str, name: &str) -> HFRepository {

@@ -11,12 +11,13 @@ use tokio::io::AsyncWriteExt;
 use url::Url;
 
 use crate::error::{HFError, Result};
-use crate::repository::{
-    HFRepository, RepoCreateCommitParams, RepoDeleteFileParams, RepoDeleteFolderParams, RepoDownloadFileParams,
-    RepoDownloadFileStreamParams, RepoDownloadFileToBytesParams, RepoGetPathsInfoParams, RepoListFilesParams,
-    RepoListTreeParams, RepoSnapshotDownloadParams, RepoUploadFileParams, RepoUploadFolderParams,
+use crate::repository::HFRepository;
+use crate::types::{
+    AddSource, CommitInfo, CommitOperation, RepoCreateCommitParams, RepoDeleteFileParams, RepoDeleteFolderParams,
+    RepoDownloadFileParams, RepoDownloadFileStreamParams, RepoDownloadFileToBytesParams, RepoGetPathsInfoParams,
+    RepoListFilesParams, RepoListTreeParams, RepoSnapshotDownloadParams, RepoTreeEntry, RepoType, RepoUploadFileParams,
+    RepoUploadFolderParams,
 };
-use crate::types::{AddSource, CommitInfo, CommitOperation, RepoTreeEntry, RepoType};
 use crate::{cache, constants};
 
 impl HFRepository {

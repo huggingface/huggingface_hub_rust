@@ -1,6 +1,8 @@
 use std::process::Command;
 use std::time::Duration;
 
+use huggingface_hub::test_utils;
+
 pub struct CliRunner {
     bin: String,
     bin_path: Option<String>,
@@ -20,15 +22,47 @@ impl CliRunner {
         }
     }
 
+    /// Default runner — targets production (hardcoded repos).
+    /// In CI: uses HF_PROD_TOKEN and overrides HF_ENDPOINT to huggingface.co.
+    /// Locally: uses HF_TOKEN with default endpoint.
     pub fn hfrs() -> Self {
+        let is_ci = test_utils::is_ci();
+        let token = if is_ci {
+            std::env::var(test_utils::HF_PROD_TOKEN).ok()
+        } else {
+            std::env::var(test_utils::HF_TOKEN).ok()
+        };
+        let mut extra_env = vec![
+            ("RUST_LOG".to_string(), "info".to_string()),
+            ("HF_LOG_LEVEL".to_string(), "info".to_string()),
+        ];
+        if is_ci {
+            extra_env.push((test_utils::HF_ENDPOINT.to_string(), test_utils::PROD_ENDPOINT.to_string()));
+        }
         Self {
             bin: "hfrs".to_string(),
             bin_path: Some(env!("CARGO_BIN_EXE_hfrs").to_string()),
-            token: std::env::var("HF_TOKEN").ok(),
-            extra_env: vec![
-                ("RUST_LOG".to_string(), "info".to_string()),
-                ("HF_LOG_LEVEL".to_string(), "info".to_string()),
-            ],
+            token,
+            extra_env,
+            env_remove: Vec::new(),
+        }
+    }
+
+    /// Runner for write tests (hub-ci in CI, default endpoint locally).
+    pub fn hfrs_ci() -> Self {
+        let token = test_utils::resolve_hub_ci_token();
+        let mut extra_env = vec![
+            ("RUST_LOG".to_string(), "info".to_string()),
+            ("HF_LOG_LEVEL".to_string(), "info".to_string()),
+        ];
+        if test_utils::is_ci() {
+            extra_env.push((test_utils::HF_ENDPOINT.to_string(), test_utils::HUB_CI_ENDPOINT.to_string()));
+        }
+        Self {
+            bin: "hfrs".to_string(),
+            bin_path: Some(env!("CARGO_BIN_EXE_hfrs").to_string()),
+            token,
+            extra_env,
             env_remove: Vec::new(),
         }
     }
@@ -166,6 +200,17 @@ impl CliRunner {
         let stderr = String::from_utf8(output.stderr)?;
         Ok((code, stdout, stderr))
     }
+
+    /// Spawn the command as a child process, returning the handle.
+    /// The caller is responsible for waiting/killing.
+    pub fn spawn(&self, args: &[&str]) -> anyhow::Result<std::process::Child> {
+        let mut cmd = self.build_command(args, &[]);
+        let child = cmd
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+        Ok(child)
+    }
 }
 
 pub fn require_cli(runner: &CliRunner) {
@@ -175,13 +220,13 @@ pub fn require_cli(runner: &CliRunner) {
 }
 
 pub fn require_token() {
-    if std::env::var("HF_TOKEN").is_err() {
-        panic!("HF_TOKEN environment variable is required for integration tests.");
+    if std::env::var(test_utils::HF_TOKEN).is_err() && std::env::var(test_utils::HF_CI_TOKEN).is_err() {
+        panic!("HF_TOKEN or HF_CI_TOKEN environment variable is required for integration tests.");
     }
 }
 
 pub fn require_write() {
-    if std::env::var("HF_TEST_WRITE").is_err() {
+    if !test_utils::write_enabled() {
         panic!("HF_TEST_WRITE=1 is required for write operation tests.");
     }
 }
