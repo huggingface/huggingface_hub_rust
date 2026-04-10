@@ -287,8 +287,10 @@ impl HFClient {
 
         match status.as_u16() {
             401 => Err(HFError::AuthRequired),
+            403 => Err(HFError::Forbidden),
             404 => match not_found_ctx {
                 crate::error::NotFoundContext::Repo => Err(HFError::RepoNotFound { repo_id: repo_id_str }),
+                crate::error::NotFoundContext::Bucket => Err(HFError::BucketNotFound { bucket_id: repo_id_str }),
                 crate::error::NotFoundContext::Entry { path } => Err(HFError::EntryNotFound {
                     path,
                     repo_id: repo_id_str,
@@ -299,6 +301,8 @@ impl HFClient {
                 }),
                 crate::error::NotFoundContext::Generic => Err(HFError::Http { status, url, body }),
             },
+            409 => Err(HFError::Conflict(body)),
+            429 => Err(HFError::RateLimited),
             _ => Err(HFError::Http { status, url, body }),
         }
     }
