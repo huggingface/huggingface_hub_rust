@@ -21,6 +21,7 @@ mod macros;
 pub mod api;
 #[cfg(feature = "blocking")]
 pub mod blocking;
+pub mod bucket;
 pub mod cache;
 pub mod client;
 pub(crate) mod constants;
@@ -35,7 +36,8 @@ pub mod xet;
 pub mod test_utils;
 
 #[cfg(feature = "blocking")]
-pub use blocking::{HFClientSync, HFRepoSync, HFRepositorySync, HFSpaceSync};
+pub use blocking::{HFBucketSync, HFClientSync, HFRepoSync, HFRepositorySync, HFSpaceSync};
+pub use bucket::*;
 pub use client::{HFClient, HFClientBuilder};
 #[cfg(feature = "cli")]
 #[doc(hidden)]

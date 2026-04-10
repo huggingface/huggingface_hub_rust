@@ -33,6 +33,8 @@ pub struct Cli {
 pub enum Command {
     /// Manage authentication (login, logout, etc.)
     Auth(crate::commands::auth::Args),
+    /// Interact with buckets on the Hub
+    Buckets(crate::commands::buckets::Args),
     /// Manage local cache directory
     Cache(crate::commands::cache::Args),
     /// Interact with datasets on the Hub

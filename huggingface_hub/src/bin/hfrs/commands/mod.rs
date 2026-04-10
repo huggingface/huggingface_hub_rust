@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod buckets;
 pub mod cache;
 pub mod datasets;
 pub mod download;

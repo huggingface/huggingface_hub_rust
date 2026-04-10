@@ -48,6 +48,7 @@ async fn main() -> ExitCode {
 
     let result = match cli.command {
         Command::Auth(args) => commands::auth::execute(&api, args).await,
+        Command::Buckets(args) => commands::buckets::execute(&api, args).await,
         Command::Cache(args) => commands::cache::execute(&api, args).await,
         Command::Datasets(args) => commands::datasets::execute(&api, args).await,
         Command::Download(args) => commands::download::execute(&api, args).await,
@@ -148,6 +149,20 @@ fn format_hf_error(err: &HFError) -> String {
         HFError::AuthRequired => {
             "Not authenticated. Run `hfrs auth login` or set the HF_TOKEN environment variable.".to_string()
         },
+        HFError::BucketNotFound { bucket_id } => {
+            format!("Bucket '{bucket_id}' not found. If the bucket is private, make sure you are authenticated.")
+        },
+        HFError::Forbidden => {
+            "Permission denied. Check that your token has the required scopes for this operation.".to_string()
+        },
+        HFError::Conflict(body) => {
+            if body.contains("already exists") {
+                "Resource already exists. Use --exist-ok to skip this error.".to_string()
+            } else {
+                format!("Conflict: {body}")
+            }
+        },
+        HFError::RateLimited => "Rate limited. Please wait a moment and try again.".to_string(),
         HFError::Http { status, url, body } => {
             let status_code = status.as_u16();
             match status_code {
@@ -158,20 +173,9 @@ fn format_hf_error(err: &HFError) -> String {
                     }
                     msg
                 },
-                403 => {
-                    "Permission denied. Check that your token has the required scopes for this operation.".to_string()
-                },
                 404 => {
                     format!("Not found: {url}")
                 },
-                409 => {
-                    if body.contains("already exists") {
-                        "Resource already exists. Use --exist-ok to skip this error.".to_string()
-                    } else {
-                        format!("Conflict: {body}")
-                    }
-                },
-                429 => "Rate limited. Please wait a moment and try again.".to_string(),
                 500..=599 => {
                     format!(
                         "Server error ({status}). The Hugging Face Hub may be experiencing issues. Try again later."
