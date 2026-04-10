@@ -2,70 +2,68 @@
 
 //! Integration tests for the synchronous HFClientSync wrapper.
 //!
-//! These mirror a subset of the async integration tests to verify that the
-//! blocking API works correctly end-to-end.
+//! Read-only tests use hardcoded prod repos via `prod_sync_api()`.
+//! Write tests using hub-ci via `ci_sync_api()` (require HF_TEST_WRITE=1).
 //!
-//! Read-only tests: require HF_TOKEN, skip if not set.
-//! Write tests: require HF_TOKEN + HF_TEST_WRITE=1, skip otherwise.
-//!
-//! Run: HF_TOKEN=hf_xxx cargo test -p huggingface-hub --features blocking --test blocking_test
+//! Local: HF_TOKEN=hf_xxx cargo test -p huggingface-hub --features blocking --test blocking_test
+//! CI: The workflow sets HF_CI_TOKEN + HF_PROD_TOKEN.
 
-use huggingface_hub::repository::{
-    RepoCreateBranchParams, RepoCreateCommitParams, RepoDeleteBranchParams, RepoDownloadFileParams,
-    RepoFileExistsParams, RepoGetCommitDiffParams, RepoGetRawDiffParams, RepoListCommitsParams, RepoListFilesParams,
-    RepoListRefsParams, RepoListTreeParams, RepoRevisionExistsParams, RepoUploadFileParams, RepoUploadFolderParams,
-};
+use huggingface_hub::test_utils::*;
 use huggingface_hub::types::*;
 use huggingface_hub::{HFClientBuilder, HFClientSync, RepoInfo, RepoInfoParams};
 
-fn sync_api() -> Option<HFClientSync> {
-    if std::env::var("HF_TOKEN").is_err() {
-        return None;
-    }
-    let api = HFClientBuilder::new().build().expect("Failed to create HFClient");
+fn prod_sync_api() -> Option<HFClientSync> {
+    let api = if is_ci() {
+        let token = resolve_prod_token()?;
+        HFClientBuilder::new()
+            .token(token)
+            .endpoint(PROD_ENDPOINT)
+            .build()
+            .expect("Failed to create HFClient")
+    } else {
+        if std::env::var(HF_TOKEN).is_err() {
+            return None;
+        }
+        HFClientBuilder::new().build().expect("Failed to create HFClient")
+    };
     Some(HFClientSync::from_api(api).expect("Failed to create HFClientSync"))
 }
 
-fn write_enabled() -> bool {
-    std::env::var("HF_TEST_WRITE").ok().is_some_and(|v| v == "1")
-}
-
-fn is_hub_ci() -> bool {
-    std::env::var("HF_ENDPOINT")
-        .ok()
-        .is_some_and(|v| v.contains("hub-ci.huggingface.co"))
+fn ci_sync_api() -> Option<HFClientSync> {
+    let api = if is_ci() {
+        let token = std::env::var(HF_CI_TOKEN).ok()?;
+        HFClientBuilder::new()
+            .token(token)
+            .endpoint(HUB_CI_ENDPOINT)
+            .build()
+            .expect("Failed to create HFClient")
+    } else {
+        if std::env::var(HF_TOKEN).is_err() {
+            return None;
+        }
+        HFClientBuilder::new().build().expect("Failed to create HFClient")
+    };
+    Some(HFClientSync::from_api(api).expect("Failed to create HFClientSync"))
 }
 
 fn test_org() -> &'static str {
-    if is_hub_ci() { "valid_org" } else { "huggingface" }
+    "huggingface"
 }
 
 fn test_user() -> &'static str {
-    if is_hub_ci() {
-        "huggingface-hub-rust-test-user"
-    } else {
-        "julien-c"
-    }
+    "julien-c"
 }
 
 fn test_model_author() -> &'static str {
-    if is_hub_ci() { "valid_org" } else { "openai-community" }
+    "openai-community"
 }
 
 fn test_model_repo() -> &'static str {
-    if is_hub_ci() {
-        "huggingface-hub-rust-test-user/gpt2"
-    } else {
-        "openai-community/gpt2"
-    }
+    "openai-community/gpt2"
 }
 
 fn test_dataset_repo() -> &'static str {
-    if is_hub_ci() {
-        "huggingface-hub-rust-test-user/hacker-news"
-    } else {
-        "xet-team/xet-spec-reference-files"
-    }
+    "xet-team/xet-spec-reference-files"
 }
 
 /// Split a `"owner/name"` string into an `HFRepositorySync` handle.
@@ -91,7 +89,7 @@ fn dataset_handle(api: &HFClientSync, repo_id: &str) -> huggingface_hub::blockin
 
 #[test]
 fn test_sync_model_info() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = prod_sync_api() else { return };
     let model_repo = test_model_repo();
     let repo = repo_handle(&api, model_repo);
     let info = repo.info(&RepoInfoParams::default()).unwrap();
@@ -103,7 +101,7 @@ fn test_sync_model_info() {
 
 #[test]
 fn test_sync_dataset_info() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = prod_sync_api() else { return };
     let dataset_repo = test_dataset_repo();
     let repo = dataset_handle(&api, dataset_repo);
     let info = repo.info(&RepoInfoParams::default()).unwrap();
@@ -115,7 +113,7 @@ fn test_sync_dataset_info() {
 
 #[test]
 fn test_sync_repo_handle_info_and_file_exists() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = prod_sync_api() else { return };
     let model_repo = test_model_repo();
     let repo = repo_handle(&api, model_repo);
 
@@ -133,14 +131,14 @@ fn test_sync_repo_handle_info_and_file_exists() {
 
 #[test]
 fn test_sync_repo_exists() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = prod_sync_api() else { return };
     assert!(repo_handle(&api, test_model_repo()).exists().unwrap());
     assert!(!repo_handle(&api, "this-repo-definitely-does-not-exist-12345").exists().unwrap());
 }
 
 #[test]
 fn test_sync_file_exists() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = prod_sync_api() else { return };
     let repo = repo_handle(&api, test_model_repo());
     assert!(
         repo.file_exists(&RepoFileExistsParams::builder().filename("config.json").build())
@@ -157,7 +155,7 @@ fn test_sync_file_exists() {
 
 #[test]
 fn test_sync_list_models() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = prod_sync_api() else { return };
     let author = test_model_author();
     let params = ListModelsParams::builder().author(author).limit(3_usize).build();
     let models = api.list_models(&params).unwrap();
@@ -167,7 +165,7 @@ fn test_sync_list_models() {
 
 #[test]
 fn test_sync_list_datasets() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = prod_sync_api() else { return };
     let params = ListDatasetsParams::builder().author(test_org()).limit(3_usize).build();
     let datasets = api.list_datasets(&params).unwrap();
     assert!(!datasets.is_empty());
@@ -175,7 +173,7 @@ fn test_sync_list_datasets() {
 
 #[test]
 fn test_sync_list_repo_files() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = prod_sync_api() else { return };
     let files = repo_handle(&api, test_model_repo())
         .list_files(&RepoListFilesParams::default())
         .unwrap();
@@ -185,7 +183,7 @@ fn test_sync_list_repo_files() {
 
 #[test]
 fn test_sync_list_repo_tree() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = prod_sync_api() else { return };
     let entries = repo_handle(&api, test_model_repo())
         .list_tree(&RepoListTreeParams::default())
         .unwrap();
@@ -197,7 +195,7 @@ fn test_sync_list_repo_tree() {
 
 #[test]
 fn test_sync_list_repo_commits() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = prod_sync_api() else { return };
     let commits = repo_handle(&api, test_model_repo())
         .list_commits(&RepoListCommitsParams::default())
         .unwrap();
@@ -210,7 +208,7 @@ fn test_sync_list_repo_commits() {
 
 #[test]
 fn test_sync_list_repo_refs() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = prod_sync_api() else { return };
     let refs = repo_handle(&api, test_model_repo())
         .list_refs(&RepoListRefsParams::default())
         .unwrap();
@@ -220,7 +218,7 @@ fn test_sync_list_repo_refs() {
 
 #[test]
 fn test_sync_revision_exists() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = prod_sync_api() else { return };
     let repo = repo_handle(&api, test_model_repo());
     assert!(
         repo.revision_exists(&RepoRevisionExistsParams::builder().revision("main").build())
@@ -237,7 +235,7 @@ fn test_sync_revision_exists() {
 
 #[test]
 fn test_sync_download_file() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = prod_sync_api() else { return };
     let dir = tempfile::tempdir().unwrap();
     let params = RepoDownloadFileParams::builder()
         .filename("config.json")
@@ -254,20 +252,20 @@ fn test_sync_download_file() {
 
 #[test]
 fn test_sync_whoami() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = ci_sync_api() else { return };
     let user = api.whoami().unwrap();
     assert!(!user.username.is_empty());
 }
 
 #[test]
 fn test_sync_auth_check() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = ci_sync_api() else { return };
     api.auth_check().unwrap();
 }
 
 #[test]
 fn test_sync_get_user_overview() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = prod_sync_api() else { return };
     let username = test_user();
     let user = api.get_user_overview(username).unwrap();
     assert_eq!(user.username, username);
@@ -275,7 +273,7 @@ fn test_sync_get_user_overview() {
 
 #[test]
 fn test_sync_get_organization_overview() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = prod_sync_api() else { return };
     let org_name = test_org();
     let org = api.get_organization_overview(org_name).unwrap();
     assert_eq!(org.name, org_name);
@@ -283,7 +281,7 @@ fn test_sync_get_organization_overview() {
 
 #[test]
 fn test_sync_list_organization_members() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = prod_sync_api() else { return };
     let members = api.list_organization_members(test_org(), None).unwrap();
     assert!(!members.is_empty());
 }
@@ -292,7 +290,7 @@ fn test_sync_list_organization_members() {
 
 #[test]
 fn test_sync_get_commit_diff() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = prod_sync_api() else { return };
     let gpt2 = repo_handle(&api, test_model_repo());
     let commits = gpt2.list_commits(&RepoListCommitsParams::default()).unwrap();
     assert!(commits.len() >= 2);
@@ -309,7 +307,7 @@ fn test_sync_get_commit_diff() {
 
 #[test]
 fn test_sync_get_raw_diff_stream() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = prod_sync_api() else { return };
     let gpt2 = repo_handle(&api, test_model_repo());
     let commits = gpt2.list_commits(&RepoListCommitsParams::default()).unwrap();
     assert!(commits.len() >= 2);
@@ -363,7 +361,7 @@ fn delete_test_repo(api: &HFClientSync, repo_id: &str) {
 
 #[test]
 fn test_sync_create_and_delete_repo() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = ci_sync_api() else { return };
     if !write_enabled() {
         return;
     }
@@ -405,7 +403,7 @@ fn test_sync_create_and_delete_repo() {
 
 #[test]
 fn test_sync_create_commit() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = ci_sync_api() else { return };
     if !write_enabled() {
         return;
     }
@@ -441,7 +439,7 @@ fn test_sync_create_commit() {
 
 #[test]
 fn test_sync_upload_folder() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = ci_sync_api() else { return };
     if !write_enabled() {
         return;
     }
@@ -473,7 +471,7 @@ fn test_sync_upload_folder() {
 
 #[test]
 fn test_sync_branch_operations() {
-    let Some(api) = sync_api() else { return };
+    let Some(api) = ci_sync_api() else { return };
     if !write_enabled() {
         return;
     }

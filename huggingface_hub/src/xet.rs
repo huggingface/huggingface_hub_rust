@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use serde::Deserialize;
-use xet::xet_session::{Sha256Policy, XetFileInfo, XetFileMetadata, XetSession, XetSessionBuilder};
+use xet::xet_session::{Sha256Policy, XetFileInfo, XetFileMetadata};
 
 use crate::client::HFClient;
 use crate::constants;
@@ -22,6 +22,12 @@ struct XetTokenResponse {
     access_token: String,
     exp: u64,
     cas_url: String,
+}
+
+#[derive(Default)]
+pub(crate) struct XetState {
+    pub(crate) session: Option<xet::xet_session::XetSession>,
+    pub(crate) generation: u64,
 }
 
 pub struct XetConnectionInfo {
@@ -67,10 +73,18 @@ fn xet_token_url(
     format!("{}/api/{}/{}/xet-{}-token/{}", api.endpoint(), segment, repo_id, token_type, revision)
 }
 
-fn build_xet_session() -> Result<XetSession> {
-    XetSessionBuilder::new()
-        .build()
-        .map_err(|e| HFError::Other(format!("Failed to build xet session: {e}")))
+/// Returns `true` if the error indicates the XetSession is permanently
+/// poisoned and must be replaced before retrying.
+#[cfg(test)]
+fn is_session_poisoned(err: &xet::error::XetError) -> bool {
+    use xet::error::XetError;
+    matches!(
+        err,
+        XetError::UserCancelled(_)
+            | XetError::AlreadyCompleted
+            | XetError::PreviousTaskError(_)
+            | XetError::KeyboardInterrupt
+    )
 }
 
 fn spawn_download_progress_poller(
@@ -115,7 +129,6 @@ impl HFRepository {
         let file_size: u64 = crate::api::files::extract_file_size(head_response).unwrap_or(0);
 
         let conn = fetch_xet_connection_info(&self.hf_client, "read", &repo_path, repo_type, revision).await?;
-        let session = build_xet_session()?;
 
         tokio::fs::create_dir_all(local_dir).await?;
         let dest_path = local_dir.join(filename);
@@ -123,18 +136,27 @@ impl HFRepository {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        let group = session
-            .new_file_download_group()
-            .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?
-            .with_endpoint(conn.endpoint.clone())
-            .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
-            .with_token_refresh_url(
-                xet_token_url(&self.hf_client, "read", &repo_path, repo_type, revision),
-                self.hf_client.auth_headers(),
-            )
-            .build()
-            .await
-            .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?;
+        let (session, generation) = self.hf_client.xet_session()?;
+        let group = match session.new_file_download_group() {
+            Ok(b) => b,
+            Err(e) => {
+                self.hf_client.replace_xet_session(generation, &e);
+                self.hf_client
+                    .xet_session()?
+                    .0
+                    .new_file_download_group()
+                    .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?
+            },
+        }
+        .with_endpoint(conn.endpoint.clone())
+        .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
+        .with_token_refresh_url(
+            xet_token_url(&self.hf_client, "read", &repo_path, repo_type, revision),
+            self.hf_client.auth_headers(),
+        )
+        .build()
+        .await
+        .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?;
 
         let file_info = XetFileInfo::new(file_hash, file_size);
 
@@ -164,7 +186,6 @@ impl HFRepository {
         let repo_path = self.repo_path();
         let repo_type = Some(self.repo_type);
         let conn = fetch_xet_connection_info(&self.hf_client, "read", &repo_path, repo_type, revision).await?;
-        let session = build_xet_session()?;
 
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent).await?;
@@ -172,18 +193,27 @@ impl HFRepository {
 
         let incomplete_path = PathBuf::from(format!("{}.incomplete", path.display()));
 
-        let group = session
-            .new_file_download_group()
-            .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?
-            .with_endpoint(conn.endpoint.clone())
-            .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
-            .with_token_refresh_url(
-                xet_token_url(&self.hf_client, "read", &repo_path, repo_type, revision),
-                self.hf_client.auth_headers(),
-            )
-            .build()
-            .await
-            .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?;
+        let (session, generation) = self.hf_client.xet_session()?;
+        let group = match session.new_file_download_group() {
+            Ok(b) => b,
+            Err(e) => {
+                self.hf_client.replace_xet_session(generation, &e);
+                self.hf_client
+                    .xet_session()?
+                    .0
+                    .new_file_download_group()
+                    .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?
+            },
+        }
+        .with_endpoint(conn.endpoint.clone())
+        .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
+        .with_token_refresh_url(
+            xet_token_url(&self.hf_client, "read", &repo_path, repo_type, revision),
+            self.hf_client.auth_headers(),
+        )
+        .build()
+        .await
+        .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?;
 
         let file_info = XetFileInfo::new(file_hash.to_string(), file_size);
 
@@ -216,20 +246,28 @@ impl HFRepository {
         let repo_path = self.repo_path();
         let repo_type = Some(self.repo_type);
         let conn = fetch_xet_connection_info(&self.hf_client, "read", &repo_path, repo_type, revision).await?;
-        let session = build_xet_session()?;
 
-        let group = session
-            .new_file_download_group()
-            .map_err(|e| HFError::Other(format!("Xet batch download failed: {e}")))?
-            .with_endpoint(conn.endpoint.clone())
-            .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
-            .with_token_refresh_url(
-                xet_token_url(&self.hf_client, "read", &repo_path, repo_type, revision),
-                self.hf_client.auth_headers(),
-            )
-            .build()
-            .await
-            .map_err(|e| HFError::Other(format!("Xet batch download failed: {e}")))?;
+        let (session, generation) = self.hf_client.xet_session()?;
+        let group = match session.new_file_download_group() {
+            Ok(b) => b,
+            Err(e) => {
+                self.hf_client.replace_xet_session(generation, &e);
+                self.hf_client
+                    .xet_session()?
+                    .0
+                    .new_file_download_group()
+                    .map_err(|e| HFError::Other(format!("Xet batch download failed: {e}")))?
+            },
+        }
+        .with_endpoint(conn.endpoint.clone())
+        .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
+        .with_token_refresh_url(
+            xet_token_url(&self.hf_client, "read", &repo_path, repo_type, revision),
+            self.hf_client.auth_headers(),
+        )
+        .build()
+        .await
+        .map_err(|e| HFError::Other(format!("Xet batch download failed: {e}")))?;
 
         let mut incomplete_paths = Vec::with_capacity(files.len());
         for file in files {
@@ -276,20 +314,28 @@ impl HFRepository {
         let repo_path = self.repo_path();
         let repo_type = Some(self.repo_type);
         let conn = fetch_xet_connection_info(&self.hf_client, "read", &repo_path, repo_type, revision).await?;
-        let session = build_xet_session()?;
 
-        let group = session
-            .new_download_stream_group()
-            .map_err(|e| HFError::Other(format!("Xet stream download failed: {e}")))?
-            .with_endpoint(conn.endpoint.clone())
-            .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
-            .with_token_refresh_url(
-                xet_token_url(&self.hf_client, "read", &repo_path, repo_type, revision),
-                self.hf_client.auth_headers(),
-            )
-            .build()
-            .await
-            .map_err(|e| HFError::Other(format!("Xet stream download failed: {e}")))?;
+        let (session, generation) = self.hf_client.xet_session()?;
+        let group = match session.new_download_stream_group() {
+            Ok(b) => b,
+            Err(e) => {
+                self.hf_client.replace_xet_session(generation, &e);
+                self.hf_client
+                    .xet_session()?
+                    .0
+                    .new_download_stream_group()
+                    .map_err(|e| HFError::Other(format!("Xet stream download failed: {e}")))?
+            },
+        }
+        .with_endpoint(conn.endpoint.clone())
+        .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
+        .with_token_refresh_url(
+            xet_token_url(&self.hf_client, "read", &repo_path, repo_type, revision),
+            self.hf_client.auth_headers(),
+        )
+        .build()
+        .await
+        .map_err(|e| HFError::Other(format!("Xet stream download failed: {e}")))?;
 
         let file_info = XetFileInfo::new(file_hash.to_string(), file_size);
 
@@ -323,21 +369,29 @@ impl HFRepository {
         tracing::info!(repo = repo_path.as_str(), "fetching xet write token");
         let conn = fetch_xet_connection_info(&self.hf_client, "write", &repo_path, repo_type, revision).await?;
         tracing::info!(endpoint = conn.endpoint.as_str(), "xet write token obtained, building session");
-        let session = build_xet_session()?;
 
         tracing::info!("building xet upload commit");
-        let commit = session
-            .new_upload_commit()
-            .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?
-            .with_endpoint(conn.endpoint.clone())
-            .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
-            .with_token_refresh_url(
-                xet_token_url(&self.hf_client, "write", &repo_path, repo_type, revision),
-                self.hf_client.auth_headers(),
-            )
-            .build()
-            .await
-            .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?;
+        let (session, generation) = self.hf_client.xet_session()?;
+        let commit = match session.new_upload_commit() {
+            Ok(b) => b,
+            Err(e) => {
+                self.hf_client.replace_xet_session(generation, &e);
+                self.hf_client
+                    .xet_session()?
+                    .0
+                    .new_upload_commit()
+                    .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?
+            },
+        }
+        .with_endpoint(conn.endpoint.clone())
+        .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
+        .with_token_refresh_url(
+            xet_token_url(&self.hf_client, "write", &repo_path, repo_type, revision),
+            self.hf_client.auth_headers(),
+        )
+        .build()
+        .await
+        .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?;
         tracing::info!("xet upload commit built, queuing file uploads");
 
         let mut task_ids_in_order = Vec::with_capacity(files.len());
@@ -411,5 +465,49 @@ impl HFClient {
     pub async fn get_xet_token(&self, params: &GetXetTokenParams) -> Result<XetConnectionInfo> {
         let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
         fetch_xet_connection_info(self, params.token_type.as_str(), &params.repo_id, params.repo_type, revision).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use xet::error::XetError;
+
+    use super::*;
+
+    #[test]
+    fn test_session_poisoned_positive() {
+        assert!(is_session_poisoned(&XetError::UserCancelled("test".into())));
+        assert!(is_session_poisoned(&XetError::AlreadyCompleted));
+        assert!(is_session_poisoned(&XetError::PreviousTaskError("err".into())));
+        assert!(is_session_poisoned(&XetError::KeyboardInterrupt));
+    }
+
+    #[test]
+    fn test_session_poisoned_negative() {
+        let non_poisoned = [
+            XetError::Network("timeout".into()),
+            XetError::Authentication("bad token".into()),
+            XetError::Io("disk full".into()),
+            XetError::Internal("bug".into()),
+            XetError::Timeout("slow".into()),
+            XetError::NotFound("missing".into()),
+            XetError::DataIntegrity("corrupt".into()),
+            XetError::Configuration("bad config".into()),
+            XetError::Cancelled("cancelled".into()),
+            XetError::WrongRuntimeMode("wrong mode".into()),
+            XetError::TaskError("task failed".into()),
+        ];
+        for err in &non_poisoned {
+            assert!(!is_session_poisoned(err), "{err:?} should NOT be classified as poisoned");
+        }
+    }
+
+    #[test]
+    fn test_xet_error_message_preserved_in_hferror() {
+        let xet_err = XetError::Network("connection reset by peer".into());
+        let hf_err = HFError::Other(format!("Xet download failed: {xet_err}"));
+        let msg = hf_err.to_string();
+        assert!(msg.contains("Xet download failed"), "missing prefix: {msg}");
+        assert!(msg.contains("connection reset by peer"), "missing original message: {msg}");
     }
 }
