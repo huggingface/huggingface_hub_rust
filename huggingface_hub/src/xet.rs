@@ -4,16 +4,20 @@
 //! When xet headers are detected during download/upload but the feature
 //! is not enabled, HFError::XetNotEnabled is returned at the call site.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use serde::Deserialize;
-use xet::xet_session::{Sha256Policy, XetFileInfo, XetFileMetadata};
+use xet::xet_session::{Sha256Policy, XetFileInfo, XetFileMetadata, XetFileUpload};
 
 use crate::client::HFClient;
 use crate::constants;
 use crate::error::{HFError, Result};
 use crate::repository::HFRepository;
-use crate::types::progress::{self, DownloadEvent, Progress, ProgressEvent, UploadEvent, UploadPhase};
+use crate::types::progress::{
+    self, DownloadEvent, FileProgress, FileStatus, Progress, ProgressEvent, UploadEvent, UploadPhase,
+};
 use crate::types::{AddSource, GetXetTokenParams, RepoType};
 
 #[derive(Debug, Deserialize)]
@@ -398,36 +402,79 @@ impl HFRepository {
         tracing::info!("xet upload commit built, queuing file uploads");
 
         let mut task_ids_in_order = Vec::with_capacity(files.len());
+        let mut handles: Vec<XetFileUpload> = Vec::with_capacity(files.len());
+        let mut item_name_to_repo_path: HashMap<String, String> = HashMap::with_capacity(files.len());
 
         for (path_in_repo, source) in files {
             tracing::info!(path = path_in_repo.as_str(), "queuing xet upload");
             let handle = match source {
-                AddSource::File(path) => commit
-                    .upload_from_path(path.clone(), Sha256Policy::Compute)
-                    .await
-                    .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?,
-                AddSource::Bytes(bytes) => commit
-                    .upload_bytes(bytes.clone(), Sha256Policy::Compute, None)
-                    .await
-                    .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?,
+                AddSource::File(path) => {
+                    // Mimic xet-core's `std::path::absolute()` logic to derive the
+                    // item_name that will appear in ItemProgressReport.
+                    // See: xet-data upload_commit.rs XetUploadCommitInner::upload_from_path
+                    if let Ok(abs) = std::path::absolute(path) {
+                        if let Some(s) = abs.to_str() {
+                            item_name_to_repo_path.insert(s.to_owned(), path_in_repo.clone());
+                        } else {
+                            tracing::warn!(path = ?abs, "non-UTF-8 path; per-file progress unavailable");
+                        }
+                    }
+                    commit
+                        .upload_from_path(path.clone(), Sha256Policy::Compute)
+                        .await
+                        .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?
+                },
+                AddSource::Bytes(bytes) => {
+                    item_name_to_repo_path.insert(path_in_repo.clone(), path_in_repo.clone());
+                    commit
+                        .upload_bytes(bytes.clone(), Sha256Policy::Compute, Some(path_in_repo.clone()))
+                        .await
+                        .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?
+                },
             };
             task_ids_in_order.push(handle.task_id());
+            handles.push(handle);
         }
 
         tracing::info!(file_count = files.len(), "committing xet uploads");
+        let shared_handles: Arc<Vec<XetFileUpload>> = Arc::new(handles);
+        let shared_name_map: Arc<HashMap<String, String>> = Arc::new(item_name_to_repo_path);
+
         let poll_handle = progress.as_ref().map(|handler| {
             let handler = handler.clone();
             let commit = commit.clone();
+            let poll_handles = Arc::clone(&shared_handles);
+            let poll_name_map = Arc::clone(&shared_name_map);
             tokio::spawn(async move {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                     let report = commit.progress();
+                    let file_progress: Vec<FileProgress> = poll_handles
+                        .iter()
+                        .filter_map(|h| {
+                            let item = h.progress()?;
+                            let repo_path = poll_name_map.get(&item.item_name)?;
+                            let status = if item.bytes_completed >= item.total_bytes && item.total_bytes > 0 {
+                                FileStatus::Complete
+                            } else if item.bytes_completed > 0 {
+                                FileStatus::InProgress
+                            } else {
+                                FileStatus::Started
+                            };
+                            Some(FileProgress {
+                                filename: repo_path.clone(),
+                                bytes_completed: item.bytes_completed,
+                                total_bytes: item.total_bytes,
+                                status,
+                            })
+                        })
+                        .collect();
                     handler.on_progress(&ProgressEvent::Upload(UploadEvent::Progress {
                         phase: UploadPhase::Uploading,
                         bytes_completed: report.total_bytes_completed,
                         total_bytes: report.total_bytes,
                         bytes_per_sec: report.total_bytes_completion_rate,
-                        files: vec![],
+                        files: file_progress,
                     }));
                 }
             })
@@ -440,6 +487,17 @@ impl HFRepository {
             h.abort();
         }
         tracing::info!("xet upload commit complete");
+
+        let final_files: Vec<FileProgress> = files
+            .iter()
+            .map(|(path_in_repo, _)| FileProgress {
+                filename: path_in_repo.clone(),
+                bytes_completed: 0,
+                total_bytes: 0,
+                status: FileStatus::Complete,
+            })
+            .collect();
+
         progress::emit(
             progress,
             ProgressEvent::Upload(UploadEvent::Progress {
@@ -447,7 +505,7 @@ impl HFRepository {
                 bytes_completed: results.progress.total_bytes_completed,
                 total_bytes: results.progress.total_bytes,
                 bytes_per_sec: results.progress.total_bytes_completion_rate,
-                files: vec![],
+                files: final_files,
             }),
         );
 
