@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use xet::xet_session::{Sha256Policy, XetFileInfo, XetFileMetadata};
 
+use crate::bucket::HFBucket;
 use crate::client::HFClient;
 use crate::constants;
 use crate::error::{HFError, Result};
@@ -61,7 +62,6 @@ fn repo_xet_token_url(
     format!("{}/api/{}/{}/xet-{}-token/{}", api.endpoint(), segment, repo_id, token_type, revision)
 }
 
-#[allow(dead_code)]
 pub(crate) fn bucket_xet_token_url(api: &HFClient, token_type: &str, bucket_id: &str) -> String {
     format!("{}/api/buckets/{}/xet-{}-token", api.endpoint(), bucket_id, token_type)
 }
@@ -374,6 +374,130 @@ impl HFRepository {
         }
 
         Ok(xet_file_infos)
+    }
+}
+
+impl HFBucket {
+    pub(crate) async fn xet_upload(&self, files: &[(String, AddSource)]) -> Result<Vec<XetFileInfo>> {
+        let bucket_id = self.bucket_id();
+        tracing::info!(bucket = bucket_id.as_str(), "fetching xet write token");
+        let token_url = bucket_xet_token_url(&self.hf_client, "write", &bucket_id);
+        let conn = fetch_xet_connection_info(&self.hf_client, &token_url).await?;
+        tracing::info!(endpoint = conn.endpoint.as_str(), "xet write token obtained, building session");
+
+        tracing::info!("building xet upload commit");
+        let (session, generation) = self.hf_client.xet_session()?;
+        let commit = match session.new_upload_commit() {
+            Ok(b) => b,
+            Err(e) => {
+                self.hf_client.replace_xet_session(generation, &e);
+                self.hf_client
+                    .xet_session()?
+                    .0
+                    .new_upload_commit()
+                    .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?
+            },
+        }
+        .with_endpoint(conn.endpoint.clone())
+        .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
+        .with_token_refresh_url(token_url, self.hf_client.auth_headers())
+        .build()
+        .await
+        .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?;
+        tracing::info!("xet upload commit built, queuing file uploads");
+
+        let mut task_ids_in_order = Vec::with_capacity(files.len());
+
+        for (path_in_bucket, source) in files {
+            tracing::info!(path = path_in_bucket.as_str(), "queuing xet upload");
+            let handle = match source {
+                AddSource::File(path) => commit
+                    .upload_from_path(path.clone(), Sha256Policy::Compute)
+                    .await
+                    .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?,
+                AddSource::Bytes(bytes) => commit
+                    .upload_bytes(bytes.clone(), Sha256Policy::Compute, None)
+                    .await
+                    .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?,
+            };
+            task_ids_in_order.push(handle.task_id());
+        }
+
+        tracing::info!(file_count = files.len(), "committing xet uploads");
+        let results = commit
+            .commit()
+            .await
+            .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?;
+        tracing::info!("xet upload commit complete");
+
+        let mut xet_file_infos = Vec::with_capacity(files.len());
+        for task_id in &task_ids_in_order {
+            let metadata: &XetFileMetadata = results
+                .uploads
+                .get(task_id)
+                .ok_or_else(|| HFError::Other("Missing xet upload result for task".to_string()))?;
+            xet_file_infos.push(metadata.xet_info.clone());
+        }
+
+        Ok(xet_file_infos)
+    }
+
+    pub(crate) async fn xet_download_batch(&self, files: &[XetBatchFile]) -> Result<()> {
+        if files.is_empty() {
+            return Ok(());
+        }
+
+        let bucket_id = self.bucket_id();
+        let token_url = bucket_xet_token_url(&self.hf_client, "read", &bucket_id);
+        let conn = fetch_xet_connection_info(&self.hf_client, &token_url).await?;
+
+        let (session, generation) = self.hf_client.xet_session()?;
+        let group = match session.new_file_download_group() {
+            Ok(b) => b,
+            Err(e) => {
+                self.hf_client.replace_xet_session(generation, &e);
+                self.hf_client
+                    .xet_session()?
+                    .0
+                    .new_file_download_group()
+                    .map_err(|e| HFError::Other(format!("Xet bucket batch download failed: {e}")))?
+            },
+        }
+        .with_endpoint(conn.endpoint.clone())
+        .with_token_info(conn.access_token.clone(), conn.expiration_unix_epoch)
+        .with_token_refresh_url(token_url, self.hf_client.auth_headers())
+        .build()
+        .await
+        .map_err(|e| HFError::Other(format!("Xet bucket batch download failed: {e}")))?;
+
+        let mut incomplete_paths = Vec::with_capacity(files.len());
+        for file in files {
+            if let Some(parent) = file.path.parent() {
+                tokio::fs::create_dir_all(parent).await?;
+            }
+
+            let incomplete = PathBuf::from(format!("{}.incomplete", file.path.display()));
+
+            let file_info = XetFileInfo::new(file.hash.clone(), file.file_size);
+
+            group
+                .download_file_to_path(file_info, incomplete.clone())
+                .await
+                .map_err(|e| HFError::Other(format!("Xet bucket batch download failed: {e}")))?;
+
+            incomplete_paths.push((incomplete, file.path.clone()));
+        }
+
+        group
+            .finish()
+            .await
+            .map_err(|e| HFError::Other(format!("Xet bucket batch download failed: {e}")))?;
+
+        for (incomplete, final_path) in &incomplete_paths {
+            tokio::fs::rename(incomplete, final_path).await?;
+        }
+
+        Ok(())
     }
 }
 
