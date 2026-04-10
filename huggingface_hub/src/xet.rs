@@ -4,16 +4,20 @@
 //! When xet headers are detected during download/upload but the feature
 //! is not enabled, HFError::XetNotEnabled is returned at the call site.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
-use xet::xet_session::{Sha256Policy, XetFileInfo, XetFileMetadata};
+use xet::xet_session::{Sha256Policy, XetFileDownload, XetFileInfo, XetFileMetadata};
 
 use crate::client::HFClient;
 use crate::constants;
 use crate::error::{HFError, Result};
 use crate::repository::HFRepository;
-use crate::types::progress::{self, DownloadEvent, Progress, ProgressEvent, UploadEvent, UploadPhase};
+use crate::types::progress::{
+    self, DownloadEvent, FileProgress, FileStatus, Progress, ProgressEvent, UploadEvent, UploadPhase,
+};
 use crate::types::{AddSource, GetXetTokenParams, RepoType};
 
 #[derive(Debug, Deserialize)]
@@ -87,13 +91,22 @@ fn is_session_poisoned(err: &xet::error::XetError) -> bool {
     )
 }
 
+type SharedDownloadHandles = Arc<Mutex<Vec<(String, XetFileDownload)>>>;
+
+fn new_shared_download_handles() -> SharedDownloadHandles {
+    Arc::new(Mutex::new(Vec::new()))
+}
+
 fn spawn_download_progress_poller(
     progress: &Progress,
     group: &xet::xet_session::XetFileDownloadGroup,
+    handles: &SharedDownloadHandles,
 ) -> Option<tokio::task::JoinHandle<()>> {
     let handler = progress.as_ref()?.clone();
     let group = group.clone();
+    let handles = handles.clone();
     Some(tokio::spawn(async move {
+        let mut completed_files: HashSet<String> = HashSet::new();
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             let report = group.progress();
@@ -102,6 +115,33 @@ fn spawn_download_progress_poller(
                 total_bytes: report.total_bytes,
                 bytes_per_sec: report.total_bytes_completion_rate,
             }));
+
+            let file_handles = handles.lock().unwrap();
+            let mut newly_completed = Vec::new();
+            for (filename, handle) in file_handles.iter() {
+                if completed_files.contains(filename) {
+                    continue;
+                }
+                if let Some(item_report) = handle.progress()
+                    && item_report.total_bytes > 0
+                    && item_report.bytes_completed >= item_report.total_bytes
+                {
+                    newly_completed.push(FileProgress {
+                        filename: filename.clone(),
+                        bytes_completed: item_report.bytes_completed,
+                        total_bytes: item_report.total_bytes,
+                        status: FileStatus::Complete,
+                    });
+                }
+            }
+            drop(file_handles);
+
+            if !newly_completed.is_empty() {
+                for fp in &newly_completed {
+                    completed_files.insert(fp.filename.clone());
+                }
+                handler.on_progress(&ProgressEvent::Download(DownloadEvent::Progress { files: newly_completed }));
+            }
         }
     }))
 }
@@ -160,12 +200,15 @@ impl HFRepository {
 
         let file_info = XetFileInfo::new(file_hash, file_size);
 
-        group
+        let handles = new_shared_download_handles();
+        let poll_handle = spawn_download_progress_poller(progress, &group, &handles);
+
+        let dl_handle = group
             .download_file_to_path(file_info, dest_path.clone())
             .await
             .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?;
+        handles.lock().unwrap().push((filename.to_string(), dl_handle));
 
-        let poll_handle = spawn_download_progress_poller(progress, &group);
         let result = group.finish().await;
         if let Some(h) = poll_handle {
             h.abort();
@@ -217,12 +260,16 @@ impl HFRepository {
 
         let file_info = XetFileInfo::new(file_hash.to_string(), file_size);
 
-        group
+        let handles = new_shared_download_handles();
+        let poll_handle = spawn_download_progress_poller(progress, &group, &handles);
+
+        let dl_handle = group
             .download_file_to_path(file_info, incomplete_path.clone())
             .await
             .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?;
+        let display_name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        handles.lock().unwrap().push((display_name, dl_handle));
 
-        let poll_handle = spawn_download_progress_poller(progress, &group);
         let result = group.finish().await;
         if let Some(h) = poll_handle {
             h.abort();
@@ -269,6 +316,9 @@ impl HFRepository {
         .await
         .map_err(|e| HFError::Other(format!("Xet batch download failed: {e}")))?;
 
+        let handles = new_shared_download_handles();
+        let poll_handle = spawn_download_progress_poller(progress, &group, &handles);
+
         let mut incomplete_paths = Vec::with_capacity(files.len());
         for file in files {
             if let Some(parent) = file.path.parent() {
@@ -279,15 +329,20 @@ impl HFRepository {
 
             let file_info = XetFileInfo::new(file.hash.clone(), file.file_size);
 
-            group
+            let dl_handle = group
                 .download_file_to_path(file_info, incomplete.clone())
                 .await
                 .map_err(|e| HFError::Other(format!("Xet batch download failed: {e}")))?;
+            let display_name = file
+                .path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            handles.lock().unwrap().push((display_name, dl_handle));
 
             incomplete_paths.push((incomplete, file.path.clone()));
         }
 
-        let poll_handle = spawn_download_progress_poller(progress, &group);
         let result = group.finish().await;
         if let Some(h) = poll_handle {
             h.abort();

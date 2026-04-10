@@ -575,6 +575,17 @@ impl HFRepository {
             file_size,
         )
         .await?;
+        progress::emit(
+            &params.progress,
+            ProgressEvent::Download(DownloadEvent::Progress {
+                files: vec![FileProgress {
+                    filename: params.filename.clone(),
+                    bytes_completed: file_size,
+                    total_bytes: file_size,
+                    status: FileStatus::Complete,
+                }],
+            }),
+        );
         tokio::fs::rename(&incomplete_path, &blob).await?;
 
         finalize_cached_file(cache_dir, repo_folder, revision, &commit_hash, &params.filename, &etag).await
@@ -661,6 +672,7 @@ impl HFRepository {
             .list_filtered_files(&commit_hash, params.allow_patterns.as_ref(), params.ignore_patterns.as_ref())
             .await?;
 
+        let total_files = filenames.len();
         let force = params.force_download == Some(true);
 
         if !force && params.local_dir.is_none() {
@@ -670,7 +682,7 @@ impl HFRepository {
         progress::emit(
             &params.progress,
             ProgressEvent::Download(DownloadEvent::Start {
-                total_files: filenames.len(),
+                total_files,
                 total_bytes: 0,
             }),
         );

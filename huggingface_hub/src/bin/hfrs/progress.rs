@@ -16,6 +16,7 @@ struct ProgressState {
     file_bars: HashMap<String, ProgressBar>,
     last_upload_phase: Option<UploadPhase>,
     spinner: Option<ProgressBar>,
+    total_files: usize,
 }
 
 fn bytes_style() -> ProgressStyle {
@@ -55,6 +56,7 @@ impl CliProgressHandler {
                 file_bars: HashMap::new(),
                 last_upload_phase: None,
                 spinner: None,
+                total_files: 0,
             }),
         }
     }
@@ -66,6 +68,7 @@ impl CliProgressHandler {
                 total_files,
                 total_bytes,
             } => {
+                state.total_files = *total_files;
                 if *total_files > 1 {
                     let bar = self.multi.add(ProgressBar::new(*total_files as u64));
                     bar.set_style(files_style());
@@ -83,10 +86,17 @@ impl CliProgressHandler {
                 for fp in files {
                     match fp.status {
                         FileStatus::Started => {
-                            let bar = self.multi.add(ProgressBar::new(fp.total_bytes));
-                            bar.set_style(bytes_style());
-                            bar.set_message(truncate_filename(&fp.filename, 40));
-                            state.file_bars.insert(fp.filename.clone(), bar);
+                            if state.total_files == 1 && state.bytes_bar.is_none() && fp.total_bytes > 0 {
+                                let bar = self.multi.add(ProgressBar::new(fp.total_bytes));
+                                bar.set_style(bytes_style());
+                                bar.set_message("Downloading");
+                                state.bytes_bar = Some(bar);
+                            } else {
+                                let bar = self.multi.add(ProgressBar::new(fp.total_bytes));
+                                bar.set_style(bytes_style());
+                                bar.set_message(truncate_filename(&fp.filename, 40));
+                                state.file_bars.insert(fp.filename.clone(), bar);
+                            }
                         },
                         FileStatus::InProgress => {
                             if let Some(bar) = state.file_bars.get(&fp.filename) {
@@ -196,6 +206,7 @@ impl CliProgressHandler {
                         },
                         UploadPhase::Committing => {
                             if let Some(ref bar) = state.bytes_bar {
+                                bar.set_position(bar.length().unwrap_or(0));
                                 bar.finish_and_clear();
                                 self.multi.remove(bar);
                             }
@@ -223,14 +234,17 @@ impl CliProgressHandler {
                 }
             },
             UploadEvent::Complete => {
-                if let Some(ref spinner) = state.spinner {
+                if let Some(spinner) = state.spinner.take() {
                     spinner.finish_and_clear();
+                    self.multi.remove(&spinner);
                 }
-                if let Some(ref bar) = state.files_bar {
+                if let Some(bar) = state.files_bar.take() {
                     bar.finish_and_clear();
+                    self.multi.remove(&bar);
                 }
-                if let Some(ref bar) = state.bytes_bar {
+                if let Some(bar) = state.bytes_bar.take() {
                     bar.finish_and_clear();
+                    self.multi.remove(&bar);
                 }
             },
         }
