@@ -6,6 +6,7 @@ use reqwest_retry::RetryTransientMiddleware;
 use reqwest_retry::policies::ExponentialBackoff;
 use tracing::debug;
 
+use crate::bucket::HFBucket;
 use crate::constants;
 use crate::error::{HFError, Result};
 
@@ -260,6 +261,23 @@ impl HFClient {
     ) -> String {
         let prefix = constants::repo_type_url_prefix(repo_type);
         format!("{}/{}{}/resolve/{}/{}", self.endpoint(), prefix, repo_id, revision, filename)
+    }
+
+    /// Create an [`HFBucket`] handle for a bucket.
+    pub fn bucket(&self, owner: impl Into<String>, name: impl Into<String>) -> HFBucket {
+        HFBucket::new(self.clone(), owner, name)
+    }
+
+    /// Build a bucket API URL: `{endpoint}/api/buckets/{bucket_id}`
+    #[allow(dead_code)]
+    pub(crate) fn bucket_api_url(&self, bucket_id: &str) -> String {
+        format!("{}/api/buckets/{}", self.endpoint(), bucket_id)
+    }
+
+    /// Build a bucket file resolve URL: `{endpoint}/buckets/{bucket_id}/resolve/{path}`
+    #[allow(dead_code)]
+    pub(crate) fn bucket_resolve_url(&self, bucket_id: &str, path: &str) -> String {
+        format!("{}/buckets/{}/resolve/{}", self.endpoint(), bucket_id, path)
     }
 
     /// Check an HTTP response and map error status codes to HFError variants.
