@@ -50,7 +50,7 @@ impl CliRunner {
 
     /// Runner for write tests (hub-ci in CI, default endpoint locally).
     pub fn hfrs_ci() -> Self {
-        let token = test_utils::resolve_ci_token();
+        let token = test_utils::resolve_hub_ci_token();
         let mut extra_env = vec![
             ("RUST_LOG".to_string(), "info".to_string()),
             ("HF_LOG_LEVEL".to_string(), "info".to_string()),
