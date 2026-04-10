@@ -1,7 +1,10 @@
+pub mod cp;
 pub mod create;
 pub mod delete;
 pub mod info;
+pub mod list;
 pub mod move_bucket;
+pub mod remove;
 
 use anyhow::Result;
 use clap::{Args as ClapArgs, Subcommand};
@@ -17,22 +20,33 @@ pub struct Args {
 
 #[derive(Subcommand)]
 pub enum BucketsCommand {
+    /// Copy files to/from a bucket
+    Cp(cp::Args),
     /// Create a new bucket
     Create(create::Args),
-    /// Show detailed information about a bucket
-    Info(info::Args),
     /// Delete a bucket
     Delete(delete::Args),
+    /// Show detailed information about a bucket
+    Info(info::Args),
+    /// List buckets or files in a bucket
+    #[command(alias = "ls")]
+    List(list::Args),
     /// Move (rename) a bucket
     Move(move_bucket::Args),
+    /// Remove files from a bucket
+    #[command(alias = "rm")]
+    Remove(remove::Args),
 }
 
 pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     match args.command {
+        BucketsCommand::Cp(a) => cp::execute(api, a).await,
         BucketsCommand::Create(a) => create::execute(api, a).await,
-        BucketsCommand::Info(a) => info::execute(api, a).await,
         BucketsCommand::Delete(a) => delete::execute(api, a).await,
+        BucketsCommand::Info(a) => info::execute(api, a).await,
+        BucketsCommand::List(a) => list::execute(api, a).await,
         BucketsCommand::Move(a) => move_bucket::execute(api, a).await,
+        BucketsCommand::Remove(a) => remove::execute(api, a).await,
     }
 }
 

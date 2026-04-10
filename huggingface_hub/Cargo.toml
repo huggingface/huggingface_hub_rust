@@ -36,6 +36,7 @@ clap = { version = "4", features = ["derive", "env", "color"], optional = true }
 owo-colors = { version = "4", optional = true }
 comfy-table = { version = "7", optional = true }
 anyhow = { version = "1", optional = true }
+tempfile = { version = "3", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 
 [features]
@@ -53,6 +54,7 @@ cli = [
     "dep:owo-colors",
     "dep:comfy-table",
     "dep:anyhow",
+    "dep:tempfile",
     "dep:tracing-subscriber",
 ]
 
