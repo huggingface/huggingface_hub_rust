@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::sync::Mutex;
 
@@ -22,6 +22,7 @@ struct ProgressState {
     file_bars: HashMap<String, ProgressBar>,
     download_queue: VecDeque<(String, u64)>,
     upload_file_bars: HashMap<String, ProgressBar>,
+    upload_completed_files: HashSet<String>,
     last_upload_phase: Option<UploadPhase>,
     spinner: Option<ProgressBar>,
     total_files: usize,
@@ -63,6 +64,7 @@ impl CliProgressHandler {
                 file_bars: HashMap::new(),
                 download_queue: VecDeque::new(),
                 upload_file_bars: HashMap::new(),
+                upload_completed_files: HashSet::new(),
                 last_upload_phase: None,
                 spinner: None,
                 total_files: 0,
@@ -240,6 +242,7 @@ impl CliProgressHandler {
                                 bar.finish_and_clear();
                                 self.multi.remove(&bar);
                             }
+                            state.upload_completed_files.clear();
                             if let Some(ref bar) = state.bytes_bar {
                                 bar.set_position(bar.length().unwrap_or(0));
                                 bar.finish_and_clear();
@@ -279,6 +282,7 @@ impl CliProgressHandler {
                     bar.finish_and_clear();
                     self.multi.remove(&bar);
                 }
+                state.upload_completed_files.clear();
                 if let Some(spinner) = state.spinner.take() {
                     spinner.finish_and_clear();
                     self.multi.remove(&spinner);
@@ -321,12 +325,14 @@ impl CliProgressHandler {
                 }
             },
             FileStatus::Complete => {
-                if let Some(bar) = state.upload_file_bars.remove(&fp.filename) {
-                    bar.finish_and_clear();
-                    self.multi.remove(&bar);
-                }
-                if let Some(ref bar) = state.files_bar {
-                    bar.inc(1);
+                if state.upload_completed_files.insert(fp.filename.clone()) {
+                    if let Some(bar) = state.upload_file_bars.remove(&fp.filename) {
+                        bar.finish_and_clear();
+                        self.multi.remove(&bar);
+                    }
+                    if let Some(ref files_bar) = state.files_bar {
+                        files_bar.inc(1);
+                    }
                 }
             },
         }
