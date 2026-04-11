@@ -35,6 +35,9 @@ pub enum UploadEvent {
         bytes_completed: u64,
         total_bytes: u64,
         bytes_per_sec: Option<f64>,
+        transfer_bytes_completed: u64,
+        transfer_bytes: u64,
+        transfer_bytes_per_sec: Option<f64>,
         files: Vec<FileProgress>,
     },
     /// One or more individual files completed. Batched for efficiency
@@ -163,6 +166,9 @@ mod tests {
                 bytes_completed: 512,
                 total_bytes: 1024,
                 bytes_per_sec: Some(100.0),
+                transfer_bytes_completed: 0,
+                transfer_bytes: 0,
+                transfer_bytes_per_sec: None,
                 files: vec![],
             }),
         );
@@ -246,6 +252,9 @@ mod tests {
                     bytes_completed: 0,
                     total_bytes: 100,
                     bytes_per_sec: None,
+                    transfer_bytes_completed: 0,
+                    transfer_bytes: 0,
+                    transfer_bytes_per_sec: None,
                     files: vec![],
                 }),
             );
@@ -274,6 +283,9 @@ mod tests {
                 bytes_completed: 500,
                 total_bytes: 1000,
                 bytes_per_sec: Some(100.0),
+                transfer_bytes_completed: 250,
+                transfer_bytes: 800,
+                transfer_bytes_per_sec: Some(50.0),
                 files: vec![
                     FileProgress {
                         filename: "model/weights.bin".to_string(),
@@ -293,10 +305,20 @@ mod tests {
 
         let events = handler.events();
         assert_eq!(events.len(), 1);
-        if let ProgressEvent::Upload(UploadEvent::Progress { files, .. }) = &events[0] {
+        if let ProgressEvent::Upload(UploadEvent::Progress {
+            files,
+            transfer_bytes_completed,
+            transfer_bytes,
+            transfer_bytes_per_sec,
+            ..
+        }) = &events[0]
+        {
             assert_eq!(files.len(), 2);
             assert_eq!(files[0].filename, "model/weights.bin");
             assert_eq!(files[1].filename, "config.json");
+            assert_eq!(*transfer_bytes_completed, 250);
+            assert_eq!(*transfer_bytes, 800);
+            assert_eq!(*transfer_bytes_per_sec, Some(50.0));
         } else {
             panic!("expected Upload(Progress)");
         }

@@ -1152,6 +1152,9 @@ impl HFRepository {
                 bytes_completed: 0,
                 total_bytes,
                 bytes_per_sec: None,
+                transfer_bytes_completed: 0,
+                transfer_bytes: 0,
+                transfer_bytes_per_sec: None,
                 files: vec![],
             }),
         );
@@ -1166,6 +1169,9 @@ impl HFRepository {
                 bytes_completed: 0,
                 total_bytes,
                 bytes_per_sec: None,
+                transfer_bytes_completed: 0,
+                transfer_bytes: 0,
+                transfer_bytes_per_sec: None,
                 files: vec![],
             }),
         );
@@ -1233,6 +1239,9 @@ impl HFRepository {
                 bytes_completed: total_bytes,
                 total_bytes,
                 bytes_per_sec: None,
+                transfer_bytes_completed: 0,
+                transfer_bytes: 0,
+                transfer_bytes_per_sec: None,
                 files: vec![],
             }),
         );

@@ -579,6 +579,9 @@ impl HFRepository {
                         bytes_completed: report.total_bytes_completed,
                         total_bytes: report.total_bytes,
                         bytes_per_sec: report.total_bytes_completion_rate,
+                        transfer_bytes_completed: 0,
+                        transfer_bytes: 0,
+                        transfer_bytes_per_sec: None,
                         files: file_progress,
                     }));
                 }
@@ -610,6 +613,9 @@ impl HFRepository {
                 bytes_completed: results.progress.total_bytes_completed,
                 total_bytes: results.progress.total_bytes,
                 bytes_per_sec: results.progress.total_bytes_completion_rate,
+                transfer_bytes_completed: 0,
+                transfer_bytes: 0,
+                transfer_bytes_per_sec: None,
                 files: final_files,
             }),
         );
