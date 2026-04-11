@@ -231,7 +231,17 @@ impl CliProgressHandler {
                             bar.enable_steady_tick(std::time::Duration::from_millis(100));
                             state.spinner = Some(bar);
                         },
-                        UploadPhase::Uploading => {},
+                        UploadPhase::Uploading => {
+                            let pbar = self.multi.add(ProgressBar::new(0));
+                            pbar.set_style(bytes_style());
+                            pbar.set_message(format!("Processing Files (0 / {})", state.upload_total_files));
+                            state.processing_bar = Some(pbar);
+
+                            let tbar = self.multi.add(ProgressBar::new(0));
+                            tbar.set_style(bytes_style());
+                            tbar.set_message("New Data Upload");
+                            state.transfer_bar = Some(tbar);
+                        },
                         UploadPhase::Committing => {
                             self.cleanup_upload_bars(&mut state);
                             let bar = self.multi.add(ProgressBar::new_spinner());
@@ -247,23 +257,12 @@ impl CliProgressHandler {
                 if *phase == UploadPhase::Uploading {
                     let completed_count = state.upload_completed_files.len();
                     let total_count = state.upload_total_files;
-                    if state.processing_bar.is_none() && *total_bytes > 0 {
-                        let bar = self.multi.add(ProgressBar::new(*total_bytes));
-                        bar.set_style(bytes_style());
-                        state.processing_bar = Some(bar);
-                    }
                     if let Some(ref bar) = state.processing_bar {
                         bar.set_length(*total_bytes);
                         bar.set_position(*bytes_completed);
                         bar.set_message(format!("Processing Files ({} / {})", completed_count, total_count));
                     }
 
-                    if state.transfer_bar.is_none() && *transfer_bytes > 0 {
-                        let bar = self.multi.add(ProgressBar::new(*transfer_bytes));
-                        bar.set_style(bytes_style());
-                        bar.set_message("New Data Upload");
-                        state.transfer_bar = Some(bar);
-                    }
                     if let Some(ref bar) = state.transfer_bar {
                         bar.set_length(*transfer_bytes);
                         bar.set_position(*transfer_bytes_completed);
