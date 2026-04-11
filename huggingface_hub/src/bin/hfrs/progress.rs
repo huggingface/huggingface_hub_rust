@@ -169,7 +169,7 @@ impl CliProgressHandler {
                     bar.set_message(format!("Upload {} files", total_files));
                     state.files_bar = Some(bar);
                 }
-                if *total_bytes > 0 {
+                if *total_bytes > 0 && *total_files <= 1 {
                     let bar = self.multi.add(ProgressBar::new(*total_bytes));
                     bar.set_style(bytes_style());
                     bar.set_message("Uploading");
