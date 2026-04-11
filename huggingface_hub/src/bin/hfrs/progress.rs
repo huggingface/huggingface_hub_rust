@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::Write;
 use std::sync::Mutex;
 
@@ -8,6 +8,7 @@ use huggingface_hub::{
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
 /// Renders indicatif progress bars in the terminal for download and upload operations.
+const MAX_VISIBLE_FILE_BARS: usize = 10;
 const MAX_VISIBLE_UPLOAD_BARS: usize = 10;
 
 pub struct CliProgressHandler {
@@ -19,6 +20,7 @@ struct ProgressState {
     files_bar: Option<ProgressBar>,
     bytes_bar: Option<ProgressBar>,
     file_bars: HashMap<String, ProgressBar>,
+    download_queue: VecDeque<(String, u64)>,
     upload_file_bars: HashMap<String, ProgressBar>,
     last_upload_phase: Option<UploadPhase>,
     spinner: Option<ProgressBar>,
@@ -59,6 +61,7 @@ impl CliProgressHandler {
                 files_bar: None,
                 bytes_bar: None,
                 file_bars: HashMap::new(),
+                download_queue: VecDeque::new(),
                 upload_file_bars: HashMap::new(),
                 last_upload_phase: None,
                 spinner: None,
@@ -97,16 +100,25 @@ impl CliProgressHandler {
                                 bar.set_style(bytes_style());
                                 bar.set_message("Downloading");
                                 state.bytes_bar = Some(bar);
-                            } else {
+                            } else if state.file_bars.len() < MAX_VISIBLE_FILE_BARS {
                                 let bar = self.multi.add(ProgressBar::new(fp.total_bytes));
                                 bar.set_style(bytes_style());
                                 bar.set_message(truncate_filename(&fp.filename, 40));
                                 state.file_bars.insert(fp.filename.clone(), bar);
+                            } else {
+                                state.download_queue.push_back((fp.filename.clone(), fp.total_bytes));
                             }
                         },
                         FileStatus::InProgress => {
                             if let Some(bar) = state.file_bars.get(&fp.filename) {
                                 bar.set_position(fp.bytes_completed);
+                            } else if state.file_bars.len() < MAX_VISIBLE_FILE_BARS {
+                                let bar = self.multi.add(ProgressBar::new(fp.total_bytes));
+                                bar.set_style(bytes_style());
+                                bar.set_message(truncate_filename(&fp.filename, 40));
+                                bar.set_position(fp.bytes_completed);
+                                state.file_bars.insert(fp.filename.clone(), bar);
+                                state.download_queue.retain(|(n, _)| n != &fp.filename);
                             } else if let Some(ref bar) = state.bytes_bar {
                                 bar.set_position(fp.bytes_completed);
                             }
@@ -116,11 +128,22 @@ impl CliProgressHandler {
                                 bar.finish_and_clear();
                                 self.multi.remove(&bar);
                             }
+                            state.download_queue.retain(|(n, _)| n != &fp.filename);
                             if let Some(ref bar) = state.bytes_bar {
                                 bar.set_position(fp.bytes_completed);
                             }
                             if let Some(ref bar) = state.files_bar {
                                 bar.inc(1);
+                            }
+                            while state.file_bars.len() < MAX_VISIBLE_FILE_BARS {
+                                if let Some((name, total)) = state.download_queue.pop_front() {
+                                    let bar = self.multi.add(ProgressBar::new(total));
+                                    bar.set_style(bytes_style());
+                                    bar.set_message(truncate_filename(&name, 40));
+                                    state.file_bars.insert(name, bar);
+                                } else {
+                                    break;
+                                }
                             }
                         },
                     }
@@ -152,6 +175,7 @@ impl CliProgressHandler {
                 for (_, bar) in state.file_bars.drain() {
                     bar.finish_and_clear();
                 }
+                state.download_queue.clear();
             },
         }
     }

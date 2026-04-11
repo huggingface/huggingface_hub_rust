@@ -281,23 +281,9 @@ impl HFRepository {
         {
             if has_xet_hash {
                 let local_dir = params.local_dir.as_ref().unwrap();
-                let result = self
+                return self
                     .xet_download_to_local_dir(revision, &params.filename, local_dir, &head_response, &params.progress)
                     .await;
-                if result.is_ok() {
-                    progress::emit(
-                        &params.progress,
-                        ProgressEvent::Download(DownloadEvent::Progress {
-                            files: vec![FileProgress {
-                                filename: params.filename.clone(),
-                                bytes_completed: file_size,
-                                total_bytes: file_size,
-                                status: FileStatus::Complete,
-                            }],
-                        }),
-                    );
-                }
-                return result;
             }
         }
 
@@ -532,20 +518,9 @@ impl HFRepository {
                 }
                 let _lock = cache::acquire_lock(cache_dir, repo_folder, &etag).await?;
 
-                self.xet_download_to_blob(revision, &xet_hash, file_size, &blob, &params.progress)
+                self.xet_download_to_blob(revision, &params.filename, &xet_hash, file_size, &blob, &params.progress)
                     .await?;
             }
-            progress::emit(
-                &params.progress,
-                ProgressEvent::Download(DownloadEvent::Progress {
-                    files: vec![FileProgress {
-                        filename: params.filename.clone(),
-                        bytes_completed: file_size,
-                        total_bytes: file_size,
-                        status: FileStatus::Complete,
-                    }],
-                }),
-            );
 
             return finalize_cached_file(cache_dir, repo_folder, revision, &commit_hash, &params.filename, &etag).await;
         }
@@ -803,9 +778,11 @@ impl HFRepository {
             let mut non_xet_filenames = Vec::new();
 
             if let Some(ref local_dir) = params.local_dir {
+                let mut local_cached = Vec::new();
                 for meta in file_metas {
                     let dest = local_dir.join(&meta.filename);
                     if dest.exists() && !force {
+                        local_cached.push(meta.filename);
                         continue;
                     }
                     if meta.xet_hash.is_some() {
@@ -813,6 +790,19 @@ impl HFRepository {
                     } else {
                         non_xet_filenames.push(meta.filename);
                     }
+                }
+                for f in &local_cached {
+                    progress::emit(
+                        &params.progress,
+                        ProgressEvent::Download(DownloadEvent::Progress {
+                            files: vec![FileProgress {
+                                filename: f.clone(),
+                                bytes_completed: 0,
+                                total_bytes: 0,
+                                status: FileStatus::Complete,
+                            }],
+                        }),
+                    );
                 }
 
                 let xet_batch_fut = async {
@@ -825,22 +815,10 @@ impl HFRepository {
                             hash: m.xet_hash.as_ref().unwrap().clone(),
                             file_size: m.file_size,
                             path: local_dir.join(&m.filename),
+                            filename: m.filename.clone(),
                         })
                         .collect();
                     self.xet_download_batch(&commit_hash, &batch_files, &params.progress).await?;
-                    for m in &xet_metas {
-                        progress::emit(
-                            &params.progress,
-                            ProgressEvent::Download(DownloadEvent::Progress {
-                                files: vec![FileProgress {
-                                    filename: m.filename.clone(),
-                                    bytes_completed: m.file_size,
-                                    total_bytes: m.file_size,
-                                    status: FileStatus::Complete,
-                                }],
-                            }),
-                        );
-                    }
                     Ok(())
                 };
 
@@ -909,23 +887,13 @@ impl HFRepository {
                         hash: m.xet_hash.as_ref().unwrap().clone(),
                         file_size: m.file_size,
                         path: cache::blob_path(cache_dir, &repo_folder, &m.etag),
+                        filename: m.filename.clone(),
                     })
                     .collect();
                 self.xet_download_batch(&commit_hash, &batch_files, &params.progress).await?;
                 for m in &xet_metas {
                     cache::create_pointer_symlink(cache_dir, &repo_folder, &m.commit_hash, &m.filename, &m.etag)
                         .await?;
-                    progress::emit(
-                        &params.progress,
-                        ProgressEvent::Download(DownloadEvent::Progress {
-                            files: vec![FileProgress {
-                                filename: m.filename.clone(),
-                                bytes_completed: m.file_size,
-                                total_bytes: m.file_size,
-                                status: FileStatus::Complete,
-                            }],
-                        }),
-                    );
                 }
                 drop(locks);
                 Ok(())

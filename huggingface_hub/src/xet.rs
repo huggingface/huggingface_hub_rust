@@ -7,9 +7,10 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::Deserialize;
-use xet::xet_session::{Sha256Policy, XetFileInfo, XetFileMetadata, XetFileUpload};
+use xet::xet_session::{Sha256Policy, XetFileDownload, XetFileInfo, XetFileMetadata, XetFileUpload};
 
 use crate::client::HFClient;
 use crate::constants;
@@ -91,21 +92,100 @@ fn is_session_poisoned(err: &xet::error::XetError) -> bool {
     )
 }
 
+pub(crate) struct TrackedDownload {
+    pub handle: XetFileDownload,
+    pub filename: String,
+    pub file_size: u64,
+    pub complete_emitted: AtomicBool,
+}
+
+fn emit_remaining_completes(progress: &Progress, tracked: &[TrackedDownload]) {
+    for t in tracked {
+        if !t.complete_emitted.swap(true, Ordering::Relaxed) {
+            progress::emit(
+                progress,
+                ProgressEvent::Download(DownloadEvent::Progress {
+                    files: vec![FileProgress {
+                        filename: t.filename.clone(),
+                        bytes_completed: t.file_size,
+                        total_bytes: t.file_size,
+                        status: FileStatus::Complete,
+                    }],
+                }),
+            );
+        }
+    }
+}
+
 fn spawn_download_progress_poller(
     progress: &Progress,
     group: &xet::xet_session::XetFileDownloadGroup,
+    tracked: Arc<Vec<TrackedDownload>>,
 ) -> Option<tokio::task::JoinHandle<()>> {
     let handler = progress.as_ref()?.clone();
     let group = group.clone();
     Some(tokio::spawn(async move {
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
             let report = group.progress();
             handler.on_progress(&ProgressEvent::Download(DownloadEvent::AggregateProgress {
                 bytes_completed: report.total_bytes_completed,
                 total_bytes: report.total_bytes,
                 bytes_per_sec: report.total_bytes_completion_rate,
             }));
+
+            let mut completed = Vec::new();
+            let mut in_progress = Vec::new();
+
+            for t in tracked.iter() {
+                if t.complete_emitted.load(Ordering::Relaxed) {
+                    continue;
+                }
+                if t.handle.result().is_some() {
+                    if !t.complete_emitted.swap(true, Ordering::Relaxed) {
+                        completed.push(FileProgress {
+                            filename: t.filename.clone(),
+                            bytes_completed: t.file_size,
+                            total_bytes: t.file_size,
+                            status: FileStatus::Complete,
+                        });
+                    }
+                    continue;
+                }
+                if let Some(item) = t.handle.progress() {
+                    let total = item.total_bytes.max(t.file_size);
+                    if item.bytes_completed >= total && total > 0 {
+                        if !t.complete_emitted.swap(true, Ordering::Relaxed) {
+                            completed.push(FileProgress {
+                                filename: t.filename.clone(),
+                                bytes_completed: total,
+                                total_bytes: total,
+                                status: FileStatus::Complete,
+                            });
+                        }
+                    } else {
+                        let status = if item.bytes_completed > 0 {
+                            FileStatus::InProgress
+                        } else {
+                            FileStatus::Started
+                        };
+                        in_progress.push(FileProgress {
+                            filename: t.filename.clone(),
+                            bytes_completed: item.bytes_completed,
+                            total_bytes: total,
+                            status,
+                        });
+                    }
+                }
+            }
+
+            if !completed.is_empty() {
+                handler.on_progress(&ProgressEvent::Download(DownloadEvent::Progress { files: completed }));
+            }
+            if !in_progress.is_empty() {
+                handler.on_progress(&ProgressEvent::Download(DownloadEvent::Progress { files: in_progress }));
+            }
         }
     }))
 }
@@ -114,6 +194,7 @@ pub(crate) struct XetBatchFile {
     pub hash: String,
     pub file_size: u64,
     pub path: PathBuf,
+    pub filename: String,
 }
 
 impl HFRepository {
@@ -164,18 +245,25 @@ impl HFRepository {
 
         let file_info = XetFileInfo::new(file_hash, file_size);
 
-        let poll_handle = spawn_download_progress_poller(progress, &group);
-
-        group
+        let handle = group
             .download_file_to_path(file_info, dest_path.clone())
             .await
             .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?;
+
+        let tracked = Arc::new(vec![TrackedDownload {
+            handle,
+            filename: filename.to_string(),
+            file_size,
+            complete_emitted: AtomicBool::new(false),
+        }]);
+        let poll_handle = spawn_download_progress_poller(progress, &group, Arc::clone(&tracked));
 
         let result = group.finish().await;
         if let Some(h) = poll_handle {
             h.abort();
         }
         result.map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?;
+        emit_remaining_completes(progress, &tracked);
 
         Ok(dest_path)
     }
@@ -183,6 +271,7 @@ impl HFRepository {
     pub(crate) async fn xet_download_to_blob(
         &self,
         revision: &str,
+        filename: &str,
         file_hash: &str,
         file_size: u64,
         path: &std::path::Path,
@@ -222,18 +311,25 @@ impl HFRepository {
 
         let file_info = XetFileInfo::new(file_hash.to_string(), file_size);
 
-        let poll_handle = spawn_download_progress_poller(progress, &group);
-
-        group
+        let handle = group
             .download_file_to_path(file_info, incomplete_path.clone())
             .await
             .map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?;
+
+        let tracked = Arc::new(vec![TrackedDownload {
+            handle,
+            filename: filename.to_string(),
+            file_size,
+            complete_emitted: AtomicBool::new(false),
+        }]);
+        let poll_handle = spawn_download_progress_poller(progress, &group, Arc::clone(&tracked));
 
         let result = group.finish().await;
         if let Some(h) = poll_handle {
             h.abort();
         }
         result.map_err(|e| HFError::Other(format!("Xet download failed: {e}")))?;
+        emit_remaining_completes(progress, &tracked);
 
         tokio::fs::rename(&incomplete_path, path).await?;
         Ok(())
@@ -275,8 +371,7 @@ impl HFRepository {
         .await
         .map_err(|e| HFError::Other(format!("Xet batch download failed: {e}")))?;
 
-        let poll_handle = spawn_download_progress_poller(progress, &group);
-
+        let mut tracked_vec = Vec::with_capacity(files.len());
         let mut incomplete_paths = Vec::with_capacity(files.len());
         for file in files {
             if let Some(parent) = file.path.parent() {
@@ -287,19 +382,29 @@ impl HFRepository {
 
             let file_info = XetFileInfo::new(file.hash.clone(), file.file_size);
 
-            group
+            let handle = group
                 .download_file_to_path(file_info, incomplete.clone())
                 .await
                 .map_err(|e| HFError::Other(format!("Xet batch download failed: {e}")))?;
 
+            tracked_vec.push(TrackedDownload {
+                handle,
+                filename: file.filename.clone(),
+                file_size: file.file_size,
+                complete_emitted: AtomicBool::new(false),
+            });
             incomplete_paths.push((incomplete, file.path.clone()));
         }
+
+        let tracked = Arc::new(tracked_vec);
+        let poll_handle = spawn_download_progress_poller(progress, &group, Arc::clone(&tracked));
 
         let result = group.finish().await;
         if let Some(h) = poll_handle {
             h.abort();
         }
         result.map_err(|e| HFError::Other(format!("Xet batch download failed: {e}")))?;
+        emit_remaining_completes(progress, &tracked);
 
         for (incomplete, final_path) in &incomplete_paths {
             tokio::fs::rename(incomplete, final_path).await?;

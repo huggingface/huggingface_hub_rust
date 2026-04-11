@@ -8,6 +8,7 @@
 //!
 //! CI: read-only tests use HF_PROD_TOKEN, write tests use HF_CI_TOKEN against hub-ci.
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use futures::StreamExt;
@@ -16,7 +17,7 @@ use huggingface_hub::test_utils::*;
 use huggingface_hub::{
     AddSource, CommitOperation, CreateRepoParams, DeleteRepoParams, DownloadEvent, FileStatus, HFClient,
     HFClientBuilder, ProgressEvent, ProgressHandler, RepoCreateCommitParams, RepoDownloadFileParams,
-    RepoDownloadFileStreamParams, RepoUploadFileParams, UploadEvent, UploadPhase,
+    RepoDownloadFileStreamParams, RepoSnapshotDownloadParams, RepoUploadFileParams, UploadEvent, UploadPhase,
 };
 use sha2::{Digest, Sha256};
 
@@ -687,4 +688,53 @@ async fn test_upload_with_no_progress_handler() {
 
     delete_test_repo(&api, &repo_id).await;
     result.unwrap();
+}
+
+#[tokio::test]
+async fn test_snapshot_download_exactly_one_complete_per_file() {
+    let Some(api) = prod_api() else { return };
+    let (owner, name) = test_model_parts();
+    let repo = model(&api, owner, name);
+
+    let handler = Arc::new(RecordingHandler::new());
+    let dir = tempfile::tempdir().unwrap();
+
+    let params = RepoSnapshotDownloadParams::builder()
+        .local_dir(dir.path().to_path_buf())
+        .allow_patterns(vec!["*.json".to_string()])
+        .force_download(true)
+        .progress(Some(handler.clone()))
+        .build();
+
+    repo.snapshot_download(&params).await.unwrap();
+
+    let events = handler.events();
+
+    // Count Complete events per filename
+    let mut complete_counts: HashMap<String, usize> = HashMap::new();
+    for event in &events {
+        if let ProgressEvent::Download(DownloadEvent::Progress { files }) = event {
+            for fp in files {
+                if fp.status == FileStatus::Complete {
+                    *complete_counts.entry(fp.filename.clone()).or_default() += 1;
+                }
+            }
+        }
+    }
+
+    assert!(!complete_counts.is_empty(), "should have at least one file Complete event");
+
+    for (filename, count) in &complete_counts {
+        assert_eq!(*count, 1, "file '{filename}' had {count} Complete events, expected exactly 1");
+    }
+
+    // The files_bar count should match: total_files from Start == number of distinct Complete files
+    if let Some(ProgressEvent::Download(DownloadEvent::Start { total_files, .. })) = events.first() {
+        assert_eq!(
+            *total_files,
+            complete_counts.len(),
+            "total_files in Start ({total_files}) should match number of completed files ({})",
+            complete_counts.len()
+        );
+    }
 }
