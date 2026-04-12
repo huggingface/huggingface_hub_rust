@@ -12,6 +12,9 @@ use url::Url;
 
 use crate::error::{HFError, Result};
 use crate::repository::HFRepository;
+use crate::types::progress::{
+    self, DownloadEvent, FileProgress, FileStatus, Progress, ProgressEvent, UploadEvent, UploadPhase,
+};
 use crate::types::{
     AddSource, CommitInfo, CommitOperation, RepoCreateCommitParams, RepoDeleteFileParams, RepoDeleteFolderParams,
     RepoDownloadFileParams, RepoDownloadFileStreamParams, RepoDownloadFileToBytesParams, RepoGetPathsInfoParams,
@@ -106,6 +109,21 @@ impl HFRepository {
     ///
     /// Endpoint: GET {endpoint}/{prefix}{repo_id}/resolve/{revision}/{filename}
     pub async fn download_file(&self, params: &RepoDownloadFileParams) -> Result<PathBuf> {
+        progress::emit(
+            &params.progress,
+            ProgressEvent::Download(DownloadEvent::Start {
+                total_files: 1,
+                total_bytes: 0,
+            }),
+        );
+        let result = self.download_file_inner(params).await;
+        if result.is_ok() {
+            progress::emit(&params.progress, ProgressEvent::Download(DownloadEvent::Complete));
+        }
+        result
+    }
+
+    async fn download_file_inner(&self, params: &RepoDownloadFileParams) -> Result<PathBuf> {
         if params.local_dir.is_some() {
             self.download_file_to_local_dir(params).await
         } else {
@@ -256,6 +274,7 @@ impl HFRepository {
             )
             .await?;
 
+        let file_size = extract_file_size(&head_response).unwrap_or(0);
         let has_xet_hash = head_response.headers().get(constants::HEADER_X_XET_HASH).is_some();
 
         #[cfg(feature = "xet")]
@@ -263,7 +282,7 @@ impl HFRepository {
             if has_xet_hash {
                 let local_dir = params.local_dir.as_ref().unwrap();
                 return self
-                    .xet_download_to_local_dir(revision, &params.filename, local_dir, &head_response)
+                    .xet_download_to_local_dir(revision, &params.filename, local_dir, &head_response, &params.progress)
                     .await;
             }
         }
@@ -301,7 +320,25 @@ impl HFRepository {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        stream_response_to_file(response, &dest_path).await?;
+        stream_response_to_file_with_progress(
+            response,
+            &dest_path,
+            &params.progress,
+            Some(&params.filename),
+            file_size,
+        )
+        .await?;
+        progress::emit(
+            &params.progress,
+            ProgressEvent::Download(DownloadEvent::Progress {
+                files: vec![FileProgress {
+                    filename: params.filename.clone(),
+                    bytes_completed: file_size,
+                    total_bytes: file_size,
+                    status: FileStatus::Complete,
+                }],
+            }),
+        );
 
         Ok(dest_path)
     }
@@ -451,7 +488,6 @@ impl HFRepository {
         let commit_hash = extract_commit_hash(&head_response);
         let xet_hash = extract_xet_hash(&head_response);
         let has_xet_hash = xet_hash.is_some();
-        #[cfg(feature = "xet")]
         let file_size: u64 = extract_file_size(&head_response).unwrap_or_else(|| {
             tracing::warn!(url = %url, "missing or invalid Content-Length/X-Linked-Size header, defaulting file size to 0");
             0
@@ -482,7 +518,8 @@ impl HFRepository {
                 }
                 let _lock = cache::acquire_lock(cache_dir, repo_folder, &etag).await?;
 
-                self.xet_download_to_blob(revision, &xet_hash, file_size, &blob).await?;
+                self.xet_download_to_blob(revision, &params.filename, &xet_hash, file_size, &blob, &params.progress)
+                    .await?;
             }
 
             return finalize_cached_file(cache_dir, repo_folder, revision, &commit_hash, &params.filename, &etag).await;
@@ -500,6 +537,17 @@ impl HFRepository {
         let blob = cache::blob_path(cache_dir, repo_folder, &etag);
 
         if blob.exists() && !force_download {
+            progress::emit(
+                &params.progress,
+                ProgressEvent::Download(DownloadEvent::Progress {
+                    files: vec![FileProgress {
+                        filename: params.filename.clone(),
+                        bytes_completed: file_size,
+                        total_bytes: file_size,
+                        status: FileStatus::Complete,
+                    }],
+                }),
+            );
             return finalize_cached_file(cache_dir, repo_folder, revision, &commit_hash, &params.filename, &etag).await;
         }
 
@@ -516,7 +564,25 @@ impl HFRepository {
             .headers(self.hf_client.auth_headers())
             .send()
             .await?;
-        stream_response_to_file(response, &incomplete_path).await?;
+        stream_response_to_file_with_progress(
+            response,
+            &incomplete_path,
+            &params.progress,
+            Some(&params.filename),
+            file_size,
+        )
+        .await?;
+        progress::emit(
+            &params.progress,
+            ProgressEvent::Download(DownloadEvent::Progress {
+                files: vec![FileProgress {
+                    filename: params.filename.clone(),
+                    bytes_completed: file_size,
+                    total_bytes: file_size,
+                    status: FileStatus::Complete,
+                }],
+            }),
+        );
         tokio::fs::rename(&incomplete_path, &blob).await?;
 
         finalize_cached_file(cache_dir, repo_folder, revision, &commit_hash, &params.filename, &etag).await
@@ -603,10 +669,40 @@ impl HFRepository {
             .list_filtered_files(&commit_hash, params.allow_patterns.as_ref(), params.ignore_patterns.as_ref())
             .await?;
 
+        let total_files = filenames.len();
         let force = params.force_download == Some(true);
 
+        let mut cached_filenames = Vec::new();
         if !force && params.local_dir.is_none() {
-            filenames.retain(|f| !cache::snapshot_path(cache_dir, &repo_folder, &commit_hash, f).exists());
+            filenames.retain(|f| {
+                if cache::snapshot_path(cache_dir, &repo_folder, &commit_hash, f).exists() {
+                    cached_filenames.push(f.clone());
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+
+        progress::emit(
+            &params.progress,
+            ProgressEvent::Download(DownloadEvent::Start {
+                total_files,
+                total_bytes: 0,
+            }),
+        );
+        for f in &cached_filenames {
+            progress::emit(
+                &params.progress,
+                ProgressEvent::Download(DownloadEvent::Progress {
+                    files: vec![FileProgress {
+                        filename: f.clone(),
+                        bytes_completed: 0,
+                        total_bytes: 0,
+                        status: FileStatus::Complete,
+                    }],
+                }),
+            );
         }
 
         #[cfg(feature = "xet")]
@@ -682,9 +778,11 @@ impl HFRepository {
             let mut non_xet_filenames = Vec::new();
 
             if let Some(ref local_dir) = params.local_dir {
+                let mut local_cached = Vec::new();
                 for meta in file_metas {
                     let dest = local_dir.join(&meta.filename);
                     if dest.exists() && !force {
+                        local_cached.push(meta.filename);
                         continue;
                     }
                     if meta.xet_hash.is_some() {
@@ -692,6 +790,19 @@ impl HFRepository {
                     } else {
                         non_xet_filenames.push(meta.filename);
                     }
+                }
+                for f in &local_cached {
+                    progress::emit(
+                        &params.progress,
+                        ProgressEvent::Download(DownloadEvent::Progress {
+                            files: vec![FileProgress {
+                                filename: f.clone(),
+                                bytes_completed: 0,
+                                total_bytes: 0,
+                                status: FileStatus::Complete,
+                            }],
+                        }),
+                    );
                 }
 
                 let xet_batch_fut = async {
@@ -704,9 +815,11 @@ impl HFRepository {
                             hash: m.xet_hash.as_ref().unwrap().clone(),
                             file_size: m.file_size,
                             path: local_dir.join(&m.filename),
+                            filename: m.filename.clone(),
                         })
                         .collect();
-                    self.xet_download_batch(&commit_hash, &batch_files).await
+                    self.xet_download_batch(&commit_hash, &batch_files, &params.progress).await?;
+                    Ok(())
                 };
 
                 let non_xet_dl_params = build_download_params(
@@ -716,6 +829,7 @@ impl HFRepository {
                     &commit_hash,
                     params.force_download,
                     Some(local_dir.clone()),
+                    &params.progress,
                 );
                 let non_xet_fut = async {
                     download_concurrently(self, &non_xet_dl_params, max_workers).await?;
@@ -723,6 +837,7 @@ impl HFRepository {
                 };
 
                 tokio::try_join!(xet_batch_fut, non_xet_fut)?;
+                progress::emit(&params.progress, ProgressEvent::Download(DownloadEvent::Complete));
                 return Ok(local_dir.clone());
             }
 
@@ -738,6 +853,17 @@ impl HFRepository {
                         &meta.etag,
                     )
                     .await?;
+                    progress::emit(
+                        &params.progress,
+                        ProgressEvent::Download(DownloadEvent::Progress {
+                            files: vec![FileProgress {
+                                filename: meta.filename.clone(),
+                                bytes_completed: meta.file_size,
+                                total_bytes: meta.file_size,
+                                status: FileStatus::Complete,
+                            }],
+                        }),
+                    );
                     continue;
                 }
                 if meta.xet_hash.is_some() {
@@ -761,9 +887,10 @@ impl HFRepository {
                         hash: m.xet_hash.as_ref().unwrap().clone(),
                         file_size: m.file_size,
                         path: cache::blob_path(cache_dir, &repo_folder, &m.etag),
+                        filename: m.filename.clone(),
                     })
                     .collect();
-                self.xet_download_batch(&commit_hash, &batch_files).await?;
+                self.xet_download_batch(&commit_hash, &batch_files, &params.progress).await?;
                 for m in &xet_metas {
                     cache::create_pointer_symlink(cache_dir, &repo_folder, &m.commit_hash, &m.filename, &m.etag)
                         .await?;
@@ -779,6 +906,7 @@ impl HFRepository {
                 &commit_hash,
                 params.force_download,
                 None,
+                &params.progress,
             );
             let non_xet_fut = async {
                 download_concurrently(self, &non_xet_dl_params, max_workers).await?;
@@ -799,8 +927,10 @@ impl HFRepository {
                     &commit_hash,
                     params.force_download,
                     Some(local_dir.clone()),
+                    &params.progress,
                 );
                 download_concurrently(self, &dl_params, max_workers).await?;
+                progress::emit(&params.progress, ProgressEvent::Download(DownloadEvent::Complete));
                 return Ok(local_dir.clone());
             }
 
@@ -811,6 +941,7 @@ impl HFRepository {
                 &commit_hash,
                 params.force_download,
                 None,
+                &params.progress,
             );
             download_concurrently(self, &dl_params, max_workers).await?;
         }
@@ -819,6 +950,7 @@ impl HFRepository {
             cache::write_ref(cache_dir, &repo_folder, revision, &commit_hash).await?;
         }
 
+        progress::emit(&params.progress, ProgressEvent::Download(DownloadEvent::Complete));
         Ok(cache_dir.join(&repo_folder).join("snapshots").join(&commit_hash))
     }
 }
@@ -904,6 +1036,7 @@ fn build_download_params(
     commit_hash: &str,
     force_download: Option<bool>,
     local_dir: Option<PathBuf>,
+    progress: &Progress,
 ) -> Vec<RepoDownloadFileParams> {
     filenames
         .iter()
@@ -913,6 +1046,7 @@ fn build_download_params(
             revision: Some(commit_hash.to_string()),
             force_download,
             local_files_only: None,
+            progress: progress.clone(),
         })
         .collect()
 }
@@ -922,18 +1056,49 @@ async fn download_concurrently(
     params: &[RepoDownloadFileParams],
     max_workers: usize,
 ) -> Result<Vec<PathBuf>> {
-    futures::stream::iter(params.iter().map(|p| api.download_file(p)))
+    futures::stream::iter(params.iter().map(|p| api.download_file_inner(p)))
         .buffer_unordered(max_workers)
         .try_collect()
         .await
 }
 
-async fn stream_response_to_file(response: reqwest::Response, dest: &Path) -> Result<()> {
+async fn stream_response_to_file_with_progress(
+    response: reqwest::Response,
+    dest: &Path,
+    handler: &Progress,
+    filename: Option<&str>,
+    total_bytes: u64,
+) -> Result<()> {
     let mut file = tokio::fs::File::create(dest).await?;
     let mut stream = response.bytes_stream();
+    let mut bytes_read: u64 = 0;
+
+    if let (Some(h), Some(fname)) = (handler, filename) {
+        h.on_progress(&ProgressEvent::Download(DownloadEvent::Progress {
+            files: vec![FileProgress {
+                filename: fname.to_string(),
+                bytes_completed: 0,
+                total_bytes,
+                status: FileStatus::Started,
+            }],
+        }));
+    }
+
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
         file.write_all(&chunk).await?;
+        bytes_read += chunk.len() as u64;
+
+        if let (Some(h), Some(fname)) = (handler, filename) {
+            h.on_progress(&ProgressEvent::Download(DownloadEvent::Progress {
+                files: vec![FileProgress {
+                    filename: fname.to_string(),
+                    bytes_completed: bytes_read,
+                    total_bytes,
+                    status: FileStatus::InProgress,
+                }],
+            }));
+        }
     }
     file.flush().await?;
     Ok(())
@@ -955,9 +1120,61 @@ impl HFRepository {
         let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
         let url = format!("{}/commit/{}", self.hf_client.api_url(Some(self.repo_type), &self.repo_path()), revision);
 
+        let add_ops_count = params
+            .operations
+            .iter()
+            .filter(|op| matches!(op, CommitOperation::Add { .. }))
+            .count();
+        let total_bytes: u64 = {
+            let mut total = 0u64;
+            for op in &params.operations {
+                if let CommitOperation::Add { source, .. } = op {
+                    total += match source {
+                        AddSource::Bytes(b) => b.len() as u64,
+                        AddSource::File(p) => tokio::fs::metadata(p).await.map(|m| m.len()).unwrap_or(0),
+                    };
+                }
+            }
+            total
+        };
+
+        progress::emit(
+            &params.progress,
+            ProgressEvent::Upload(UploadEvent::Start {
+                total_files: add_ops_count,
+                total_bytes,
+            }),
+        );
+        progress::emit(
+            &params.progress,
+            ProgressEvent::Upload(UploadEvent::Progress {
+                phase: UploadPhase::Preparing,
+                bytes_completed: 0,
+                total_bytes,
+                bytes_per_sec: None,
+                transfer_bytes_completed: 0,
+                transfer_bytes: 0,
+                transfer_bytes_per_sec: None,
+                files: vec![],
+            }),
+        );
+
         // Determine which files should be uploaded via xet (LFS) vs. inline
         // (regular). Files uploaded via xet are referenced by their SHA256 OID
         // in the commit NDJSON.
+        progress::emit(
+            &params.progress,
+            ProgressEvent::Upload(UploadEvent::Progress {
+                phase: UploadPhase::CheckingUploadMode,
+                bytes_completed: 0,
+                total_bytes,
+                bytes_per_sec: None,
+                transfer_bytes_completed: 0,
+                transfer_bytes: 0,
+                transfer_bytes_per_sec: None,
+                files: vec![],
+            }),
+        );
         let lfs_uploaded: HashMap<String, (String, u64)> =
             self.preupload_and_upload_lfs_files(params, revision).await?;
 
@@ -1015,6 +1232,20 @@ impl HFRepository {
             })
             .collect();
 
+        progress::emit(
+            &params.progress,
+            ProgressEvent::Upload(UploadEvent::Progress {
+                phase: UploadPhase::Committing,
+                bytes_completed: total_bytes,
+                total_bytes,
+                bytes_per_sec: None,
+                transfer_bytes_completed: 0,
+                transfer_bytes: 0,
+                transfer_bytes_per_sec: None,
+                files: vec![],
+            }),
+        );
+
         let mut headers = self.hf_client.auth_headers();
         headers.insert(reqwest::header::CONTENT_TYPE, "application/x-ndjson".parse().unwrap());
 
@@ -1030,6 +1261,8 @@ impl HFRepository {
             .hf_client
             .check_response(response, Some(&repo_path), crate::error::NotFoundContext::Repo)
             .await?;
+
+        progress::emit(&params.progress, ProgressEvent::Upload(UploadEvent::Complete));
         Ok(response.json().await?)
     }
 
@@ -1067,6 +1300,7 @@ impl HFRepository {
             revision: params.revision.clone(),
             create_pr: params.create_pr,
             parent_commit: params.parent_commit.clone(),
+            progress: params.progress.clone(),
         })
         .await
     }
@@ -1116,6 +1350,7 @@ impl HFRepository {
             revision: params.revision.clone(),
             create_pr: params.create_pr,
             parent_commit: None,
+            progress: params.progress.clone(),
         })
         .await
     }
@@ -1136,6 +1371,7 @@ impl HFRepository {
             revision: params.revision.clone(),
             create_pr: params.create_pr,
             parent_commit: None,
+            progress: None,
         })
         .await
     }
@@ -1180,6 +1416,7 @@ impl HFRepository {
             revision: Some(revision.to_string()),
             create_pr: params.create_pr,
             parent_commit: None,
+            progress: None,
         })
         .await
     }
@@ -1334,7 +1571,7 @@ impl HFRepository {
     /// Compute SHA256, negotiate LFS batch transfer, and upload via xet.
     async fn upload_lfs_files_via_xet(
         &self,
-        _params: &RepoCreateCommitParams,
+        params: &RepoCreateCommitParams,
         revision: &str,
         lfs_files: &[&(String, u64, Vec<u8>, &AddSource)],
     ) -> Result<HashMap<String, (String, u64)>> {
@@ -1371,7 +1608,7 @@ impl HFRepository {
             .map(|(path, _, _, source)| (path.clone(), (*source).clone()))
             .collect();
 
-        self.xet_upload(&xet_files, revision).await?;
+        self.xet_upload(&xet_files, revision, &params.progress).await?;
 
         let result: HashMap<String, (String, u64)> = lfs_with_sha
             .into_iter()

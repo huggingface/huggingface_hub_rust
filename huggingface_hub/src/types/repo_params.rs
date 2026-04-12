@@ -4,6 +4,7 @@ use serde::Serialize;
 use typed_builder::TypedBuilder;
 
 use super::commit::{AddSource, CommitOperation};
+use super::progress::Progress;
 use super::repo::{GatedApprovalMode, GatedNotificationsMode};
 
 #[derive(Default, TypedBuilder)]
@@ -79,6 +80,9 @@ pub struct RepoDownloadFileParams {
     /// If `true`, only return the file if it is already cached locally; never make a network request.
     #[builder(default, setter(strip_option))]
     pub local_files_only: Option<bool>,
+    /// Optional progress handler for tracking download progress.
+    #[builder(default)]
+    pub progress: Progress,
 }
 
 #[derive(TypedBuilder)]
@@ -120,6 +124,9 @@ pub struct RepoSnapshotDownloadParams {
     /// Maximum number of concurrent file downloads.
     #[builder(default, setter(strip_option))]
     pub max_workers: Option<usize>,
+    /// Optional progress handler for tracking download progress.
+    #[builder(default)]
+    pub progress: Progress,
 }
 
 #[derive(TypedBuilder)]
@@ -144,6 +151,9 @@ pub struct RepoUploadFileParams {
     /// Expected parent commit SHA. The upload fails if the branch head has moved past this commit.
     #[builder(default, setter(into, strip_option))]
     pub parent_commit: Option<String>,
+    /// Optional progress handler for tracking upload progress.
+    #[builder(default)]
+    pub progress: Progress,
 }
 
 #[derive(TypedBuilder)]
@@ -175,6 +185,9 @@ pub struct RepoUploadFolderParams {
     /// Glob patterns for remote files to delete that are not present locally.
     #[builder(default, setter(strip_option))]
     pub delete_patterns: Option<Vec<String>>,
+    /// Optional progress handler for tracking upload progress.
+    #[builder(default)]
+    pub progress: Progress,
 }
 
 #[derive(TypedBuilder)]
@@ -228,6 +241,9 @@ pub struct RepoCreateCommitParams {
     /// Expected parent commit SHA. The commit fails if the branch head has moved past this commit.
     #[builder(default, setter(into, strip_option))]
     pub parent_commit: Option<String>,
+    /// Optional progress handler for tracking upload progress.
+    #[builder(default)]
+    pub progress: Progress,
 }
 
 #[derive(Default, TypedBuilder)]
