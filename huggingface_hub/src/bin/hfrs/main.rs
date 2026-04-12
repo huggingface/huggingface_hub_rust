@@ -25,7 +25,9 @@ async fn main() -> ExitCode {
     let multi = if progress_disabled {
         None
     } else {
-        Some(indicatif::MultiProgress::new())
+        Some(indicatif::MultiProgress::with_draw_target(
+            indicatif::ProgressDrawTarget::stderr_with_hz(10),
+        ))
     };
     init_logging(color, multi.as_ref());
 

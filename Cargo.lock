@@ -1016,7 +1016,6 @@ dependencies = [
  "futures",
  "globset",
  "hf-xet",
- "indexmap",
  "indicatif",
  "libc",
  "owo-colors",
