@@ -23,6 +23,11 @@ pub struct CommandOutput {
 
 impl CommandOutput {
     pub fn single_item(json_value: Value) -> Self {
+        let json_value = match json_value {
+            Value::Object(map) => Value::Object(map.into_iter().filter(|(_, v)| !v.is_null()).collect()),
+            other => other,
+        };
+
         let (headers, rows) = if let Value::Object(ref map) = json_value {
             let headers = vec!["Key".to_string(), "Value".to_string()];
             let rows = map
@@ -30,7 +35,6 @@ impl CommandOutput {
                 .map(|(k, v)| {
                     let display = match v {
                         Value::String(s) => s.clone(),
-                        Value::Null => String::new(),
                         other => other.to_string(),
                     };
                     vec![k.clone(), display]

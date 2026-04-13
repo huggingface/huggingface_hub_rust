@@ -12,6 +12,11 @@ pub struct RepoInfoParams {
     /// Git revision (branch, tag, or commit SHA) to fetch info for. Defaults to the main branch.
     #[builder(default, setter(into, strip_option))]
     pub revision: Option<String>,
+    /// List of properties to expand in the response (e.g. `"trendingScore"`, `"cardData"`).
+    /// When set, only the listed properties (plus `_id` and `id`) are returned.
+    /// Available values vary by repo type — see the Hub API documentation.
+    #[builder(default, setter(strip_option))]
+    pub expand: Option<Vec<String>>,
 }
 
 #[derive(TypedBuilder)]

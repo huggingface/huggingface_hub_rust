@@ -596,9 +596,9 @@ impl HFRepository {
         }
         let repo_path = self.repo_path();
         let sha = match self.repo_type {
-            RepoType::Dataset => self.dataset_info(Some(revision.to_string())).await?.sha,
-            RepoType::Space => self.space_info(Some(revision.to_string())).await?.sha,
-            _ => self.model_info(Some(revision.to_string())).await?.sha,
+            RepoType::Dataset => self.dataset_info(Some(revision.to_string()), None).await?.sha,
+            RepoType::Space => self.space_info(Some(revision.to_string()), None).await?.sha,
+            _ => self.model_info(Some(revision.to_string()), None).await?.sha,
         };
         sha.ok_or_else(|| HFError::Other(format!("No commit hash returned for {}/{}", repo_path, revision)))
     }
