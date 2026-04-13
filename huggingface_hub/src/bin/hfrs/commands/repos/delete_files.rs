@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Args as ClapArgs;
-use huggingface_hub::{CommitOperation, HFClient, RepoCreateCommitParams};
+use globset::Glob;
+use huggingface_hub::{CommitOperation, HFClient, RepoCreateCommitParams, RepoListFilesParams};
 
 use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
@@ -11,7 +12,7 @@ pub struct Args {
     /// Repository ID (e.g. username/my-model)
     pub repo_id: String,
 
-    /// File patterns to delete (paths relative to the repository root)
+    /// File patterns to delete (glob patterns or exact paths relative to the repository root)
     #[arg(required = true)]
     pub patterns: Vec<String>,
 
@@ -39,8 +40,28 @@ pub struct Args {
 pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
     let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
-    let operations = args
+
+    let list_params = RepoListFilesParams {
+        revision: args.revision.clone(),
+    };
+    let all_files = repo.list_files(&list_params).await?;
+
+    let matchers: Vec<_> = args
         .patterns
+        .iter()
+        .filter_map(|p| Glob::new(p).ok().map(|g| g.compile_matcher()))
+        .collect();
+
+    let matched_files: Vec<String> = all_files
+        .into_iter()
+        .filter(|f| matchers.iter().any(|m| m.is_match(f)))
+        .collect();
+
+    if matched_files.is_empty() {
+        anyhow::bail!("No files matched the given patterns");
+    }
+
+    let operations = matched_files
         .into_iter()
         .map(|path| CommitOperation::Delete { path_in_repo: path })
         .collect();

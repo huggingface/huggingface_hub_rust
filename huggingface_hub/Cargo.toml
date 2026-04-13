@@ -75,7 +75,6 @@ tempfile = "3"
 rand = "0.9"
 sha2 = "0.10"
 serial_test = "3"
-assert_cmd = "2"
 anyhow = "1"
 libc = "0.2"
 
