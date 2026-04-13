@@ -25,6 +25,10 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub no_color: bool,
 
+    /// Disable progress bars
+    #[arg(long, global = true)]
+    pub disable_progress_bars: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }

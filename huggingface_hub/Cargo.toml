@@ -33,6 +33,7 @@ sha2 = { version = "0.10", optional = true }
 
 # cli deps
 clap = { version = "4", features = ["derive", "env", "color"], optional = true }
+indicatif = { version = "0.17", optional = true }
 owo-colors = { version = "4", optional = true }
 comfy-table = { version = "7", optional = true }
 anyhow = { version = "1", optional = true }
@@ -51,6 +52,7 @@ cli = [
     "tokio/macros",
     "tokio/rt-multi-thread",
     "dep:clap",
+    "dep:indicatif",
     "dep:owo-colors",
     "dep:comfy-table",
     "dep:anyhow",
@@ -75,7 +77,6 @@ tempfile = "3"
 rand = "0.9"
 sha2 = "0.10"
 serial_test = "3"
-assert_cmd = "2"
 anyhow = "1"
 libc = "0.2"
 
@@ -107,6 +108,10 @@ required-features = ["spaces"]
 [[example]]
 name = "download_upload"
 path = "examples/download_upload.rs"
+
+[[example]]
+name = "progress"
+path = "examples/progress.rs"
 
 [[example]]
 name = "blocking_read"

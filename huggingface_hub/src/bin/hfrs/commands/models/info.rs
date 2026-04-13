@@ -26,6 +26,7 @@ pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
     let repo = api.model(owner, name);
     let info_params = RepoInfoParams {
         revision: args.revision,
+        expand: None,
     };
     let repo_info = repo.info(&info_params).await?;
     let info = match repo_info {

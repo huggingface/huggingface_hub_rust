@@ -142,9 +142,18 @@ impl HFRepository {
     /// Fetch repository metadata, returning the appropriate [`RepoInfo`] variant.
     pub async fn info(&self, params: &RepoInfoParams) -> Result<RepoInfo> {
         match self.repo_type {
-            RepoType::Model => self.model_info(params.revision.clone()).await.map(RepoInfo::Model),
-            RepoType::Dataset => self.dataset_info(params.revision.clone()).await.map(RepoInfo::Dataset),
-            RepoType::Space => self.space_info(params.revision.clone()).await.map(RepoInfo::Space),
+            RepoType::Model => self
+                .model_info(params.revision.clone(), params.expand.clone())
+                .await
+                .map(RepoInfo::Model),
+            RepoType::Dataset => self
+                .dataset_info(params.revision.clone(), params.expand.clone())
+                .await
+                .map(RepoInfo::Dataset),
+            RepoType::Space => self
+                .space_info(params.revision.clone(), params.expand.clone())
+                .await
+                .map(RepoInfo::Space),
             RepoType::Kernel => {
                 Err(HFError::Other("Repository info is not implemented yet for kernel repositories".to_string()))
             },
