@@ -1,12 +1,14 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::{Result, bail};
 use clap::Args as ClapArgs;
-use huggingface_hub::{AddSource, CreateRepoParams, HFClient, RepoUploadFileParams, RepoUploadFolderParams};
+use huggingface_hub::{AddSource, CreateRepoParams, HFClient, Progress, RepoUploadFileParams, RepoUploadFolderParams};
 use tracing::info;
 
 use crate::cli::RepoTypeArg;
 use crate::output::CommandResult;
+use crate::progress::CliProgressHandler;
 
 /// Upload files to the Hub
 #[derive(ClapArgs)]
@@ -61,7 +63,7 @@ pub struct Args {
     pub quiet: bool,
 }
 
-pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args, multi: Option<indicatif::MultiProgress>) -> Result<CommandResult> {
     let repo_type: huggingface_hub::RepoType = args.r#type.into();
     let local_path = args.local_path.unwrap_or_else(|| PathBuf::from("."));
     let repo = crate::util::make_repo(api, &args.repo_id, repo_type);
@@ -79,6 +81,14 @@ pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
         api.create_repo(&create_params).await?;
     }
 
+    let handler: Progress = if args.quiet {
+        None
+    } else if let Some(multi) = multi {
+        Some(Arc::new(CliProgressHandler::new(multi)))
+    } else {
+        None
+    };
+
     let commit_info = if local_path.is_file() {
         let path_in_repo = args.path_in_repo.unwrap_or_else(|| {
             local_path
@@ -94,6 +104,7 @@ pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
             commit_description: args.commit_description,
             create_pr: if args.create_pr { Some(true) } else { None },
             parent_commit: None,
+            progress: handler.clone(),
         };
         repo.upload_file(&params).await?
     } else if local_path.is_dir() {
@@ -122,6 +133,7 @@ pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
             allow_patterns,
             ignore_patterns,
             delete_patterns,
+            progress: handler.clone(),
         };
         repo.upload_folder(&params).await?
     } else {

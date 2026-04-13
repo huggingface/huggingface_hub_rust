@@ -13,18 +13,17 @@ use crate::types::{
 impl HFRepository {
     /// Get info about a model repository.
     /// Endpoint: GET /api/models/{repo_id} or /api/models/{repo_id}/revision/{revision}
-    pub(crate) async fn model_info(&self, revision: Option<String>) -> Result<ModelInfo> {
+    pub(crate) async fn model_info(&self, revision: Option<String>, expand: Option<Vec<String>>) -> Result<ModelInfo> {
         let mut url = self.hf_client.api_url(Some(self.repo_type), &self.repo_path());
         if let Some(ref revision) = revision {
             url = format!("{url}/revision/{revision}");
         }
-        let response = self
-            .hf_client
-            .http_client()
-            .get(&url)
-            .headers(self.hf_client.auth_headers())
-            .send()
-            .await?;
+        let mut request = self.hf_client.http_client().get(&url).headers(self.hf_client.auth_headers());
+        if let Some(ref expand) = expand {
+            let expand_params: Vec<(&str, &str)> = expand.iter().map(|v| ("expand", v.as_str())).collect();
+            request = request.query(&expand_params);
+        }
+        let response = request.send().await?;
         let repo_path = self.repo_path();
         let not_found_ctx = match revision {
             Some(rev) => crate::error::NotFoundContext::Revision { revision: rev },
@@ -36,18 +35,21 @@ impl HFRepository {
 
     /// Get info about a dataset repository.
     /// Endpoint: GET /api/datasets/{repo_id} or /api/datasets/{repo_id}/revision/{revision}
-    pub(crate) async fn dataset_info(&self, revision: Option<String>) -> Result<DatasetInfo> {
+    pub(crate) async fn dataset_info(
+        &self,
+        revision: Option<String>,
+        expand: Option<Vec<String>>,
+    ) -> Result<DatasetInfo> {
         let mut url = self.hf_client.api_url(Some(self.repo_type), &self.repo_path());
         if let Some(ref revision) = revision {
             url = format!("{url}/revision/{revision}");
         }
-        let response = self
-            .hf_client
-            .http_client()
-            .get(&url)
-            .headers(self.hf_client.auth_headers())
-            .send()
-            .await?;
+        let mut request = self.hf_client.http_client().get(&url).headers(self.hf_client.auth_headers());
+        if let Some(ref expand) = expand {
+            let expand_params: Vec<(&str, &str)> = expand.iter().map(|v| ("expand", v.as_str())).collect();
+            request = request.query(&expand_params);
+        }
+        let response = request.send().await?;
         let repo_path = self.repo_path();
         let not_found_ctx = match revision {
             Some(rev) => crate::error::NotFoundContext::Revision { revision: rev },
@@ -59,18 +61,17 @@ impl HFRepository {
 
     /// Get info about a space.
     /// Endpoint: GET /api/spaces/{repo_id} or /api/spaces/{repo_id}/revision/{revision}
-    pub(crate) async fn space_info(&self, revision: Option<String>) -> Result<SpaceInfo> {
+    pub(crate) async fn space_info(&self, revision: Option<String>, expand: Option<Vec<String>>) -> Result<SpaceInfo> {
         let mut url = self.hf_client.api_url(Some(self.repo_type), &self.repo_path());
         if let Some(ref revision) = revision {
             url = format!("{url}/revision/{revision}");
         }
-        let response = self
-            .hf_client
-            .http_client()
-            .get(&url)
-            .headers(self.hf_client.auth_headers())
-            .send()
-            .await?;
+        let mut request = self.hf_client.http_client().get(&url).headers(self.hf_client.auth_headers());
+        if let Some(ref expand) = expand {
+            let expand_params: Vec<(&str, &str)> = expand.iter().map(|v| ("expand", v.as_str())).collect();
+            request = request.query(&expand_params);
+        }
+        let response = request.send().await?;
         let repo_path = self.repo_path();
         let not_found_ctx = match revision {
             Some(rev) => crate::error::NotFoundContext::Revision { revision: rev },
