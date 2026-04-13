@@ -7,7 +7,10 @@
 
 use std::sync::Arc;
 
-use huggingface_hub::{DownloadEvent, FileStatus, HFClient, ProgressEvent, ProgressHandler, RepoDownloadFileParams};
+use huggingface_hub::{
+    DownloadEvent, FileStatus, HFClient, ProgressEvent, ProgressHandler, RepoDownloadFileParams, UploadEvent,
+    UploadPhase,
+};
 
 struct PrintProgressHandler;
 
@@ -47,8 +50,56 @@ impl ProgressHandler for PrintProgressHandler {
                     println!("Download complete.");
                 },
             },
-            ProgressEvent::Upload(ul) => {
-                println!("Upload event: {ul:?}");
+            ProgressEvent::Upload(ul) => match ul {
+                UploadEvent::Start {
+                    total_files,
+                    total_bytes,
+                } => {
+                    println!("Starting upload: {total_files} file(s), {total_bytes} bytes");
+                },
+                UploadEvent::Progress {
+                    phase,
+                    bytes_completed,
+                    total_bytes,
+                    bytes_per_sec,
+                    transfer_bytes_completed,
+                    transfer_bytes,
+                    transfer_bytes_per_sec,
+                    files,
+                } => {
+                    let phase_str = match phase {
+                        UploadPhase::Preparing => "preparing",
+                        UploadPhase::CheckingUploadMode => "checking upload mode",
+                        UploadPhase::Uploading => "uploading",
+                        UploadPhase::Committing => "committing",
+                    };
+                    let rate = bytes_per_sec.map(|r| format!(" ({:.1} B/s)", r)).unwrap_or_default();
+                    println!("  [{phase_str}] {bytes_completed}/{total_bytes}{rate}");
+                    if *transfer_bytes > 0 {
+                        let transfer_rate =
+                            transfer_bytes_per_sec.map(|r| format!(" ({:.1} B/s)", r)).unwrap_or_default();
+                        println!("    transfer: {transfer_bytes_completed}/{transfer_bytes}{transfer_rate}");
+                    }
+                    for f in files {
+                        let status = match f.status {
+                            FileStatus::Started => "started",
+                            FileStatus::InProgress => "uploading",
+                            FileStatus::Complete => "complete",
+                        };
+                        let pct = if f.total_bytes > 0 {
+                            f.bytes_completed * 100 / f.total_bytes
+                        } else {
+                            0
+                        };
+                        println!("    {}: {pct}% ({}/{}) [{status}]", f.filename, f.bytes_completed, f.total_bytes);
+                    }
+                },
+                UploadEvent::FileComplete { files, phase } => {
+                    println!("  Files completed during {phase:?}: {}", files.join(", "));
+                },
+                UploadEvent::Complete => {
+                    println!("Upload complete.");
+                },
             },
         }
     }
