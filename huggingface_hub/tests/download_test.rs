@@ -79,11 +79,11 @@ async fn delete_test_repo(api: &HFClient, repo_id: &str) {
 }
 
 fn test_model_parts() -> (&'static str, &'static str) {
-    ("openai-community", "gpt2")
+    ("hf-internal-testing", "tiny-gemma3")
 }
 
 fn test_dataset_parts() -> (&'static str, &'static str) {
-    ("rajpurkar", "squad")
+    ("hf-internal-testing", "cats_vs_dogs_sample")
 }
 
 fn model(api: &HFClient, owner: &str, name: &str) -> HFRepository {

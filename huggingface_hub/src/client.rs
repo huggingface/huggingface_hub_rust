@@ -274,13 +274,6 @@ impl HFClient {
         format!("{}/api/buckets/{}", self.endpoint(), bucket_id)
     }
 
-    /// Build a bucket file resolve URL: `{endpoint}/buckets/{bucket_id}/resolve/{path}`
-    #[cfg(feature = "buckets")]
-    #[allow(dead_code)]
-    pub(crate) fn bucket_resolve_url(&self, bucket_id: &str, path: &str) -> String {
-        format!("{}/buckets/{}/resolve/{}", self.endpoint(), bucket_id, path)
-    }
-
     /// Check an HTTP response and map error status codes to HFError variants.
     /// Returns the response on success (2xx).
     ///

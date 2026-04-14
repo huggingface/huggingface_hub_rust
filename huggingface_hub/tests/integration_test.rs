@@ -69,7 +69,7 @@ fn test_model_author() -> &'static str {
 }
 
 fn test_model_repo() -> &'static str {
-    "openai-community/gpt2"
+    "hf-internal-testing/tiny-gemma3"
 }
 
 fn test_space_repo() -> (&'static str, &'static str) {
@@ -81,7 +81,7 @@ fn test_space_info_repo() -> &'static str {
 }
 
 fn test_dataset_repo() -> &'static str {
-    "xet-team/xet-spec-reference-files"
+    "hf-internal-testing/cats_vs_dogs_sample"
 }
 
 /// Cached whoami username, fetched once and reused across write tests.
@@ -122,7 +122,7 @@ async fn test_model_info() {
     let model_repo = test_model_repo();
     let info = repo(&api, model_repo).info(&RepoInfoParams::default()).await.unwrap();
     match info {
-        RepoInfo::Model(model) => assert!(model.id.contains("gpt2")),
+        RepoInfo::Model(model) => assert!(model.id.contains("tiny-gemma3")),
         _ => panic!("expected model info"),
     }
 }

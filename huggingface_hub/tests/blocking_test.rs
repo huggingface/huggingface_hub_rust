@@ -59,11 +59,11 @@ fn test_model_author() -> &'static str {
 }
 
 fn test_model_repo() -> &'static str {
-    "openai-community/gpt2"
+    "hf-internal-testing/tiny-gemma3"
 }
 
 fn test_dataset_repo() -> &'static str {
-    "xet-team/xet-spec-reference-files"
+    "hf-internal-testing/cats_vs_dogs_sample"
 }
 
 /// Split a `"owner/name"` string into an `HFRepositorySync` handle.
@@ -94,7 +94,7 @@ fn test_sync_model_info() {
     let repo = repo_handle(&api, model_repo);
     let info = repo.info(&RepoInfoParams::default()).unwrap();
     match info {
-        RepoInfo::Model(model) => assert!(model.id.contains("gpt2")),
+        RepoInfo::Model(model) => assert!(model.id.contains("tiny-gemma3")),
         _ => panic!("expected model info"),
     }
 }

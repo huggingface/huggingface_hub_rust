@@ -188,6 +188,7 @@ enum CompareRole {
 }
 
 fn compare_files(
+    path: String,
     role: CompareRole,
     source_size: u64,
     source_mtime: f64,
@@ -217,7 +218,7 @@ fn compare_files(
         if params.verbose {
             return Some(SyncOperation {
                 action: SyncAction::Skip,
-                path: String::new(),
+                path,
                 size: Some(source_size),
                 reason: "exists on receiver (--ignore-existing)".to_string(),
             });
@@ -229,7 +230,7 @@ fn compare_files(
         if source_newer {
             return Some(SyncOperation {
                 action,
-                path: String::new(),
+                path,
                 size: Some(source_size),
                 reason: source_label.to_string(),
             });
@@ -242,7 +243,7 @@ fn compare_files(
         if params.verbose {
             return Some(SyncOperation {
                 action: SyncAction::Skip,
-                path: String::new(),
+                path,
                 size: Some(source_size),
                 reason,
             });
@@ -254,7 +255,7 @@ fn compare_files(
         if size_differs {
             return Some(SyncOperation {
                 action,
-                path: String::new(),
+                path,
                 size: Some(source_size),
                 reason: "size differs".to_string(),
             });
@@ -262,7 +263,7 @@ fn compare_files(
         if params.verbose {
             return Some(SyncOperation {
                 action: SyncAction::Skip,
-                path: String::new(),
+                path,
                 size: Some(source_size),
                 reason: "same size".to_string(),
             });
@@ -270,7 +271,6 @@ fn compare_files(
         return None;
     }
 
-    // Default mode: transfer if size differs OR source is newer
     if size_differs || source_newer {
         let reason = if size_differs {
             "size differs".to_string()
@@ -279,7 +279,7 @@ fn compare_files(
         };
         return Some(SyncOperation {
             action,
-            path: String::new(),
+            path,
             size: Some(source_size),
             reason,
         });
@@ -288,7 +288,7 @@ fn compare_files(
     if params.verbose {
         return Some(SyncOperation {
             action: SyncAction::Skip,
-            path: String::new(),
+            path,
             size: Some(source_size),
             reason: "identical".to_string(),
         });
@@ -376,10 +376,15 @@ impl HFBucket {
             } else if in_local && in_remote {
                 let (local_size, local_mtime) = local_files[key];
                 let (remote_size, remote_mtime) = remote_files[key];
-                if let Some(mut op) =
-                    compare_files(CompareRole::Upload, local_size, local_mtime, remote_size, remote_mtime, params)
-                {
-                    op.path = key.clone();
+                if let Some(op) = compare_files(
+                    key.clone(),
+                    CompareRole::Upload,
+                    local_size,
+                    local_mtime,
+                    remote_size,
+                    remote_mtime,
+                    params,
+                ) {
                     operations.push(op);
                 }
             } else if !in_local && in_remote && params.delete {
@@ -443,10 +448,15 @@ impl HFBucket {
             } else if in_local && in_remote {
                 let (remote_size, remote_mtime) = remote_files[key];
                 let (local_size, local_mtime) = local_files[key];
-                if let Some(mut op) =
-                    compare_files(CompareRole::Download, remote_size, remote_mtime, local_size, local_mtime, params)
-                {
-                    op.path = key.clone();
+                if let Some(op) = compare_files(
+                    key.clone(),
+                    CompareRole::Download,
+                    remote_size,
+                    remote_mtime,
+                    local_size,
+                    local_mtime,
+                    params,
+                ) {
                     if op.action == SyncAction::Download
                         && let Some(entry) = remote_entries.get(key)
                     {
@@ -741,7 +751,7 @@ mod tests {
             .verbose(true)
             .build();
 
-        let op = compare_files(CompareRole::Upload, 100, 5000.0, 100, 5000.0, &params).unwrap();
+        let op = compare_files(String::new(), CompareRole::Upload, 100, 5000.0, 100, 5000.0, &params).unwrap();
         assert_eq!(op.action, SyncAction::Skip);
         assert_eq!(op.reason, "identical");
     }
@@ -753,7 +763,7 @@ mod tests {
             .direction(SyncDirection::Upload)
             .build();
 
-        let op = compare_files(CompareRole::Upload, 100, 5000.0, 100, 5000.0, &params);
+        let op = compare_files(String::new(), CompareRole::Upload, 100, 5000.0, 100, 5000.0, &params);
         assert!(op.is_none());
     }
 
@@ -764,7 +774,7 @@ mod tests {
             .direction(SyncDirection::Upload)
             .build();
 
-        let op = compare_files(CompareRole::Upload, 200, 5000.0, 100, 5000.0, &params).unwrap();
+        let op = compare_files(String::new(), CompareRole::Upload, 200, 5000.0, 100, 5000.0, &params).unwrap();
         assert_eq!(op.action, SyncAction::Upload);
         assert_eq!(op.reason, "size differs");
     }
@@ -776,7 +786,7 @@ mod tests {
             .direction(SyncDirection::Upload)
             .build();
 
-        let op = compare_files(CompareRole::Upload, 100, 7000.0, 100, 5000.0, &params).unwrap();
+        let op = compare_files(String::new(), CompareRole::Upload, 100, 7000.0, 100, 5000.0, &params).unwrap();
         assert_eq!(op.action, SyncAction::Upload);
         assert_eq!(op.reason, "local newer");
     }
@@ -788,7 +798,7 @@ mod tests {
             .direction(SyncDirection::Download)
             .build();
 
-        let op = compare_files(CompareRole::Download, 100, 7000.0, 100, 5000.0, &params).unwrap();
+        let op = compare_files(String::new(), CompareRole::Download, 100, 7000.0, 100, 5000.0, &params).unwrap();
         assert_eq!(op.action, SyncAction::Download);
         assert_eq!(op.reason, "remote newer");
     }
@@ -801,7 +811,7 @@ mod tests {
             .verbose(true)
             .build();
 
-        let op = compare_files(CompareRole::Upload, 100, 5500.0, 100, 5000.0, &params).unwrap();
+        let op = compare_files(String::new(), CompareRole::Upload, 100, 5500.0, 100, 5000.0, &params).unwrap();
         assert_eq!(op.action, SyncAction::Skip);
         assert_eq!(op.reason, "identical");
     }
@@ -815,11 +825,11 @@ mod tests {
             .verbose(true)
             .build();
 
-        let op = compare_files(CompareRole::Upload, 100, 9000.0, 100, 5000.0, &params).unwrap();
+        let op = compare_files(String::new(), CompareRole::Upload, 100, 9000.0, 100, 5000.0, &params).unwrap();
         assert_eq!(op.action, SyncAction::Skip);
         assert_eq!(op.reason, "same size");
 
-        let op = compare_files(CompareRole::Upload, 200, 5000.0, 100, 5000.0, &params).unwrap();
+        let op = compare_files(String::new(), CompareRole::Upload, 200, 5000.0, 100, 5000.0, &params).unwrap();
         assert_eq!(op.action, SyncAction::Upload);
         assert_eq!(op.reason, "size differs");
     }
@@ -833,11 +843,11 @@ mod tests {
             .verbose(true)
             .build();
 
-        let op = compare_files(CompareRole::Upload, 200, 5000.0, 100, 5000.0, &params).unwrap();
+        let op = compare_files(String::new(), CompareRole::Upload, 200, 5000.0, 100, 5000.0, &params).unwrap();
         assert_eq!(op.action, SyncAction::Skip);
         assert_eq!(op.reason, "same mtime");
 
-        let op = compare_files(CompareRole::Upload, 100, 3000.0, 100, 5000.0, &params).unwrap();
+        let op = compare_files(String::new(), CompareRole::Upload, 100, 3000.0, 100, 5000.0, &params).unwrap();
         assert_eq!(op.action, SyncAction::Skip);
         assert_eq!(op.reason, "remote newer");
     }
@@ -851,7 +861,7 @@ mod tests {
             .verbose(true)
             .build();
 
-        let op = compare_files(CompareRole::Download, 100, 3000.0, 100, 5000.0, &params).unwrap();
+        let op = compare_files(String::new(), CompareRole::Download, 100, 3000.0, 100, 5000.0, &params).unwrap();
         assert_eq!(op.action, SyncAction::Skip);
         assert_eq!(op.reason, "local newer");
     }
@@ -865,7 +875,7 @@ mod tests {
             .verbose(true)
             .build();
 
-        let op = compare_files(CompareRole::Upload, 200, 9000.0, 100, 5000.0, &params).unwrap();
+        let op = compare_files(String::new(), CompareRole::Upload, 200, 9000.0, 100, 5000.0, &params).unwrap();
         assert_eq!(op.action, SyncAction::Skip);
         assert_eq!(op.reason, "exists on receiver (--ignore-existing)");
     }
@@ -878,7 +888,7 @@ mod tests {
             .ignore_existing(true)
             .build();
 
-        let op = compare_files(CompareRole::Upload, 200, 9000.0, 100, 5000.0, &params);
+        let op = compare_files(String::new(), CompareRole::Upload, 200, 9000.0, 100, 5000.0, &params);
         assert!(op.is_none());
     }
 }
