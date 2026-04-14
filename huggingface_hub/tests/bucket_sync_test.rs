@@ -15,6 +15,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use huggingface_hub::test_utils::*;
 use huggingface_hub::{BucketSyncParams, CreateBucketParams, HFClient, HFClientBuilder, SyncAction, SyncDirection};
+use rand::Rng;
+use sha2::{Digest, Sha256};
 use tokio::sync::OnceCell;
 
 static WHOAMI_USERNAME: OnceCell<String> = OnceCell::const_new();
@@ -80,6 +82,20 @@ fn create_local_files(dir: &std::path::Path, files: &[(&str, &[u8])]) {
     }
 }
 
+const RANDOM_BIN_SIZE: usize = 1024 * 1024; // 1 MB
+
+fn generate_random_bin(dir: &std::path::Path) -> Vec<u8> {
+    let mut rng = rand::rng();
+    let mut data = vec![0u8; RANDOM_BIN_SIZE];
+    rng.fill(&mut data[..]);
+    std::fs::write(dir.join("d.bin"), &data).unwrap();
+    data
+}
+
+fn sha256_hex(data: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(data))
+}
+
 #[tokio::test]
 async fn test_sync_upload_new_files() {
     let Some(api) = api() else { return };
@@ -93,6 +109,7 @@ async fn test_sync_upload_new_files() {
 
     let local_dir = tempfile::tempdir().unwrap();
     create_local_files(local_dir.path(), &[("file1.txt", b"hello world"), ("subdir/file2.txt", b"nested content")]);
+    generate_random_bin(local_dir.path());
 
     let plan = bucket
         .sync(
@@ -105,7 +122,7 @@ async fn test_sync_upload_new_files() {
         .await
         .unwrap();
 
-    assert_eq!(plan.uploads(), 2);
+    assert_eq!(plan.uploads(), 3);
     assert_eq!(plan.downloads(), 0);
     assert_eq!(plan.deletes(), 0);
     assert!(plan.operations.iter().all(|op| op.action == SyncAction::Upload));
@@ -134,6 +151,8 @@ async fn test_sync_upload_then_download() {
             ("sub/c.txt", b"content c"),
         ],
     );
+    let bin_data = generate_random_bin(upload_dir.path());
+    let bin_hash = sha256_hex(&bin_data);
 
     bucket
         .sync(
@@ -157,12 +176,15 @@ async fn test_sync_upload_then_download() {
         .await
         .unwrap();
 
-    assert_eq!(plan.downloads(), 3);
+    assert_eq!(plan.downloads(), 4);
     assert_eq!(plan.uploads(), 0);
 
     assert_eq!(std::fs::read_to_string(download_dir.path().join("a.txt")).unwrap(), "content a");
     assert_eq!(std::fs::read_to_string(download_dir.path().join("b.txt")).unwrap(), "content b");
     assert_eq!(std::fs::read_to_string(download_dir.path().join("sub/c.txt")).unwrap(), "content c");
+    let downloaded_bin = std::fs::read(download_dir.path().join("d.bin")).unwrap();
+    assert_eq!(downloaded_bin.len(), RANDOM_BIN_SIZE);
+    assert_eq!(sha256_hex(&downloaded_bin), bin_hash);
 
     delete_test_bucket(&api, &namespace, &name).await;
 }
