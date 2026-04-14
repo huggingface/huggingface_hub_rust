@@ -6,8 +6,8 @@ use crate::client::HFClient;
 use crate::error::{HFError, NotFoundContext, Result};
 use crate::types::progress::{self, DownloadEvent, Progress, ProgressEvent, UploadEvent};
 use crate::types::{
-    BatchBucketFilesParams, BucketFileMetadata, BucketInfo, BucketTreeEntry, BucketUrl, CreateBucketParams,
-    ListBucketTreeParams,
+    BatchBucketFilesParams, BucketFileMetadata, BucketInfo, BucketSyncParams, BucketTreeEntry, BucketUrl,
+    CreateBucketParams, ListBucketTreeParams, SyncPlan,
 };
 
 const BUCKET_BATCH_CHUNK_SIZE: usize = 1000;
@@ -458,6 +458,7 @@ sync_api! {
         fn upload_files(&self, files: &[(std::path::PathBuf, String)], progress: &Progress) -> Result<()>;
         fn download_files(&self, params: &crate::types::BucketDownloadFilesParams, progress: &Progress) -> Result<()>;
         fn delete_files(&self, paths: &[String]) -> Result<()>;
+        fn sync(&self, params: &BucketSyncParams) -> Result<SyncPlan>;
     }
 }
 
