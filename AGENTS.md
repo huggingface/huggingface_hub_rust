@@ -99,6 +99,7 @@ huggingface_hub_rust/
 │   │   │   ├── params.rs           # All *Params structs with TypedBuilder
 │   │   │   ├── buckets.rs          # BucketInfo, BucketUrl, BucketTreeEntry, BucketFileMetadata types
 │   │   │   ├── bucket_params.rs    # Bucket parameter structs with TypedBuilder
+│   │   │   ├── sync.rs             # SyncPlan, SyncOperation, SyncAction types
 │   │   │   └── spaces.rs           # SpaceRuntime, SpaceVariable (behind "spaces" feature)
 │   │   └── api/
 │   │       ├── mod.rs              # Module declarations
@@ -108,7 +109,8 @@ huggingface_hub_rust/
 │   │       ├── commits.rs          # Commit listing, diffs, branch/tag management
 │   │       ├── users.rs            # whoami, auth_check, user/org info, followers
 │   │       ├── spaces.rs           # Space runtime, secrets, variables, hardware, pause/restart
-│   │       └── buckets.rs          # All bucket API methods (create, delete, list, move, tree, batch, download)
+│   │       ├── buckets.rs          # All bucket API methods (create, delete, list, move, tree, batch, download)
+│   │       └── sync.rs            # HFBucket::sync() — plan computation and execution
 │   ├── src/bin/hfrs/commands/buckets/  # CLI bucket subcommands
 │   │   ├── mod.rs
 │   │   ├── create.rs
@@ -117,7 +119,8 @@ huggingface_hub_rust/
 │   │   ├── delete.rs
 │   │   ├── remove.rs
 │   │   ├── move_bucket.rs
-│   │   └── cp.rs
+│   │   ├── cp.rs
+│   │   └── sync.rs
 │   └── tests/
 │       └── integration_test.rs     # Integration tests against live Hub API
 ```

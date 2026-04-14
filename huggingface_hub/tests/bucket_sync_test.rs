@@ -1,4 +1,4 @@
-#![cfg(feature = "xet")]
+#![cfg(feature = "buckets")]
 
 //! Integration tests for bucket sync operations.
 //!

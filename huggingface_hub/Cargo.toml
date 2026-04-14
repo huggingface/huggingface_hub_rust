@@ -6,7 +6,7 @@ description = "Rust client for the Hugging Face Hub API"
 license = "Apache-2.0"
 
 [package.metadata.docs.rs]
-features = ["blocking", "xet", "spaces"]
+features = ["blocking", "buckets", "spaces"]
 
 [dependencies]
 bytes = "1"
@@ -28,12 +28,11 @@ tokio-util = { version = "0.7", features = ["io"] }
 tracing = "0.1"
 async-trait = { version = "0.1", optional = true }
 hf-xet = { version = "1.5.1", optional = true }
-xet-client = { version = "1.5.1", optional = true }
 sha2 = { version = "0.10", optional = true }
 
 # cli deps
 clap = { version = "4", features = ["derive", "env", "color"], optional = true }
-indicatif = { version = "0.17", optional = true }
+indicatif = { version = "0.18", optional = true }
 owo-colors = { version = "4", optional = true }
 comfy-table = { version = "7", optional = true }
 anyhow = { version = "1", optional = true }
@@ -43,11 +42,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = tr
 [features]
 default = []
 blocking = ["tokio/rt"]
-xet = ["dep:hf-xet", "dep:xet-client", "dep:async-trait", "dep:sha2"]
+xet = ["dep:hf-xet", "dep:async-trait", "dep:sha2"]
+buckets = ["xet"]
 spaces = []
 cli = [
     "blocking",
-    "xet",
+    "buckets",
     "spaces",
     "tokio/macros",
     "tokio/rt-multi-thread",
@@ -136,3 +136,4 @@ required-features = ["blocking", "spaces"]
 [[example]]
 name = "buckets"
 path = "examples/buckets.rs"
+required-features = ["buckets"]

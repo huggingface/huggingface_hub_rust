@@ -6,7 +6,6 @@ use reqwest_retry::RetryTransientMiddleware;
 use reqwest_retry::policies::ExponentialBackoff;
 use tracing::debug;
 
-use crate::bucket::HFBucket;
 use crate::constants;
 use crate::error::{HFError, Result};
 
@@ -263,18 +262,20 @@ impl HFClient {
         format!("{}/{}{}/resolve/{}/{}", self.endpoint(), prefix, repo_id, revision, filename)
     }
 
-    /// Create an [`HFBucket`] handle for a bucket.
-    pub fn bucket(&self, owner: impl Into<String>, name: impl Into<String>) -> HFBucket {
-        HFBucket::new(self.clone(), owner, name)
+    /// Create an [`HFBucket`](crate::bucket::HFBucket) handle for a bucket.
+    #[cfg(feature = "buckets")]
+    pub fn bucket(&self, owner: impl Into<String>, name: impl Into<String>) -> crate::bucket::HFBucket {
+        crate::bucket::HFBucket::new(self.clone(), owner, name)
     }
 
     /// Build a bucket API URL: `{endpoint}/api/buckets/{bucket_id}`
-    #[allow(dead_code)]
+    #[cfg(feature = "buckets")]
     pub(crate) fn bucket_api_url(&self, bucket_id: &str) -> String {
         format!("{}/api/buckets/{}", self.endpoint(), bucket_id)
     }
 
     /// Build a bucket file resolve URL: `{endpoint}/buckets/{bucket_id}/resolve/{path}`
+    #[cfg(feature = "buckets")]
     #[allow(dead_code)]
     pub(crate) fn bucket_resolve_url(&self, bucket_id: &str, path: &str) -> String {
         format!("{}/buckets/{}/resolve/{}", self.endpoint(), bucket_id, path)
@@ -308,6 +309,7 @@ impl HFClient {
             403 => Err(HFError::Forbidden),
             404 => match not_found_ctx {
                 crate::error::NotFoundContext::Repo => Err(HFError::RepoNotFound { repo_id: repo_id_str }),
+                #[cfg(feature = "buckets")]
                 crate::error::NotFoundContext::Bucket => Err(HFError::BucketNotFound { bucket_id: repo_id_str }),
                 crate::error::NotFoundContext::Entry { path } => Err(HFError::EntryNotFound {
                     path,

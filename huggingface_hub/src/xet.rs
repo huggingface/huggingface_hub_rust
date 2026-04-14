@@ -12,7 +12,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use serde::Deserialize;
 use xet::xet_session::{Sha256Policy, XetFileDownload, XetFileInfo, XetFileMetadata, XetFileUpload};
 
-use crate::bucket::HFBucket;
 use crate::client::HFClient;
 use crate::constants;
 use crate::error::{HFError, Result};
@@ -650,7 +649,8 @@ impl HFRepository {
     }
 }
 
-impl HFBucket {
+#[cfg(feature = "buckets")]
+impl crate::bucket::HFBucket {
     pub(crate) async fn xet_upload(
         &self,
         files: &[(String, AddSource)],
