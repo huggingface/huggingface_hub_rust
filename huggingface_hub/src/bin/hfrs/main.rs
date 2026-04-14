@@ -56,7 +56,7 @@ async fn main() -> ExitCode {
 
     let result = match cli.command {
         Command::Auth(args) => commands::auth::execute(&api, args).await,
-        Command::Buckets(args) => commands::buckets::execute(&api, args).await,
+        Command::Buckets(args) => commands::buckets::execute(&api, args, multi.clone()).await,
         Command::Cache(args) => commands::cache::execute(&api, args).await,
         Command::Datasets(args) => commands::datasets::execute(&api, args).await,
         Command::Download(args) => commands::download::execute(&api, args, multi.clone()).await,

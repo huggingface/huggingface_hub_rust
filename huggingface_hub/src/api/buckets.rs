@@ -4,6 +4,7 @@ use url::Url;
 use crate::bucket::HFBucket;
 use crate::client::HFClient;
 use crate::error::{HFError, NotFoundContext, Result};
+use crate::types::progress::{self, DownloadEvent, Progress, ProgressEvent, UploadEvent};
 use crate::types::{
     BatchBucketFilesParams, BucketFileMetadata, BucketInfo, BucketTreeEntry, BucketUrl, CreateBucketParams,
     ListBucketTreeParams,
@@ -186,25 +187,16 @@ impl HFBucket {
             .send()
             .await?;
 
-        let status = response.status();
-        if status == reqwest::StatusCode::NOT_FOUND {
-            return Err(HFError::EntryNotFound {
-                path: remote_path.to_string(),
-                repo_id: bucket_id,
-            });
-        }
-        if !status.is_success() && !status.is_redirection() {
-            self.hf_client
-                .check_response(
-                    response,
-                    Some(&bucket_id),
-                    NotFoundContext::Entry {
-                        path: remote_path.to_string(),
-                    },
-                )
-                .await?;
-            unreachable!();
-        }
+        let response = self
+            .hf_client
+            .check_response(
+                response,
+                Some(&bucket_id),
+                NotFoundContext::Entry {
+                    path: remote_path.to_string(),
+                },
+            )
+            .await?;
 
         let size = response
             .headers()
@@ -268,7 +260,7 @@ impl HFBucket {
         }
 
         for chunk in lines.chunks(BUCKET_BATCH_CHUNK_SIZE) {
-            let body = chunk.join("\n");
+            let body = chunk.join("\n") + "\n";
 
             let response = self
                 .hf_client
@@ -302,17 +294,30 @@ impl HFBucket {
     ///
     /// Uploads file contents to xet, then registers them via the batch endpoint.
     #[cfg(feature = "xet")]
-    pub async fn upload_files(&self, files: &[(std::path::PathBuf, String)]) -> Result<()> {
+    pub async fn upload_files(&self, files: &[(std::path::PathBuf, String)], progress: &Progress) -> Result<()> {
         if files.is_empty() {
             return Ok(());
         }
+
+        let total_bytes: u64 = files
+            .iter()
+            .filter_map(|(p, _)| std::fs::metadata(p).ok())
+            .map(|m| m.len())
+            .sum();
+        progress::emit(
+            progress,
+            ProgressEvent::Upload(UploadEvent::Start {
+                total_files: files.len(),
+                total_bytes,
+            }),
+        );
 
         let xet_files: Vec<(String, crate::types::AddSource)> = files
             .iter()
             .map(|(local_path, remote_path)| (remote_path.clone(), crate::types::AddSource::File(local_path.clone())))
             .collect();
 
-        let xet_infos = self.xet_upload(&xet_files).await?;
+        let xet_infos = self.xet_upload(&xet_files, progress).await?;
 
         let add_files: Vec<crate::types::BucketAddFile> = files
             .iter()
@@ -340,12 +345,15 @@ impl HFBucket {
             add: add_files,
             ..Default::default()
         };
-        self.batch(&batch_params).await
+        self.batch(&batch_params).await?;
+
+        progress::emit(progress, ProgressEvent::Upload(UploadEvent::Complete));
+        Ok(())
     }
 
     /// Upload local files to the bucket (stub when xet feature is disabled).
     #[cfg(not(feature = "xet"))]
-    pub async fn upload_files(&self, _files: &[(std::path::PathBuf, String)]) -> Result<()> {
+    pub async fn upload_files(&self, _files: &[(std::path::PathBuf, String)], _progress: &Progress) -> Result<()> {
         Err(HFError::XetNotEnabled)
     }
 
@@ -353,7 +361,11 @@ impl HFBucket {
     ///
     /// Resolves xet hashes via `get_paths_info`, then downloads via xet.
     #[cfg(feature = "xet")]
-    pub async fn download_files(&self, params: &crate::types::BucketDownloadFilesParams) -> Result<()> {
+    pub async fn download_files(
+        &self,
+        params: &crate::types::BucketDownloadFilesParams,
+        progress: &Progress,
+    ) -> Result<()> {
         if params.files.is_empty() {
             return Ok(());
         }
@@ -361,11 +373,24 @@ impl HFBucket {
         let remote_paths: Vec<String> = params.files.iter().map(|(r, _)| r.clone()).collect();
         let entries = self.get_paths_info(&remote_paths).await?;
 
-        let mut xet_batch_files = Vec::new();
+        let entry_map: std::collections::HashMap<String, BucketTreeEntry> = entries
+            .into_iter()
+            .map(|e| {
+                let path = match &e {
+                    BucketTreeEntry::File { path, .. } => path.clone(),
+                    BucketTreeEntry::Directory { path, .. } => path.clone(),
+                };
+                (path, e)
+            })
+            .collect();
 
-        for ((remote_path, local_path), entry) in params.files.iter().zip(entries.iter()) {
-            match entry {
-                BucketTreeEntry::File { xet_hash, size, .. } => {
+        let mut xet_batch_files = Vec::new();
+        let mut total_bytes: u64 = 0;
+
+        for (remote_path, local_path) in &params.files {
+            match entry_map.get(remote_path) {
+                Some(BucketTreeEntry::File { xet_hash, size, .. }) => {
+                    total_bytes += size;
                     xet_batch_files.push(crate::xet::XetBatchFile {
                         hash: xet_hash.clone(),
                         file_size: *size,
@@ -373,18 +398,39 @@ impl HFBucket {
                         filename: remote_path.clone(),
                     });
                 },
-                BucketTreeEntry::Directory { path, .. } => {
+                Some(BucketTreeEntry::Directory { path, .. }) => {
                     return Err(HFError::InvalidParameter(format!("Cannot download directory entry: {path}")));
+                },
+                None => {
+                    return Err(HFError::EntryNotFound {
+                        path: remote_path.clone(),
+                        repo_id: self.bucket_id(),
+                    });
                 },
             }
         }
 
-        self.xet_download_batch(&xet_batch_files).await
+        progress::emit(
+            progress,
+            ProgressEvent::Download(DownloadEvent::Start {
+                total_files: xet_batch_files.len(),
+                total_bytes,
+            }),
+        );
+
+        self.xet_download_batch(&xet_batch_files, progress).await?;
+
+        progress::emit(progress, ProgressEvent::Download(DownloadEvent::Complete));
+        Ok(())
     }
 
     /// Download files from the bucket (stub when xet feature is disabled).
     #[cfg(not(feature = "xet"))]
-    pub async fn download_files(&self, _params: &crate::types::BucketDownloadFilesParams) -> Result<()> {
+    pub async fn download_files(
+        &self,
+        _params: &crate::types::BucketDownloadFilesParams,
+        _progress: &Progress,
+    ) -> Result<()> {
         Err(HFError::XetNotEnabled)
     }
 }
@@ -409,8 +455,8 @@ sync_api! {
         fn get_file_metadata(&self, remote_path: &str) -> Result<BucketFileMetadata>;
         fn get_paths_info(&self, paths: &[String]) -> Result<Vec<BucketTreeEntry>>;
         fn batch(&self, params: &BatchBucketFilesParams) -> Result<()>;
-        fn upload_files(&self, files: &[(std::path::PathBuf, String)]) -> Result<()>;
-        fn download_files(&self, params: &crate::types::BucketDownloadFilesParams) -> Result<()>;
+        fn upload_files(&self, files: &[(std::path::PathBuf, String)], progress: &Progress) -> Result<()>;
+        fn download_files(&self, params: &crate::types::BucketDownloadFilesParams, progress: &Progress) -> Result<()>;
         fn delete_files(&self, paths: &[String]) -> Result<()>;
     }
 }

@@ -42,12 +42,15 @@ pub struct XetConnectionInfo {
     pub expiration_unix_epoch: u64,
 }
 
-async fn fetch_xet_connection_info(api: &HFClient, token_url: &str) -> Result<XetConnectionInfo> {
+async fn fetch_xet_connection_info(
+    api: &HFClient,
+    token_url: &str,
+    not_found_id: Option<&str>,
+    not_found_ctx: crate::error::NotFoundContext,
+) -> Result<XetConnectionInfo> {
     let response = api.http_client().get(token_url).headers(api.auth_headers()).send().await?;
 
-    let response = api
-        .check_response(response, None, crate::error::NotFoundContext::Generic)
-        .await?;
+    let response = api.check_response(response, not_found_id, not_found_ctx).await?;
 
     let token_resp: XetTokenResponse = response.json().await?;
     Ok(XetConnectionInfo {
@@ -208,7 +211,13 @@ impl HFRepository {
         let file_size: u64 = crate::api::files::extract_file_size(head_response).unwrap_or(0);
 
         let token_url = repo_xet_token_url(&self.hf_client, "read", &repo_path, repo_type, revision);
-        let conn = fetch_xet_connection_info(&self.hf_client, &token_url).await?;
+        let conn = fetch_xet_connection_info(
+            &self.hf_client,
+            &token_url,
+            Some(&repo_path),
+            crate::error::NotFoundContext::Repo,
+        )
+        .await?;
 
         tokio::fs::create_dir_all(local_dir).await?;
         let dest_path = local_dir.join(filename);
@@ -272,7 +281,13 @@ impl HFRepository {
         let repo_path = self.repo_path();
         let repo_type = Some(self.repo_type);
         let token_url = repo_xet_token_url(&self.hf_client, "read", &repo_path, repo_type, revision);
-        let conn = fetch_xet_connection_info(&self.hf_client, &token_url).await?;
+        let conn = fetch_xet_connection_info(
+            &self.hf_client,
+            &token_url,
+            Some(&repo_path),
+            crate::error::NotFoundContext::Repo,
+        )
+        .await?;
 
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent).await?;
@@ -338,7 +353,13 @@ impl HFRepository {
         let repo_path = self.repo_path();
         let repo_type = Some(self.repo_type);
         let token_url = repo_xet_token_url(&self.hf_client, "read", &repo_path, repo_type, revision);
-        let conn = fetch_xet_connection_info(&self.hf_client, &token_url).await?;
+        let conn = fetch_xet_connection_info(
+            &self.hf_client,
+            &token_url,
+            Some(&repo_path),
+            crate::error::NotFoundContext::Repo,
+        )
+        .await?;
 
         let (session, generation) = self.hf_client.xet_session()?;
         let group = match session.new_file_download_group() {
@@ -414,7 +435,13 @@ impl HFRepository {
         let repo_path = self.repo_path();
         let repo_type = Some(self.repo_type);
         let token_url = repo_xet_token_url(&self.hf_client, "read", &repo_path, repo_type, revision);
-        let conn = fetch_xet_connection_info(&self.hf_client, &token_url).await?;
+        let conn = fetch_xet_connection_info(
+            &self.hf_client,
+            &token_url,
+            Some(&repo_path),
+            crate::error::NotFoundContext::Repo,
+        )
+        .await?;
 
         let (session, generation) = self.hf_client.xet_session()?;
         let group = match session.new_download_stream_group() {
@@ -466,7 +493,13 @@ impl HFRepository {
         let repo_type = Some(self.repo_type);
         tracing::info!(repo = repo_path.as_str(), "fetching xet write token");
         let token_url = repo_xet_token_url(&self.hf_client, "write", &repo_path, repo_type, revision);
-        let conn = fetch_xet_connection_info(&self.hf_client, &token_url).await?;
+        let conn = fetch_xet_connection_info(
+            &self.hf_client,
+            &token_url,
+            Some(&repo_path),
+            crate::error::NotFoundContext::Repo,
+        )
+        .await?;
         tracing::info!(endpoint = conn.endpoint.as_str(), "xet write token obtained, building session");
 
         tracing::info!("building xet upload commit");
@@ -618,11 +651,21 @@ impl HFRepository {
 }
 
 impl HFBucket {
-    pub(crate) async fn xet_upload(&self, files: &[(String, AddSource)]) -> Result<Vec<XetFileInfo>> {
+    pub(crate) async fn xet_upload(
+        &self,
+        files: &[(String, AddSource)],
+        progress: &Progress,
+    ) -> Result<Vec<XetFileInfo>> {
         let bucket_id = self.bucket_id();
         tracing::info!(bucket = bucket_id.as_str(), "fetching xet write token");
         let token_url = bucket_xet_token_url(&self.hf_client, "write", &bucket_id);
-        let conn = fetch_xet_connection_info(&self.hf_client, &token_url).await?;
+        let conn = fetch_xet_connection_info(
+            &self.hf_client,
+            &token_url,
+            Some(&bucket_id),
+            crate::error::NotFoundContext::Bucket,
+        )
+        .await?;
         tracing::info!(endpoint = conn.endpoint.as_str(), "xet write token obtained, building session");
 
         tracing::info!("building xet upload commit");
@@ -647,28 +690,113 @@ impl HFBucket {
         tracing::info!("xet upload commit built, queuing file uploads");
 
         let mut task_ids_in_order = Vec::with_capacity(files.len());
+        let mut handles: Vec<XetFileUpload> = Vec::with_capacity(files.len());
+        let mut item_name_to_bucket_path: HashMap<String, String> = HashMap::with_capacity(files.len());
 
         for (path_in_bucket, source) in files {
             tracing::info!(path = path_in_bucket.as_str(), "queuing xet upload");
             let handle = match source {
-                AddSource::File(path) => commit
-                    .upload_from_path(path.clone(), Sha256Policy::Compute)
-                    .await
-                    .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?,
-                AddSource::Bytes(bytes) => commit
-                    .upload_bytes(bytes.clone(), Sha256Policy::Compute, None)
-                    .await
-                    .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?,
+                AddSource::File(path) => {
+                    if let Ok(abs) = std::path::absolute(path)
+                        && let Some(s) = abs.to_str()
+                    {
+                        item_name_to_bucket_path.insert(s.to_owned(), path_in_bucket.clone());
+                    }
+                    commit
+                        .upload_from_path(path.clone(), Sha256Policy::Compute)
+                        .await
+                        .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?
+                },
+                AddSource::Bytes(bytes) => {
+                    item_name_to_bucket_path.insert(path_in_bucket.clone(), path_in_bucket.clone());
+                    commit
+                        .upload_bytes(bytes.clone(), Sha256Policy::Compute, Some(path_in_bucket.clone()))
+                        .await
+                        .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?
+                },
             };
             task_ids_in_order.push(handle.task_id());
+            handles.push(handle);
         }
 
         tracing::info!(file_count = files.len(), "committing xet uploads");
+        let shared_handles: Arc<Vec<XetFileUpload>> = Arc::new(handles);
+        let shared_name_map: Arc<HashMap<String, String>> = Arc::new(item_name_to_bucket_path);
+
+        let poll_handle = progress.as_ref().map(|handler| {
+            let handler = handler.clone();
+            let commit = commit.clone();
+            let poll_handles = Arc::clone(&shared_handles);
+            let poll_name_map = Arc::clone(&shared_name_map);
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    let report = commit.progress();
+                    let file_progress: Vec<FileProgress> = poll_handles
+                        .iter()
+                        .filter_map(|h| {
+                            let item = h.progress()?;
+                            let bucket_path = poll_name_map.get(&item.item_name)?;
+                            let status = if item.bytes_completed >= item.total_bytes && item.total_bytes > 0 {
+                                FileStatus::Complete
+                            } else if item.bytes_completed > 0 {
+                                FileStatus::InProgress
+                            } else {
+                                FileStatus::Started
+                            };
+                            Some(FileProgress {
+                                filename: bucket_path.clone(),
+                                bytes_completed: item.bytes_completed,
+                                total_bytes: item.total_bytes,
+                                status,
+                            })
+                        })
+                        .collect();
+                    handler.on_progress(&ProgressEvent::Upload(UploadEvent::Progress {
+                        phase: UploadPhase::Uploading,
+                        bytes_completed: report.total_bytes_completed,
+                        total_bytes: report.total_bytes,
+                        bytes_per_sec: report.total_bytes_completion_rate,
+                        transfer_bytes_completed: report.total_transfer_bytes_completed,
+                        transfer_bytes: report.total_transfer_bytes,
+                        transfer_bytes_per_sec: report.total_transfer_bytes_completion_rate,
+                        files: file_progress,
+                    }));
+                }
+            })
+        });
         let results = commit
             .commit()
             .await
             .map_err(|e| HFError::Other(format!("Xet upload failed: {e}")))?;
+        if let Some(h) = poll_handle {
+            h.abort();
+        }
         tracing::info!("xet upload commit complete");
+
+        let final_files: Vec<FileProgress> = files
+            .iter()
+            .map(|(path_in_bucket, _)| FileProgress {
+                filename: path_in_bucket.clone(),
+                bytes_completed: 0,
+                total_bytes: 0,
+                status: FileStatus::Complete,
+            })
+            .collect();
+
+        progress::emit(
+            progress,
+            ProgressEvent::Upload(UploadEvent::Progress {
+                phase: UploadPhase::Uploading,
+                bytes_completed: results.progress.total_bytes_completed,
+                total_bytes: results.progress.total_bytes,
+                bytes_per_sec: results.progress.total_bytes_completion_rate,
+                transfer_bytes_completed: results.progress.total_transfer_bytes_completed,
+                transfer_bytes: results.progress.total_transfer_bytes,
+                transfer_bytes_per_sec: results.progress.total_transfer_bytes_completion_rate,
+                files: final_files,
+            }),
+        );
 
         let mut xet_file_infos = Vec::with_capacity(files.len());
         for task_id in &task_ids_in_order {
@@ -682,14 +810,20 @@ impl HFBucket {
         Ok(xet_file_infos)
     }
 
-    pub(crate) async fn xet_download_batch(&self, files: &[XetBatchFile]) -> Result<()> {
+    pub(crate) async fn xet_download_batch(&self, files: &[XetBatchFile], progress: &Progress) -> Result<()> {
         if files.is_empty() {
             return Ok(());
         }
 
         let bucket_id = self.bucket_id();
         let token_url = bucket_xet_token_url(&self.hf_client, "read", &bucket_id);
-        let conn = fetch_xet_connection_info(&self.hf_client, &token_url).await?;
+        let conn = fetch_xet_connection_info(
+            &self.hf_client,
+            &token_url,
+            Some(&bucket_id),
+            crate::error::NotFoundContext::Bucket,
+        )
+        .await?;
 
         let (session, generation) = self.hf_client.xet_session()?;
         let group = match session.new_file_download_group() {
@@ -710,6 +844,7 @@ impl HFBucket {
         .await
         .map_err(|e| HFError::Other(format!("Xet bucket batch download failed: {e}")))?;
 
+        let mut tracked_vec = Vec::with_capacity(files.len());
         let mut incomplete_paths = Vec::with_capacity(files.len());
         for file in files {
             if let Some(parent) = file.path.parent() {
@@ -720,18 +855,29 @@ impl HFBucket {
 
             let file_info = XetFileInfo::new(file.hash.clone(), file.file_size);
 
-            group
+            let handle = group
                 .download_file_to_path(file_info, incomplete.clone())
                 .await
                 .map_err(|e| HFError::Other(format!("Xet bucket batch download failed: {e}")))?;
 
+            tracked_vec.push(TrackedDownload {
+                handle,
+                filename: file.filename.clone(),
+                file_size: file.file_size,
+                complete_emitted: AtomicBool::new(false),
+            });
             incomplete_paths.push((incomplete, file.path.clone()));
         }
 
-        group
-            .finish()
-            .await
-            .map_err(|e| HFError::Other(format!("Xet bucket batch download failed: {e}")))?;
+        let tracked = Arc::new(tracked_vec);
+        let poll_handle = spawn_download_progress_poller(progress, &group, Arc::clone(&tracked));
+
+        let result = group.finish().await;
+        if let Some(h) = poll_handle {
+            h.abort();
+        }
+        result.map_err(|e| HFError::Other(format!("Xet bucket batch download failed: {e}")))?;
+        emit_remaining_completes(progress, &tracked);
 
         for (incomplete, final_path) in &incomplete_paths {
             tokio::fs::rename(incomplete, final_path).await?;
@@ -748,7 +894,7 @@ impl HFClient {
         let revision = params.revision.as_deref().unwrap_or(constants::DEFAULT_REVISION);
         let token_url =
             repo_xet_token_url(self, params.token_type.as_str(), &params.repo_id, params.repo_type, revision);
-        fetch_xet_connection_info(self, &token_url).await
+        fetch_xet_connection_info(self, &token_url, Some(&params.repo_id), crate::error::NotFoundContext::Repo).await
     }
 }
 

@@ -132,3 +132,7 @@ required-features = ["blocking"]
 name = "blocking_spaces"
 path = "examples/blocking_spaces.rs"
 required-features = ["blocking", "spaces"]
+
+[[example]]
+name = "buckets"
+path = "examples/buckets.rs"

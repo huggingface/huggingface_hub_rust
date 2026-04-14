@@ -38,9 +38,9 @@ pub enum BucketsCommand {
     Remove(remove::Args),
 }
 
-pub async fn execute(api: &HFClient, args: Args) -> Result<CommandResult> {
+pub async fn execute(api: &HFClient, args: Args, multi: Option<indicatif::MultiProgress>) -> Result<CommandResult> {
     match args.command {
-        BucketsCommand::Cp(a) => cp::execute(api, a).await,
+        BucketsCommand::Cp(a) => cp::execute(api, a, multi).await,
         BucketsCommand::Create(a) => create::execute(api, a).await,
         BucketsCommand::Delete(a) => delete::execute(api, a).await,
         BucketsCommand::Info(a) => info::execute(api, a).await,

@@ -83,6 +83,7 @@ huggingface_hub_rust/
 │   │   ├── lib.rs                  # Public re-exports, crate docs
 │   │   ├── client.rs               # HFClient, HFClientBuilder, HFClientInner, auth headers, URL builders
 │   │   ├── repository.rs           # HFRepository/HFRepo handle, repo-scoped params, repo-bound methods
+│   │   ├── bucket.rs               # HFBucket handle with factory method and URL helpers
 │   │   ├── constants.rs            # Env var names, default URLs, repo type helpers
 │   │   ├── error.rs                # HFError enum, Result alias, NotFoundContext
 │   │   ├── pagination.rs           # Generic paginate<T>() with Link header parsing
@@ -96,6 +97,8 @@ huggingface_hub_rust/
 │   │   │   ├── user.rs             # User, Organization, OrgMembership
 │   │   │   ├── commit.rs           # CommitInfo, GitCommitInfo, GitRefs, CommitOperation, AddSource
 │   │   │   ├── params.rs           # All *Params structs with TypedBuilder
+│   │   │   ├── buckets.rs          # BucketInfo, BucketUrl, BucketTreeEntry, BucketFileMetadata types
+│   │   │   ├── bucket_params.rs    # Bucket parameter structs with TypedBuilder
 │   │   │   └── spaces.rs           # SpaceRuntime, SpaceVariable (behind "spaces" feature)
 │   │   └── api/
 │   │       ├── mod.rs              # Module declarations
@@ -104,7 +107,17 @@ huggingface_hub_rust/
 │   │       ├── files.rs            # File listing, download, upload, create_commit, snapshot_download
 │   │       ├── commits.rs          # Commit listing, diffs, branch/tag management
 │   │       ├── users.rs            # whoami, auth_check, user/org info, followers
-│   │       └── spaces.rs           # Space runtime, secrets, variables, hardware, pause/restart
+│   │       ├── spaces.rs           # Space runtime, secrets, variables, hardware, pause/restart
+│   │       └── buckets.rs          # All bucket API methods (create, delete, list, move, tree, batch, download)
+│   ├── src/bin/hfrs/commands/buckets/  # CLI bucket subcommands
+│   │   ├── mod.rs
+│   │   ├── create.rs
+│   │   ├── list.rs
+│   │   ├── info.rs
+│   │   ├── delete.rs
+│   │   ├── remove.rs
+│   │   ├── move_bucket.rs
+│   │   └── cp.rs
 │   └── tests/
 │       └── integration_test.rs     # Integration tests against live Hub API
 ```
