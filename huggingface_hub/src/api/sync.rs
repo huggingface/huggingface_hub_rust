@@ -7,9 +7,9 @@ use globset::{Glob, GlobMatcher};
 
 use crate::bucket::HFBucket;
 use crate::error::{HFError, Result};
+use crate::types::progress::{self, DownloadEvent, ProgressEvent};
 use crate::types::{
-    BucketDownloadFilesParams, BucketSyncParams, BucketTreeEntry, ListBucketTreeParams, SyncAction, SyncDirection,
-    SyncOperation, SyncPlan,
+    BucketSyncParams, BucketTreeEntry, ListBucketTreeParams, SyncAction, SyncDirection, SyncOperation, SyncPlan,
 };
 
 const SYNC_TIME_WINDOW_MS: f64 = 1000.0;
@@ -518,29 +518,50 @@ impl HFBucket {
     }
 
     async fn execute_download_plan(&self, plan: &SyncPlan, params: &BucketSyncParams) -> Result<()> {
-        let download_files: Vec<(String, PathBuf)> = plan
-            .operations
-            .iter()
-            .filter(|op| op.action == SyncAction::Download)
-            .map(|op| {
-                let remote_path = match &params.prefix {
-                    Some(prefix) => format!("{prefix}/{}", op.path),
-                    None => op.path.clone(),
-                };
-                let local_path = params.local_path.join(&op.path);
-                (remote_path, local_path)
-            })
-            .collect();
+        let mut xet_batch_files = Vec::new();
+        let mut total_bytes: u64 = 0;
 
-        for (_, local_path) in &download_files {
+        for op in plan.operations.iter().filter(|op| op.action == SyncAction::Download) {
+            let entry = plan.download_entries.get(&op.path).ok_or_else(|| HFError::EntryNotFound {
+                path: op.path.clone(),
+                repo_id: self.bucket_id(),
+            })?;
+
+            let local_path = params.local_path.join(&op.path);
             if let Some(parent) = local_path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
+
+            match entry {
+                BucketTreeEntry::File { xet_hash, size, .. } => {
+                    let remote_path = match &params.prefix {
+                        Some(prefix) => format!("{prefix}/{}", op.path),
+                        None => op.path.clone(),
+                    };
+                    total_bytes += size;
+                    xet_batch_files.push(crate::xet::XetBatchFile {
+                        hash: xet_hash.clone(),
+                        file_size: *size,
+                        path: local_path,
+                        filename: remote_path,
+                    });
+                },
+                BucketTreeEntry::Directory { path, .. } => {
+                    return Err(HFError::InvalidParameter(format!("Cannot download directory entry: {path}")));
+                },
+            }
         }
 
-        if !download_files.is_empty() {
-            let dl_params = BucketDownloadFilesParams { files: download_files };
-            self.download_files(&dl_params, &params.progress).await?;
+        if !xet_batch_files.is_empty() {
+            progress::emit(
+                &params.progress,
+                ProgressEvent::Download(DownloadEvent::Start {
+                    total_files: xet_batch_files.len(),
+                    total_bytes,
+                }),
+            );
+            self.xet_download_batch(&xet_batch_files, &params.progress).await?;
+            progress::emit(&params.progress, ProgressEvent::Download(DownloadEvent::Complete));
         }
 
         let delete_paths: Vec<&str> = plan

@@ -36,7 +36,6 @@ pub struct SyncPlan {
     pub operations: Vec<SyncOperation>,
     /// Bucket tree entries for download operations, keyed by relative path.
     /// Used internally during execution to avoid re-fetching metadata.
-    #[allow(dead_code)]
     pub(crate) download_entries: HashMap<String, BucketTreeEntry>,
 }
 

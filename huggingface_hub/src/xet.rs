@@ -816,6 +816,7 @@ impl crate::bucket::HFBucket {
         }
 
         let bucket_id = self.bucket_id();
+        tracing::info!(bucket = bucket_id.as_str(), file_count = files.len(), "fetching xet read token");
         let token_url = bucket_xet_token_url(&self.hf_client, "read", &bucket_id);
         let conn = fetch_xet_connection_info(
             &self.hf_client,
@@ -824,6 +825,7 @@ impl crate::bucket::HFBucket {
             crate::error::NotFoundContext::Bucket,
         )
         .await?;
+        tracing::info!(endpoint = conn.endpoint.as_str(), "xet download session ready, queuing files");
 
         let (session, generation) = self.hf_client.xet_session()?;
         let group = match session.new_file_download_group() {
