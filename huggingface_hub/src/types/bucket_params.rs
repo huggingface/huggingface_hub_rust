@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use typed_builder::TypedBuilder;
 
+use crate::types::progress::Progress;
+
 /// Parameters for creating a new bucket on the Hub.
 ///
 /// Used with [`HFClient::create_bucket`](crate::client::HFClient::create_bucket).
@@ -95,4 +97,54 @@ pub struct BucketCopyFile {
 pub struct BucketDownloadFilesParams {
     /// List of `(remote_path, local_path)` pairs to download.
     pub files: Vec<(String, PathBuf)>,
+}
+
+/// Direction for a bucket sync operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncDirection {
+    /// Local directory -> bucket (upload).
+    Upload,
+    /// Bucket -> local directory (download).
+    Download,
+}
+
+/// Parameters for syncing files between a local directory and a bucket.
+///
+/// Used with [`HFBucket::sync`](crate::bucket::HFBucket::sync).
+#[derive(Clone, TypedBuilder)]
+pub struct BucketSyncParams {
+    /// Local directory path.
+    pub local_path: PathBuf,
+    /// Sync direction.
+    pub direction: SyncDirection,
+    /// Optional prefix within the bucket (subdirectory).
+    #[builder(default, setter(into, strip_option))]
+    pub prefix: Option<String>,
+    /// Delete destination files not present in source.
+    #[builder(default = false)]
+    pub delete: bool,
+    /// Only compare sizes, ignore modification times.
+    #[builder(default = false)]
+    pub ignore_times: bool,
+    /// Only compare modification times, ignore sizes.
+    #[builder(default = false)]
+    pub ignore_sizes: bool,
+    /// Only sync files that already exist at destination.
+    #[builder(default = false)]
+    pub existing: bool,
+    /// Skip files that already exist at destination.
+    #[builder(default = false)]
+    pub ignore_existing: bool,
+    /// Include patterns (fnmatch/glob-style).
+    #[builder(default)]
+    pub include: Vec<String>,
+    /// Exclude patterns (fnmatch/glob-style).
+    #[builder(default)]
+    pub exclude: Vec<String>,
+    /// Include skip operations in the returned plan.
+    #[builder(default = false)]
+    pub verbose: bool,
+    /// Progress handler for upload/download tracking.
+    #[builder(default)]
+    pub progress: Progress,
 }
