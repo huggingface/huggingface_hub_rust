@@ -20,9 +20,10 @@ use futures::StreamExt;
 use huggingface_hub::repository::HFRepository;
 use huggingface_hub::test_utils::*;
 use huggingface_hub::types::*;
-use huggingface_hub::{HFClient, HFClientBuilder};
-#[cfg(feature = "spaces")]
-use huggingface_hub::{SpaceSecretDeleteParams, SpaceSecretParams, SpaceVariableDeleteParams, SpaceVariableParams};
+use huggingface_hub::{
+    HFClient, HFClientBuilder, SpaceSecretDeleteParams, SpaceSecretParams, SpaceVariableDeleteParams,
+    SpaceVariableParams,
+};
 
 fn api() -> Option<HFClient> {
     if is_ci() {
@@ -816,10 +817,9 @@ async fn test_move_repo() {
 }
 
 // =============================================================================
-// Spaces management tests (feature: "spaces")
+// Spaces management tests
 // =============================================================================
 
-#[cfg(feature = "spaces")]
 #[tokio::test]
 async fn test_get_space_runtime() {
     let Some(api) = prod_api() else { return };
@@ -829,7 +829,6 @@ async fn test_get_space_runtime() {
     assert!(runtime.stage.is_some());
 }
 
-#[cfg(feature = "spaces")]
 #[tokio::test]
 async fn test_duplicate_space() {
     let Some(api) = prod_api() else { return };
@@ -856,7 +855,6 @@ async fn test_duplicate_space() {
     let _ = api.delete_repo(&delete_params).await;
 }
 
-#[cfg(feature = "spaces")]
 #[tokio::test]
 async fn test_space_secrets_and_variables() {
     let Some(api) = api() else { return };

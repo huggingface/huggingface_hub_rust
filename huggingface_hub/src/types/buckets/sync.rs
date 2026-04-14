@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
+use super::BucketTreeEntry;
 use crate::types::bucket_params::SyncDirection;
-use crate::types::buckets::BucketTreeEntry;
 
 /// Action to perform for a single file during sync.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

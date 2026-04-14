@@ -1,3 +1,5 @@
+mod sync;
+
 use futures::Stream;
 use url::Url;
 

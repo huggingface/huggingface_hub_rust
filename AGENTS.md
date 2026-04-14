@@ -97,9 +97,10 @@ huggingface_hub_rust/
 │   │   │   ├── user.rs             # User, Organization, OrgMembership
 │   │   │   ├── commit.rs           # CommitInfo, GitCommitInfo, GitRefs, CommitOperation, AddSource
 │   │   │   ├── params.rs           # All *Params structs with TypedBuilder
-│   │   │   ├── buckets.rs          # BucketInfo, BucketUrl, BucketTreeEntry, BucketFileMetadata types
+│   │   │   ├── buckets/
+│   │   │   │   ├── mod.rs          # BucketInfo, BucketUrl, BucketTreeEntry, BucketFileMetadata types
+│   │   │   │   └── sync.rs         # SyncPlan, SyncOperation, SyncAction types
 │   │   │   ├── bucket_params.rs    # Bucket parameter structs with TypedBuilder
-│   │   │   ├── sync.rs             # SyncPlan, SyncOperation, SyncAction types
 │   │   │   └── spaces.rs           # SpaceRuntime, SpaceVariable (behind "spaces" feature)
 │   │   └── api/
 │   │       ├── mod.rs              # Module declarations
@@ -109,8 +110,9 @@ huggingface_hub_rust/
 │   │       ├── commits.rs          # Commit listing, diffs, branch/tag management
 │   │       ├── users.rs            # whoami, auth_check, user/org info, followers
 │   │       ├── spaces.rs           # Space runtime, secrets, variables, hardware, pause/restart
-│   │       ├── buckets.rs          # All bucket API methods (create, delete, list, move, tree, batch, download)
-│   │       └── sync.rs            # HFBucket::sync() — plan computation and execution
+│   │       └── buckets/
+│   │           ├── mod.rs          # All bucket API methods (create, delete, list, move, tree, batch, download)
+│   │           └── sync.rs         # HFBucket::sync() — plan computation and execution
 │   ├── src/bin/hfrs/commands/buckets/  # CLI bucket subcommands
 │   │   ├── mod.rs
 │   │   ├── create.rs

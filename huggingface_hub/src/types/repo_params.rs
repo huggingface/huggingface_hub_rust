@@ -348,7 +348,6 @@ pub struct RepoUpdateSettingsParams {
     pub gated_notifications_mode: Option<GatedNotificationsMode>,
 }
 
-#[cfg(feature = "spaces")]
 #[derive(TypedBuilder)]
 pub struct SpaceHardwareRequestParams {
     /// Hardware flavor to request (e.g. `"cpu-basic"`, `"t4-small"`, `"a10g-small"`).
@@ -359,14 +358,12 @@ pub struct SpaceHardwareRequestParams {
     pub sleep_time: Option<u64>,
 }
 
-#[cfg(feature = "spaces")]
 #[derive(TypedBuilder)]
 pub struct SpaceSleepTimeParams {
     /// Number of seconds of inactivity before the Space is put to sleep. `0` means never sleep.
     pub sleep_time: u64,
 }
 
-#[cfg(feature = "spaces")]
 #[derive(TypedBuilder)]
 pub struct SpaceSecretParams {
     /// Secret key name.
@@ -380,7 +377,6 @@ pub struct SpaceSecretParams {
     pub description: Option<String>,
 }
 
-#[cfg(feature = "spaces")]
 #[derive(TypedBuilder)]
 pub struct SpaceSecretDeleteParams {
     /// Secret key name to delete.
@@ -388,7 +384,6 @@ pub struct SpaceSecretDeleteParams {
     pub key: String,
 }
 
-#[cfg(feature = "spaces")]
 #[derive(TypedBuilder)]
 pub struct SpaceVariableParams {
     /// Variable key name.
@@ -402,7 +397,6 @@ pub struct SpaceVariableParams {
     pub description: Option<String>,
 }
 
-#[cfg(feature = "spaces")]
 #[derive(TypedBuilder)]
 pub struct SpaceVariableDeleteParams {
     /// Variable key name to delete.

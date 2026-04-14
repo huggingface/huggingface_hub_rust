@@ -1,4 +1,6 @@
+pub mod sync;
 use serde::{Deserialize, Serialize};
+pub use sync::*;
 
 /// Metadata about a bucket on the Hugging Face Hub.
 ///

@@ -8,12 +8,8 @@ pub mod params;
 pub mod progress;
 pub mod repo;
 pub mod repo_params;
-#[cfg(feature = "buckets")]
-pub mod sync;
-pub mod user;
-
-#[cfg(feature = "spaces")]
 pub mod spaces;
+pub mod user;
 
 #[cfg(feature = "buckets")]
 pub use bucket_params::*;
@@ -24,8 +20,5 @@ pub use params::*;
 pub use progress::*;
 pub use repo::*;
 pub use repo_params::*;
-#[cfg(feature = "spaces")]
 pub use spaces::*;
-#[cfg(feature = "buckets")]
-pub use sync::*;
 pub use user::*;
