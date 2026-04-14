@@ -363,13 +363,14 @@ impl HFBucket {
 
         let mut xet_batch_files = Vec::new();
 
-        for ((_, local_path), entry) in params.files.iter().zip(entries.iter()) {
+        for ((remote_path, local_path), entry) in params.files.iter().zip(entries.iter()) {
             match entry {
                 BucketTreeEntry::File { xet_hash, size, .. } => {
                     xet_batch_files.push(crate::xet::XetBatchFile {
                         hash: xet_hash.clone(),
                         file_size: *size,
                         path: local_path.clone(),
+                        filename: remote_path.clone(),
                     });
                 },
                 BucketTreeEntry::Directory { path, .. } => {
