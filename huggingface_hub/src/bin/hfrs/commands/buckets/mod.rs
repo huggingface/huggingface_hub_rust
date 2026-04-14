@@ -5,6 +5,7 @@ pub mod info;
 pub mod list;
 pub mod move_bucket;
 pub mod remove;
+pub mod sync;
 
 use anyhow::Result;
 use clap::{Args as ClapArgs, Subcommand};
@@ -36,6 +37,8 @@ pub enum BucketsCommand {
     /// Remove files from a bucket
     #[command(alias = "rm")]
     Remove(remove::Args),
+    /// Sync files between a local directory and a bucket
+    Sync(sync::Args),
 }
 
 pub async fn execute(api: &HFClient, args: Args, multi: Option<indicatif::MultiProgress>) -> Result<CommandResult> {
@@ -47,6 +50,7 @@ pub async fn execute(api: &HFClient, args: Args, multi: Option<indicatif::MultiP
         BucketsCommand::List(a) => list::execute(api, a).await,
         BucketsCommand::Move(a) => move_bucket::execute(api, a).await,
         BucketsCommand::Remove(a) => remove::execute(api, a).await,
+        BucketsCommand::Sync(a) => sync::execute(api, a, multi).await,
     }
 }
 
