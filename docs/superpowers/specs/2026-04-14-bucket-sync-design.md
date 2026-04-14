@@ -15,7 +15,7 @@ impl HFBucket {
     /// Computes a plan by comparing local and remote file listings,
     /// executes the plan (uploads, downloads, deletes), and returns
     /// the plan for inspection.
-    pub async fn sync(&self, params: &BucketSyncParams, progress: &Progress) -> Result<SyncPlan>;
+    pub async fn sync(&self, params: &BucketSyncParams) -> Result<SyncPlan>;
 }
 ```
 
@@ -57,6 +57,9 @@ pub struct BucketSyncParams {
     /// Include skip operations in the returned plan.
     #[builder(default = false)]
     pub verbose: bool,
+    /// Progress handler for upload/download tracking.
+    #[builder(default)]
+    pub progress: Progress,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
