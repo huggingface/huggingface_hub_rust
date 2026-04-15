@@ -301,14 +301,14 @@ async fn test_download_file() {
 
 #[tokio::test]
 async fn test_whoami() {
-    let Some(api) = prod_api() else { return };
+    let Some(api) = api() else { return };
     let user = api.whoami().await.unwrap();
     assert!(!user.username.is_empty());
 }
 
 #[tokio::test]
 async fn test_auth_check() {
-    let Some(api) = prod_api() else { return };
+    let Some(api) = api() else { return };
     api.auth_check().await.unwrap();
 }
 
@@ -831,28 +831,41 @@ async fn test_get_space_runtime() {
 
 #[tokio::test]
 async fn test_duplicate_space() {
-    let Some(api) = prod_api() else { return };
+    let Some(api) = api() else { return };
     if !write_enabled() {
         return;
     }
-    // Must use prod_api because the source space only exists on production.
-    // Cannot reuse cached_username() here — it resolves via api() which targets
-    // hub-ci in CI, a different user than the prod token.
-    let username = api.whoami().await.expect("whoami failed").username;
-    let to_id = format!("{}/hub-rust-test-dup-space-{}", username, uuid_v4_short());
+    let username = cached_username().await;
 
+    // Create a minimal source space to duplicate.
+    let source_id = format!("{}/hub-rust-test-dup-src-{}", username, uuid_v4_short());
+    let create_params = CreateRepoParams::builder()
+        .repo_id(&source_id)
+        .repo_type(RepoType::Space)
+        .private(true)
+        .space_sdk("static")
+        .build();
+    api.create_repo(&create_params).await.unwrap();
+
+    let to_id = format!("{}/hub-rust-test-dup-space-{}", username, uuid_v4_short());
     let params = DuplicateSpaceParams::builder()
         .to_id(&to_id)
         .private(true)
         .hardware("cpu-basic")
         .build();
-    let (owner, name) = test_space_repo();
+    let (owner, name) = source_id.split_once('/').unwrap();
     let source = api.space(owner, name);
     let result = source.duplicate(&params).await.unwrap();
     assert!(result.url.contains(&to_id));
 
-    let delete_params = DeleteRepoParams::builder().repo_id(&to_id).repo_type(RepoType::Space).build();
-    let _ = api.delete_repo(&delete_params).await;
+    // Clean up both spaces.
+    let delete_dup = DeleteRepoParams::builder().repo_id(&to_id).repo_type(RepoType::Space).build();
+    let delete_src = DeleteRepoParams::builder()
+        .repo_id(&source_id)
+        .repo_type(RepoType::Space)
+        .build();
+    let _ = api.delete_repo(&delete_dup).await;
+    let _ = api.delete_repo(&delete_src).await;
 }
 
 #[tokio::test]
