@@ -322,10 +322,10 @@ async fn test_download_from_known_xet_repo() {
     let Some(api) = prod_api() else { return };
 
     let dir = tempfile::tempdir().unwrap();
-    let result = repo_handle(&api, "mcpotato", "42-xet-test-repo")
+    let result = repo_handle(&api, "hf-internal-testing", "tiny-gemma3")
         .download_file(
             &RepoDownloadFileParams::builder()
-                .filename("large_random.bin")
+                .filename("model.safetensors")
                 .local_dir(dir.path().to_path_buf())
                 .build(),
         )
@@ -361,7 +361,7 @@ async fn test_upload_200mb_random_data_and_verify() {
     let expected_hash = sha256_hex(&data_200mb);
 
     let tmp = tempfile::tempdir().unwrap();
-    let local_file = tmp.path().join("large_random.bin");
+    let local_file = tmp.path().join("model.safetensors");
     std::fs::write(&local_file, &data_200mb).unwrap();
     drop(data_200mb);
 
@@ -369,7 +369,7 @@ async fn test_upload_200mb_random_data_and_verify() {
         .upload_file(
             &RepoUploadFileParams::builder()
                 .source(AddSource::File(local_file))
-                .path_in_repo("large_random.bin")
+                .path_in_repo("model.safetensors")
                 .commit_message("upload 200MB random data")
                 .build(),
         )
@@ -378,7 +378,7 @@ async fn test_upload_200mb_random_data_and_verify() {
     assert!(commit.commit_oid.is_some());
 
     assert!(
-        repo.file_exists(&RepoFileExistsParams::builder().filename("large_random.bin").build())
+        repo.file_exists(&RepoFileExistsParams::builder().filename("model.safetensors").build())
             .await
             .unwrap()
     );
@@ -387,7 +387,7 @@ async fn test_upload_200mb_random_data_and_verify() {
     let downloaded_path = repo
         .download_file(
             &RepoDownloadFileParams::builder()
-                .filename("large_random.bin")
+                .filename("model.safetensors")
                 .local_dir(dl_dir.path().to_path_buf())
                 .build(),
         )
@@ -408,10 +408,10 @@ async fn test_upload_200mb_random_data_and_verify() {
 async fn test_xet_download_stream_full() {
     let Some(api) = prod_api() else { return };
 
-    let repo = repo_handle(&api, "mcpotato", "42-xet-test-repo");
+    let repo = repo_handle(&api, "hf-internal-testing", "tiny-gemma3");
 
     let result = repo
-        .download_file_stream(&RepoDownloadFileStreamParams::builder().filename("large_random.bin").build())
+        .download_file_stream(&RepoDownloadFileStreamParams::builder().filename("model.safetensors").build())
         .await;
 
     match result {
@@ -441,13 +441,13 @@ async fn test_xet_download_stream_full() {
 async fn test_xet_download_stream_range() {
     let Some(api) = prod_api() else { return };
 
-    let repo = repo_handle(&api, "mcpotato", "42-xet-test-repo");
+    let repo = repo_handle(&api, "hf-internal-testing", "tiny-gemma3");
 
     // Download first 1024 bytes via range
     let result = repo
         .download_file_stream(
             &RepoDownloadFileStreamParams::builder()
-                .filename("large_random.bin")
+                .filename("model.safetensors")
                 .range(0..1024u64)
                 .build(),
         )
@@ -478,13 +478,13 @@ async fn test_xet_download_stream_range() {
 async fn test_xet_download_stream_range_middle() {
     let Some(api) = prod_api() else { return };
 
-    let repo = repo_handle(&api, "mcpotato", "42-xet-test-repo");
+    let repo = repo_handle(&api, "hf-internal-testing", "tiny-gemma3");
 
     // Download bytes 1000..2000
     let result = repo
         .download_file_stream(
             &RepoDownloadFileStreamParams::builder()
-                .filename("large_random.bin")
+                .filename("model.safetensors")
                 .range(1000..2000u64)
                 .build(),
         )

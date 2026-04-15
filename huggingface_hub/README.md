@@ -14,6 +14,7 @@ Async Rust client for the [Hugging Face Hub API](https://huggingface.co/docs/hub
 - **Branch and tag management** — create and delete branches and tags, list refs
 - **User and organization info** — whoami, user profiles, organization details, followers
 - **Streaming pagination** — list endpoints return `impl Stream<Item = Result<T>>` for lazy, memory-efficient iteration
+- **Bucket operations** — create, delete, list, and move buckets; upload, download, and delete files within buckets (upload/download require the `xet` feature)
 - **Xet high-performance transfers** — optional support for Hugging Face's Xet storage backend (behind the `xet` feature flag)
 
 ## Installation
@@ -216,8 +217,12 @@ All fallible operations return `Result<T, HFError>`. The `HFError` enum provides
 
 - `HFError::AuthRequired` — 401 response, token is missing or invalid
 - `HFError::RepoNotFound` — repository does not exist or is inaccessible
-- `HFError::EntryNotFound` — file or path does not exist in the repository
+- `HFError::BucketNotFound` — bucket does not exist or is inaccessible
+- `HFError::EntryNotFound` — file or path does not exist in the repository or bucket
 - `HFError::RevisionNotFound` — branch, tag, or commit does not exist
+- `HFError::Forbidden` — 403 response, insufficient permissions
+- `HFError::Conflict` — 409 response, resource already exists or conflicts
+- `HFError::RateLimited` — 429 response, too many requests
 - `HFError::XetNotEnabled` — xet transfer required but `xet` feature is not enabled
 - `HFError::Http` — other HTTP errors with status code, URL, and response body
 

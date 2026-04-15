@@ -158,7 +158,6 @@ pub struct GetXetTokenParams {
     pub revision: Option<String>,
 }
 
-#[cfg(feature = "spaces")]
 #[derive(TypedBuilder)]
 pub struct DuplicateSpaceParams {
     /// Destination repository ID in `"owner/name"` format. Defaults to the authenticated user's namespace with the

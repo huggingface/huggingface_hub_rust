@@ -21,6 +21,10 @@ pub enum HFError {
     #[error("Entry not found: {path} in {repo_id}")]
     EntryNotFound { path: String, repo_id: String },
 
+    #[cfg(feature = "buckets")]
+    #[error("Bucket not found: {bucket_id}")]
+    BucketNotFound { bucket_id: String },
+
     #[error("Invalid repository type: expected {expected}, got {actual}")]
     InvalidRepoType {
         expected: crate::types::RepoType,
@@ -29,6 +33,15 @@ pub enum HFError {
 
     #[error("Xet feature required but not enabled")]
     XetNotEnabled,
+
+    #[error("Forbidden")]
+    Forbidden,
+
+    #[error("Conflict: {0}")]
+    Conflict(String),
+
+    #[error("Rate limited")]
+    RateLimited,
 
     #[error("File not found in local cache: {path}")]
     LocalEntryNotFound { path: String },
@@ -96,6 +109,9 @@ pub type Result<T> = std::result::Result<T, HFError>;
 pub(crate) enum NotFoundContext {
     /// 404 means the repository does not exist
     Repo,
+    /// 404 means the bucket does not exist
+    #[cfg(feature = "buckets")]
+    Bucket,
     /// 404 means a file/path does not exist within the repo
     Entry { path: String },
     /// 404 means the revision does not exist

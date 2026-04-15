@@ -49,27 +49,27 @@ fn api_with_cache(cache_dir: &std::path::Path) -> HFClient {
 }
 
 fn test_model_parts() -> (&'static str, &'static str) {
-    ("", "gpt2")
+    ("hf-internal-testing", "tiny-gemma3")
 }
 
 fn test_model_repo_id() -> &'static str {
-    "gpt2"
+    "hf-internal-testing/tiny-gemma3"
 }
 
 fn test_dataset_parts() -> (&'static str, &'static str) {
-    ("rajpurkar", "squad")
+    ("hf-internal-testing", "cats_vs_dogs_sample")
 }
 
 fn test_dataset_repo_id() -> &'static str {
-    "rajpurkar/squad"
+    "hf-internal-testing/cats_vs_dogs_sample"
 }
 
 fn test_model_cache_fragment() -> &'static str {
-    "gpt2"
+    "hf-internal-testing--tiny-gemma3"
 }
 
 fn test_dataset_cache_fragment() -> &'static str {
-    "datasets--rajpurkar--squad"
+    "datasets--hf-internal-testing--cats_vs_dogs_sample"
 }
 
 fn find_repo_folder(cache_dir: &Path, name_fragment: &str) -> std::path::PathBuf {
@@ -1330,8 +1330,8 @@ async fn test_xet_download_to_cache() {
     let api = api_with_cache(cache_dir.path());
 
     let path = match api
-        .model("mcpotato", "42-xet-test-repo")
-        .download_file(&RepoDownloadFileParams::builder().filename("large_random.bin").build())
+        .model("hf-internal-testing", "tiny-gemma3")
+        .download_file(&RepoDownloadFileParams::builder().filename("model.safetensors").build())
         .await
     {
         Ok(p) => p,
@@ -1355,7 +1355,7 @@ async fn test_xet_download_to_cache() {
     let repo_folder = std::fs::read_dir(cache_dir.path())
         .unwrap()
         .filter_map(|e| e.ok())
-        .find(|e| e.file_name().to_string_lossy().contains("42-xet-test-repo"))
+        .find(|e| e.file_name().to_string_lossy().contains("tiny-gemma3"))
         .expect("repo folder not found");
     let blobs_dir = repo_folder.path().join("blobs");
     assert!(blobs_dir.exists());
@@ -1379,18 +1379,18 @@ async fn test_xet_download_to_cache() {
 
     // Second download should be a cache hit (same path returned)
     let path2 = api
-        .model("mcpotato", "42-xet-test-repo")
-        .download_file(&RepoDownloadFileParams::builder().filename("large_random.bin").build())
+        .model("hf-internal-testing", "tiny-gemma3")
+        .download_file(&RepoDownloadFileParams::builder().filename("model.safetensors").build())
         .await
         .unwrap();
     assert_eq!(path, path2);
 
     // local_files_only should work
     let path3 = api
-        .model("mcpotato", "42-xet-test-repo")
+        .model("hf-internal-testing", "tiny-gemma3")
         .download_file(
             &RepoDownloadFileParams::builder()
-                .filename("large_random.bin")
+                .filename("model.safetensors")
                 .local_files_only(true)
                 .build(),
         )
@@ -1407,7 +1407,7 @@ async fn test_xet_snapshot_download_to_cache() {
     let api = api_with_cache(cache_dir.path());
 
     let snapshot_dir = match api
-        .model("mcpotato", "42-xet-test-repo")
+        .model("hf-internal-testing", "tiny-gemma3")
         .snapshot_download(&RepoSnapshotDownloadParams::default())
         .await
     {
@@ -1425,7 +1425,7 @@ async fn test_xet_snapshot_download_to_cache() {
     assert!(snapshot_dir.exists());
     assert!(snapshot_dir.to_string_lossy().contains("snapshots"));
 
-    let repo_folder = find_repo_folder(cache_dir.path(), "42-xet-test-repo");
+    let repo_folder = find_repo_folder(cache_dir.path(), "tiny-gemma3");
     assert!(repo_folder.join("blobs").exists());
     assert!(repo_folder.join("refs").join("main").exists());
 
@@ -1440,10 +1440,10 @@ async fn test_xet_cache_hit_second_download() {
     let cache_dir = tempfile::tempdir().unwrap();
     let api = api_with_cache(cache_dir.path());
 
-    let repo = api.model("mcpotato", "42-xet-test-repo");
+    let repo = api.model("hf-internal-testing", "tiny-gemma3");
 
     let path1 = match repo
-        .download_file(&RepoDownloadFileParams::builder().filename("large_random.bin").build())
+        .download_file(&RepoDownloadFileParams::builder().filename("model.safetensors").build())
         .await
     {
         Ok(p) => p,
@@ -1457,12 +1457,12 @@ async fn test_xet_cache_hit_second_download() {
         },
     };
 
-    let blob = find_single_blob(cache_dir.path(), "42-xet-test-repo");
+    let blob = find_single_blob(cache_dir.path(), "tiny-gemma3");
     let mtime_before = std::fs::metadata(&blob).unwrap().modified().unwrap();
 
     // Second download: should be a cache hit (blob not rewritten)
     let path2 = repo
-        .download_file(&RepoDownloadFileParams::builder().filename("large_random.bin").build())
+        .download_file(&RepoDownloadFileParams::builder().filename("model.safetensors").build())
         .await
         .unwrap();
     assert_eq!(path1, path2);

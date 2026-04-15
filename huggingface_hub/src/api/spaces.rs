@@ -223,7 +223,6 @@ impl HFSpace {
 }
 
 sync_api! {
-    #[cfg(feature = "spaces")]
     impl HFSpace -> HFSpaceSync {
         fn runtime(&self) -> Result<SpaceRuntime>;
         fn request_hardware(&self, params: &SpaceHardwareRequestParams) -> Result<SpaceRuntime>;

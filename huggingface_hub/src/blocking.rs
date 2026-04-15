@@ -48,6 +48,17 @@ pub struct HFSpaceSync {
     pub(crate) inner: Arc<repo::HFSpace>,
 }
 
+/// Synchronous/blocking counterpart to [`crate::bucket::HFBucket`].
+///
+/// Holds a reference to the underlying async handle and the shared tokio runtime.
+/// Blocking API methods are defined via the `sync_api!` macro in `api/buckets.rs`.
+#[cfg(feature = "buckets")]
+#[derive(Clone)]
+pub struct HFBucketSync {
+    pub(crate) inner: Arc<crate::bucket::HFBucket>,
+    pub(crate) runtime: Arc<tokio::runtime::Runtime>,
+}
+
 impl fmt::Debug for HFClientSync {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HFClientSync").finish()
@@ -66,6 +77,13 @@ impl fmt::Debug for HFSpaceSync {
             .field("inner", &self.inner)
             .field("repo_sync", &self.repo_sync)
             .finish()
+    }
+}
+
+#[cfg(feature = "buckets")]
+impl fmt::Debug for HFBucketSync {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HFBucketSync").field("inner", &self.inner).finish()
     }
 }
 
@@ -119,6 +137,12 @@ impl HFClientSync {
     /// Creates a blocking handle for a space repository.
     pub fn space(&self, owner: impl Into<String>, name: impl Into<String>) -> HFSpaceSync {
         HFSpaceSync::new(self.clone(), owner, name)
+    }
+
+    /// Creates a blocking handle for a bucket.
+    #[cfg(feature = "buckets")]
+    pub fn bucket(&self, owner: impl Into<String>, name: impl Into<String>) -> HFBucketSync {
+        HFBucketSync::new(self.clone(), owner, name)
     }
 }
 
@@ -174,6 +198,26 @@ impl Deref for HFSpaceSync {
 
     fn deref(&self) -> &Self::Target {
         &self.repo_sync
+    }
+}
+
+#[cfg(feature = "buckets")]
+impl HFBucketSync {
+    /// Creates a blocking bucket handle from a client, owner, and name.
+    pub fn new(client: HFClientSync, owner: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            inner: Arc::new(crate::bucket::HFBucket::new(client.inner.clone(), owner, name)),
+            runtime: client.runtime.clone(),
+        }
+    }
+}
+
+#[cfg(feature = "buckets")]
+impl Deref for HFBucketSync {
+    type Target = crate::bucket::HFBucket;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
 }
 

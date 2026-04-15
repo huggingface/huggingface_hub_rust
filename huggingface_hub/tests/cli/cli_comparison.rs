@@ -5,23 +5,23 @@ use std::sync::OnceLock;
 use helpers::{CliRunner, require_cli, require_token, require_write};
 
 fn test_model_repo() -> &'static str {
-    "gpt2"
+    "hf-internal-testing/tiny-gemma3"
 }
 
 fn test_dataset_repo() -> &'static str {
-    "squad"
+    "hf-internal-testing/cats_vs_dogs_sample"
 }
 
 fn test_dataset_download_repo() -> &'static str {
-    "xet-team/xet-spec-reference-files"
+    "hf-internal-testing/cats_vs_dogs_sample"
 }
 
 fn test_model_cache_fragment() -> &'static str {
-    "gpt2"
+    "hf-internal-testing--tiny-gemma3"
 }
 
 fn test_dataset_search() -> &'static str {
-    "squad"
+    "cats_vs_dogs_sample"
 }
 
 fn test_hf_endpoint() -> &'static str {
@@ -143,7 +143,7 @@ fn models_info_returns_valid_json() {
 
     assert!(out.is_object(), "models info should return an object");
     let id = out.get("id").and_then(|v| v.as_str()).unwrap_or("");
-    assert!(id.contains("gpt2"), "model id should contain gpt2, got: {id}");
+    assert!(id.contains("tiny-gemma3"), "model id should contain tiny-gemma3, got: {id}");
     assert!(out.get("author").is_some());
 }
 
@@ -450,7 +450,7 @@ fn datasets_list_with_search_matches_hf() {
     assert_eq!(
         hfrs_out.as_array().unwrap().len(),
         hf_out.as_array().unwrap().len(),
-        "both CLIs should return the same number of results for squad search"
+        "both CLIs should return the same number of results for dataset search"
     );
 }
 

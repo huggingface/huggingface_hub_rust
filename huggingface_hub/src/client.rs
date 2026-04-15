@@ -262,6 +262,18 @@ impl HFClient {
         format!("{}/{}{}/resolve/{}/{}", self.endpoint(), prefix, repo_id, revision, filename)
     }
 
+    /// Create an [`HFBucket`](crate::bucket::HFBucket) handle for a bucket.
+    #[cfg(feature = "buckets")]
+    pub fn bucket(&self, owner: impl Into<String>, name: impl Into<String>) -> crate::bucket::HFBucket {
+        crate::bucket::HFBucket::new(self.clone(), owner, name)
+    }
+
+    /// Build a bucket API URL: `{endpoint}/api/buckets/{bucket_id}`
+    #[cfg(feature = "buckets")]
+    pub(crate) fn bucket_api_url(&self, bucket_id: &str) -> String {
+        format!("{}/api/buckets/{}", self.endpoint(), bucket_id)
+    }
+
     /// Check an HTTP response and map error status codes to HFError variants.
     /// Returns the response on success (2xx).
     ///
@@ -287,8 +299,11 @@ impl HFClient {
 
         match status.as_u16() {
             401 => Err(HFError::AuthRequired),
+            403 => Err(HFError::Forbidden),
             404 => match not_found_ctx {
                 crate::error::NotFoundContext::Repo => Err(HFError::RepoNotFound { repo_id: repo_id_str }),
+                #[cfg(feature = "buckets")]
+                crate::error::NotFoundContext::Bucket => Err(HFError::BucketNotFound { bucket_id: repo_id_str }),
                 crate::error::NotFoundContext::Entry { path } => Err(HFError::EntryNotFound {
                     path,
                     repo_id: repo_id_str,
@@ -299,6 +314,8 @@ impl HFClient {
                 }),
                 crate::error::NotFoundContext::Generic => Err(HFError::Http { status, url, body }),
             },
+            409 => Err(HFError::Conflict(body)),
+            429 => Err(HFError::RateLimited),
             _ => Err(HFError::Http { status, url, body }),
         }
     }

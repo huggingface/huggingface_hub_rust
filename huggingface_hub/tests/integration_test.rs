@@ -20,9 +20,10 @@ use futures::StreamExt;
 use huggingface_hub::repository::HFRepository;
 use huggingface_hub::test_utils::*;
 use huggingface_hub::types::*;
-use huggingface_hub::{HFClient, HFClientBuilder};
-#[cfg(feature = "spaces")]
-use huggingface_hub::{SpaceSecretDeleteParams, SpaceSecretParams, SpaceVariableDeleteParams, SpaceVariableParams};
+use huggingface_hub::{
+    HFClient, HFClientBuilder, SpaceSecretDeleteParams, SpaceSecretParams, SpaceVariableDeleteParams,
+    SpaceVariableParams,
+};
 
 fn api() -> Option<HFClient> {
     if is_ci() {
@@ -69,7 +70,7 @@ fn test_model_author() -> &'static str {
 }
 
 fn test_model_repo() -> &'static str {
-    "openai-community/gpt2"
+    "hf-internal-testing/tiny-gemma3"
 }
 
 fn test_space_repo() -> (&'static str, &'static str) {
@@ -81,7 +82,7 @@ fn test_space_info_repo() -> &'static str {
 }
 
 fn test_dataset_repo() -> &'static str {
-    "xet-team/xet-spec-reference-files"
+    "hf-internal-testing/cats_vs_dogs_sample"
 }
 
 /// Cached whoami username, fetched once and reused across write tests.
@@ -122,7 +123,7 @@ async fn test_model_info() {
     let model_repo = test_model_repo();
     let info = repo(&api, model_repo).info(&RepoInfoParams::default()).await.unwrap();
     match info {
-        RepoInfo::Model(model) => assert!(model.id.contains("gpt2")),
+        RepoInfo::Model(model) => assert!(model.id.contains("tiny-gemma3")),
         _ => panic!("expected model info"),
     }
 }
@@ -300,14 +301,14 @@ async fn test_download_file() {
 
 #[tokio::test]
 async fn test_whoami() {
-    let Some(api) = prod_api() else { return };
+    let Some(api) = api() else { return };
     let user = api.whoami().await.unwrap();
     assert!(!user.username.is_empty());
 }
 
 #[tokio::test]
 async fn test_auth_check() {
-    let Some(api) = prod_api() else { return };
+    let Some(api) = api() else { return };
     api.auth_check().await.unwrap();
 }
 
@@ -816,10 +817,9 @@ async fn test_move_repo() {
 }
 
 // =============================================================================
-// Spaces management tests (feature: "spaces")
+// Spaces management tests
 // =============================================================================
 
-#[cfg(feature = "spaces")]
 #[tokio::test]
 async fn test_get_space_runtime() {
     let Some(api) = prod_api() else { return };
@@ -829,34 +829,45 @@ async fn test_get_space_runtime() {
     assert!(runtime.stage.is_some());
 }
 
-#[cfg(feature = "spaces")]
 #[tokio::test]
 async fn test_duplicate_space() {
-    let Some(api) = prod_api() else { return };
+    let Some(api) = api() else { return };
     if !write_enabled() {
         return;
     }
-    // Must use prod_api because the source space only exists on production.
-    // Cannot reuse cached_username() here — it resolves via api() which targets
-    // hub-ci in CI, a different user than the prod token.
-    let username = api.whoami().await.expect("whoami failed").username;
-    let to_id = format!("{}/hub-rust-test-dup-space-{}", username, uuid_v4_short());
+    let username = cached_username().await;
 
+    // Create a minimal source space to duplicate.
+    let source_id = format!("{}/hub-rust-test-dup-src-{}", username, uuid_v4_short());
+    let create_params = CreateRepoParams::builder()
+        .repo_id(&source_id)
+        .repo_type(RepoType::Space)
+        .private(true)
+        .space_sdk("static")
+        .build();
+    api.create_repo(&create_params).await.unwrap();
+
+    let to_id = format!("{}/hub-rust-test-dup-space-{}", username, uuid_v4_short());
     let params = DuplicateSpaceParams::builder()
         .to_id(&to_id)
         .private(true)
         .hardware("cpu-basic")
         .build();
-    let (owner, name) = test_space_repo();
+    let (owner, name) = source_id.split_once('/').unwrap();
     let source = api.space(owner, name);
     let result = source.duplicate(&params).await.unwrap();
     assert!(result.url.contains(&to_id));
 
-    let delete_params = DeleteRepoParams::builder().repo_id(&to_id).repo_type(RepoType::Space).build();
-    let _ = api.delete_repo(&delete_params).await;
+    // Clean up both spaces.
+    let delete_dup = DeleteRepoParams::builder().repo_id(&to_id).repo_type(RepoType::Space).build();
+    let delete_src = DeleteRepoParams::builder()
+        .repo_id(&source_id)
+        .repo_type(RepoType::Space)
+        .build();
+    let _ = api.delete_repo(&delete_dup).await;
+    let _ = api.delete_repo(&delete_src).await;
 }
 
-#[cfg(feature = "spaces")]
 #[tokio::test]
 async fn test_space_secrets_and_variables() {
     let Some(api) = api() else { return };

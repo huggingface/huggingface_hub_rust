@@ -6,7 +6,7 @@ description = "Rust client for the Hugging Face Hub API"
 license = "Apache-2.0"
 
 [package.metadata.docs.rs]
-features = ["blocking", "xet", "spaces"]
+features = ["blocking", "buckets", "xet"]
 
 [dependencies]
 bytes = "1"
@@ -28,26 +28,25 @@ tokio-util = { version = "0.7", features = ["io"] }
 tracing = "0.1"
 async-trait = { version = "0.1", optional = true }
 hf-xet = { version = "1.5.1", optional = true }
-xet-client = { version = "1.5.1", optional = true }
 sha2 = { version = "0.10", optional = true }
 
 # cli deps
 clap = { version = "4", features = ["derive", "env", "color"], optional = true }
-indicatif = { version = "0.17", optional = true }
+indicatif = { version = "0.18", optional = true }
 owo-colors = { version = "4", optional = true }
 comfy-table = { version = "7", optional = true }
 anyhow = { version = "1", optional = true }
+tempfile = { version = "3", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 
 [features]
 default = []
 blocking = ["tokio/rt"]
-xet = ["dep:hf-xet", "dep:xet-client", "dep:async-trait", "dep:sha2"]
-spaces = []
+xet = ["dep:hf-xet", "dep:async-trait", "dep:sha2"]
+buckets = ["xet"]
 cli = [
     "blocking",
-    "xet",
-    "spaces",
+    "buckets",
     "tokio/macros",
     "tokio/rt-multi-thread",
     "dep:clap",
@@ -55,6 +54,7 @@ cli = [
     "dep:owo-colors",
     "dep:comfy-table",
     "dep:anyhow",
+    "dep:tempfile",
     "dep:tracing-subscriber",
 ]
 
@@ -101,7 +101,6 @@ path = "examples/users.rs"
 [[example]]
 name = "spaces"
 path = "examples/spaces.rs"
-required-features = ["spaces"]
 
 [[example]]
 name = "download_upload"
@@ -129,4 +128,9 @@ required-features = ["blocking"]
 [[example]]
 name = "blocking_spaces"
 path = "examples/blocking_spaces.rs"
-required-features = ["blocking", "spaces"]
+required-features = ["blocking"]
+
+[[example]]
+name = "buckets"
+path = "examples/buckets.rs"
+required-features = ["buckets"]
