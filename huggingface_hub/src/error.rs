@@ -2,7 +2,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum HFError {
-    #[error("HTTP error: {status} {url}")]
+    #[error("HTTP error: {status} {url}\n{body}")]
     Http {
         status: reqwest::StatusCode,
         url: String,
