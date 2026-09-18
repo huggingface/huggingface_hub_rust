@@ -9,8 +9,12 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions: {}
+
 jobs:
   fmt:
+    permissions:
+      contents: read
     name: Format
     runs-on: ubuntu-latest
     steps:
@@ -19,7 +23,7 @@ jobs:
         with:
           toolchain: nightly
           components: rustfmt
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -31,6 +35,8 @@ jobs:
       - run: cargo +nightly fmt --all --check
 
   clippy:
+    permissions:
+      contents: read
     name: Lint
     runs-on: ubuntu-latest
     steps:
@@ -39,7 +45,7 @@ jobs:
         with:
           toolchain: stable
           components: clippy
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -53,6 +59,8 @@ jobs:
       - run: cargo clippy -p huggingface-hub -- -D warnings
 
   build:
+    permissions:
+      contents: read
     name: Build (release)
     runs-on: ubuntu-latest
     steps:
@@ -60,7 +68,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de  # master
         with:
           toolchain: stable
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -75,6 +83,8 @@ jobs:
       - run: cargo build -p huggingface-hub --all-features --examples
 
   test:
+    permissions:
+      contents: read
     name: Test
     runs-on: ubuntu-latest
     steps:
@@ -82,7 +92,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de  # master
         with:
           toolchain: stable
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -92,7 +102,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: Set up Python for cache interop tests
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.x'
       - name: Install huggingface_hub CLI in venv
