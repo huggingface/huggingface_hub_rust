@@ -9,8 +9,12 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions: {}
+
 jobs:
   fmt:
+    permissions:
+      contents: read
     name: Format
     runs-on: ubuntu-latest
     steps:
@@ -31,6 +35,8 @@ jobs:
       - run: cargo +nightly fmt --all --check
 
   clippy:
+    permissions:
+      contents: read
     name: Lint
     runs-on: ubuntu-latest
     steps:
@@ -53,6 +59,8 @@ jobs:
       - run: cargo clippy -p huggingface-hub -- -D warnings
 
   build:
+    permissions:
+      contents: read
     name: Build (release)
     runs-on: ubuntu-latest
     steps:
@@ -75,6 +83,8 @@ jobs:
       - run: cargo build -p huggingface-hub --all-features --examples
 
   test:
+    permissions:
+      contents: read
     name: Test
     runs-on: ubuntu-latest
     steps:
